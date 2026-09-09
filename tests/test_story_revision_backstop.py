@@ -9,6 +9,7 @@ from app.news.services.dedup.story_relationship_service import (
 )
 from app.news.services.incident_details.story_revision_backstop import (
     detect_story_revision_backstop,
+    has_story_revision_recall_markers,
 )
 
 
@@ -171,3 +172,9 @@ def test_classify_best_prefers_car_duplicate_over_mixed_bulletin() -> None:
     result = service.classify_best(current_text=DRONE_CAR, candidates=candidates)
     assert result.relationship == StoryRelationship.duplicate
     assert result.candidate_incident_id == car_id
+
+
+def test_recall_markers_include_preliminary_and_named_victim() -> None:
+    assert has_story_revision_recall_markers(PRELIMINARY_CAR) is True
+    assert has_story_revision_recall_markers(ZAHRAA) is True
+    assert has_story_revision_recall_markers(DRONE_CAR) is False

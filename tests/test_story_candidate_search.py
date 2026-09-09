@@ -19,9 +19,11 @@ class _RepoStub:
     def __init__(self, candidates: list[StoryCandidate] | None = None) -> None:
         self.candidates = candidates or []
         self.last_query: dict | None = None
+        self.queries: list[dict] = []
 
     def find_story_candidates(self, **kwargs):
         self.last_query = kwargs
+        self.queries.append(kwargs)
         return list(self.candidates)
 
 
@@ -185,3 +187,31 @@ def test_find_story_candidates_ranks_and_caps_cross_condition_hits() -> None:
     assert result[0].incident is bombs
     assert result[1].incident is drone
     assert all(c.embedding_similarity is not None and c.embedding_similarity >= 0.55 for c in result)
+
+
+def test_default_story_threshold_matches_kfar_roummane_diagnosis() -> None:
+    repo = _RepoStub()
+    StoryCandidateSearch(repo).find_for_message(  # type: ignore[arg-type]
+        match_result={"village_matches": [{"matched_village_id": 851}]},
+        message_datetime=_MSG_DT,
+        candidate_text="غارة على سيارة في كفررمان",
+        candidate_embedding=_EMBEDDING,
+        exclude_raw_message_id=1,
+    )
+
+    assert repo.last_query is not None
+    assert repo.last_query["embedding_threshold"] == 0.40
+    assert len(repo.queries) == 1
+
+
+def test_preliminary_text_adds_zero_threshold_recall_pass() -> None:
+    repo = _RepoStub()
+    StoryCandidateSearch(repo).find_for_message(  # type: ignore[arg-type]
+        match_result={"village_matches": [{"matched_village_id": 851}]},
+        message_datetime=_MSG_DT,
+        candidate_text="المعلومات الأولية تشير إلى وقوع إصابتين",
+        candidate_embedding=_EMBEDDING,
+        exclude_raw_message_id=1,
+    )
+
+    assert [query["embedding_threshold"] for query in repo.queries] == [0.40, 0.0]

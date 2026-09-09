@@ -41,6 +41,17 @@ def story_revision_keyword_labels() -> tuple[str, ...]:
     )
 
 
+def has_story_revision_recall_markers(text: str | None) -> bool:
+    """True when the text itself looks like a preliminary or named-victim follow-up."""
+    normalized = normalize_arabic_text(text or "")
+    if not normalized:
+        return False
+    return any(
+        pattern.search(normalized)
+        for _, pattern in (*_REVISION_PATTERNS, *_NAMED_VICTIM_PATTERNS)
+    )
+
+
 def detect_story_revision_backstop(
     text: str | None,
     *,

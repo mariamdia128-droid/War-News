@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     # match_result, no condition_id gate, wide window, embedding rank.
     # Shares village_ids_from_match_result with bulletin reconciliation.
     story_candidate_window_hours: int = 72
-    story_candidate_embedding_threshold: float = 0.78
+    story_candidate_embedding_threshold: float = 0.40
     story_candidate_max_results: int = 10
     pg_application_name: str = "war-news"
     pipeline_role: str = "api"

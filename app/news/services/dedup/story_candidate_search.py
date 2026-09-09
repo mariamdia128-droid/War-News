@@ -29,6 +29,9 @@ from app.news.services.clustering.clustering_service import (
 from app.news.services.clustering.raw_message_embedding_service import (
     strip_boilerplate,
 )
+from app.news.services.incident_details.story_revision_backstop import (
+    has_story_revision_recall_markers,
+)
 
 
 class StoryCandidateSearch:
@@ -50,25 +53,56 @@ class StoryCandidateSearch:
         village_ids = set(village_ids_from_match_result(match_result))
         if not village_ids:
             return []
-        return self.incidents.find_story_candidates(
-            village_ids=village_ids,
-            message_datetime=message_datetime,
-            window_hours=(
+        query = {
+            "village_ids": village_ids,
+            "message_datetime": message_datetime,
+            "window_hours": (
                 window_hours
                 if window_hours is not None
                 else settings.story_candidate_window_hours
             ),
-            embedding_threshold=(
-                embedding_threshold
-                if embedding_threshold is not None
-                else settings.story_candidate_embedding_threshold
-            ),
-            max_results=(
+            "max_results": (
                 max_results
                 if max_results is not None
                 else settings.story_candidate_max_results
             ),
-            candidate_text=strip_boilerplate(candidate_text or "") or None,
-            candidate_embedding=candidate_embedding,
-            exclude_raw_message_id=exclude_raw_message_id,
+            "candidate_text": strip_boilerplate(candidate_text or "") or None,
+            "candidate_embedding": candidate_embedding,
+            "exclude_raw_message_id": exclude_raw_message_id,
+        }
+        threshold = (
+            embedding_threshold
+            if embedding_threshold is not None
+            else settings.story_candidate_embedding_threshold
         )
+        found = self.incidents.find_story_candidates(
+            **query,
+            embedding_threshold=threshold,
+        )
+        if (
+            embedding_threshold is None
+            and has_story_revision_recall_markers(candidate_text)
+            and len(found) < query["max_results"]
+        ):
+            extra = self.incidents.find_story_candidates(
+                **query,
+                embedding_threshold=0.0,
+            )
+            found = _merge_story_candidates(found, extra, query["max_results"])
+        return found
+
+
+def _merge_story_candidates(
+    primary: list[StoryCandidate],
+    extra: list[StoryCandidate],
+    max_results: int,
+) -> list[StoryCandidate]:
+    by_id = {candidate.incident.id: candidate for candidate in primary}
+    for candidate in extra:
+        by_id.setdefault(candidate.incident.id, candidate)
+    merged = sorted(
+        by_id.values(),
+        key=lambda item: item.embedding_similarity or 0.0,
+        reverse=True,
+    )
+    return merged[:max_results]
