@@ -19,6 +19,7 @@ from app.llm.dtos.extraction_dto import (
     ExtractionVehicleDetails,
     StoryRelationship,
     StoryRelationshipClassification,
+    ExtractionSubEvent,
     VillageRole,
     VillageRoleEntry,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "ExtractionCategoryKey",
     "ExtractionResult",
     "ExtractionVehicleDetails",
+    "ExtractionSubEvent",
     "FilterBatchSummary",
     "FilterPendingMessagesData",
     "RelevanceClassificationResult",

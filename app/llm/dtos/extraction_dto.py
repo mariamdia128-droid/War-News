@@ -110,6 +110,17 @@ class CasualtyCountEvidence(BaseModel):
     evidence_span: str
 
 
+class ExtractionSubEvent(BaseModel):
+    """One distinct action inside a bulletin, with locally scoped casualties."""
+
+    model_config = ConfigDict(frozen=True)
+
+    action_description: str | None = None
+    casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
+    evidence_span: str | None = None
+    casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
+
+
 class ExtractionVehicleDetails(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -143,6 +154,7 @@ class ExtractionResult(BaseModel):
     village: list[str] | None = None
     village_roles: list[VillageRoleEntry] = Field(default_factory=list)
     action_description: str | None = None
+    sub_events: list[ExtractionSubEvent] = Field(default_factory=list)
 
     @field_validator("village", mode="before")
     @classmethod
@@ -188,6 +200,8 @@ class ExtractionResult(BaseModel):
             normalized["casualty_transitions"] = []
         if normalized.get("casualty_evidence") is None:
             normalized["casualty_evidence"] = []
+        if normalized.get("sub_events") is None:
+            normalized["sub_events"] = []
         return normalized
 
 

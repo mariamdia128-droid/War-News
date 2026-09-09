@@ -20,7 +20,7 @@ def test_extraction_result_defaults_casualty_scope_for_legacy_payload() -> None:
 def test_combined_tier1_schema_requires_casualty_scope_and_evidence() -> None:
     required = set(COMBINED_TIER1_RESPONSE_SCHEMA["required"])
 
-    assert {"casualty_scope", "casualty_scope_evidence"} <= required
+    assert {"casualty_scope", "casualty_scope_evidence", "sub_events"} <= required
     assert COMBINED_TIER1_RESPONSE_SCHEMA["properties"]["casualty_scope"] == {
         "type": "string",
         "enum": [

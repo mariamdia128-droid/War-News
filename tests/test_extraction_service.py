@@ -431,3 +431,56 @@ def test_null_village_from_model_is_preserved_as_none() -> None:
     result = service.extract(_SAMPLE_POST_TEXT, raw_message_id=99)
 
     assert result.village is None
+
+
+def test_extract_tier1_parses_sub_events() -> None:
+    payload = json.dumps(
+        {
+            "is_relevant": True,
+            "village": ["كفر رمان"],
+            "action_description": "غارات على منزل وسيارة",
+            "sub_events": [
+                {
+                    "action_description": "غارة على منزل",
+                    "casualties": {
+                        "deaths": 8,
+                        "injuries": 11,
+                        "total_deaths": 8,
+                        "total_injuries": 11,
+                    },
+                    "evidence_span": "غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً",
+                    "casualty_evidence": [],
+                },
+                {
+                    "action_description": "استهداف سيارة",
+                    "casualties": {
+                        "deaths": 1,
+                        "injuries": 2,
+                        "total_deaths": 1,
+                        "total_injuries": 2,
+                        "male_deaths": 1,
+                    },
+                    "evidence_span": "استُهدفت سيارة فاستُشهد مسعف وأصيب 2",
+                    "casualty_evidence": [],
+                },
+            ],
+            "casualties": {},
+            "casualty_evidence": [],
+            "casualty_transitions": [],
+        },
+        ensure_ascii=False,
+    )
+    service = OllamaExtractionService(
+        client=_client_for_model_contents([payload]),
+        presence_gate=_PresenceGateStub(categories=[]),
+        category_detail=_CategoryDetailStub(details={}),
+    )
+
+    result = service.extract_tier1("غارة على منزل وسيارة في كفررمان", raw_message_id=7)
+
+    assert len(result.sub_events) == 2
+    assert result.sub_events[0].casualties.deaths == 8
+    assert result.sub_events[1].casualties.deaths == 1
+    assert result.sub_events[1].casualties.male_deaths == 1
+    assert result.sub_events[0].evidence_span is not None
+    assert result.casualties.deaths is None

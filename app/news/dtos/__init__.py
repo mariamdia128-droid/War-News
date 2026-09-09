@@ -25,7 +25,12 @@ from app.news.dtos.incident_dto import (
     IncidentVerificationDTO,
 )
 from app.news.dtos.import_dto import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
-from app.news.dtos.match_result_dto import MatchResultDTO, MatchResultStatus, VillageMatchResult
+from app.news.dtos.match_result_dto import (
+    MatchResultDTO,
+    MatchResultStatus,
+    SubEventMatchResult,
+    VillageMatchResult,
+)
 from app.news.dtos.village_dto import VillageOptionDTO
 
 __all__ = [
@@ -55,6 +60,7 @@ __all__ = [
     "WorkbookImportSummaryDTO",
     "MatchResultDTO",
     "MatchResultStatus",
+    "SubEventMatchResult",
     "VillageOptionDTO",
     "VillageMatchResult",
 ]

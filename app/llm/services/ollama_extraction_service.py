@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.core.config import settings
 from app.core.ollama_client import JsonObject, OllamaChatClient, OllamaChatMessage
@@ -19,6 +19,7 @@ from app.llm.dtos import (
     ExtractionCategory,
     ExtractionCategoryKey,
     ExtractionResult,
+    ExtractionSubEvent,
     VillageRole,
     VillageRoleEntry,
 )
@@ -54,7 +55,7 @@ ALLOWED_EXTRACTION_CATEGORY_KEYS = frozenset(
 
 GENERAL_EXTRACTION_PROMPT = """أنت مساعد لاستخراج الحقول العامة فقط من خبر عربي واحد عن حادث أمني أو عسكري في لبنان.
 
-مهمتك الوحيدة: استخرج is_relevant و village و village_roles و action_description و casualties العامة فقط. لا تستخرج categories ولا تحكم على أي فئة في هذه المرحلة.
+مهمتك الوحيدة: استخرج is_relevant و village و village_roles و action_description و sub_events و casualties العامة فقط. لا تستخرج categories ولا تحكم على أي فئة في هذه المرحلة.
 
 قواعد الإخراج الصارمة:
 - أرجع كائن JSON واحداً صالحاً فقط.
@@ -74,6 +75,8 @@ GENERAL_EXTRACTION_PROMPT = """أنت مساعد لاستخراج الحقول �
 - إذا ذُكرت بلدة target بلا عدد صريح خاص بها، اجعل deaths وinjuries وevidence_span لها null، لا 0 ولا حصيلة النشرة. طبّق على كل بلدة قاعدة الألفاظ المبهمة نفسها: عشرات، مئات، عدد من، بضعة وغيرها تعني null ولا تتحول إلى رقم.
 - عند ذكر بلدة واحدة فقط، اجعل أرقام عنصر village_roles مطابقة لأرقام casualties العامة إن وُجدت، مع evidence_span حرفي، أو اتركها null. كلاهما مقبول لأن مسار البلدة الواحدة يستخدم casualties العامة.
 - action_description: وصف نوع العمل أو الحادث من النص فقط.
+- sub_events: عندما يصف الخبر أكثر من عمل متميز (مثلاً ضربة على منزل وضربة على سيارة في النشرة نفسها) أرجع عنصراً مستقلاً لكل عمل مع أرقامه المحلية وevidence_span الحرفي. لا تدمج أرقام العملين في casualties العامة. إذا كان العمل واحداً أرجع [].
+- مثال إلزامي للعملين: «غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً، وفي غارة منفصلة استُهدفت سيارة فاستُشهد مسعف وأصيب 2» → sub_events=[{"action_description":"غارة على منزل","casualties":{"deaths":8,"injuries":11,"total_deaths":8,"total_injuries":11},"evidence_span":"غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً"},{"action_description":"استهداف سيارة","casualties":{"deaths":1,"injuries":2,"total_deaths":1,"total_injuries":2,"male_deaths":1},"evidence_span":"استُهدفت سيارة فاستُشهد مسعف وأصيب 2"}] وcasualties العامة null أو مجموع فقط إذا صرّح النص بمجموع منفصل.
 - casualties: أعداد الضحايا العامة غير المنسوبة إلى فئة محددة، فقط إذا ذُكرت حرفياً.
 - casualty_transitions: انتقالات حالة بين جرحى ووفيات في *متابعات* لنفس الحادث. استخدمها عندما يذكر النص أن جرحى سابقين توفوا أو «بقي X جرحى وتوفي Y» أو «توفى واحد من الجرحى» دون إعادة عدّ كل الجرحى. لا تستخدمها للأخبار الأولية ولا للإضافات البسيطة مثل «5 جرحى جدد».
 - قاعدة إلزامية: إذا قال النص صراحة إن مصاباً أو جريحاً سابقاً توفي، فأرجع دائماً [{"from_status":"injured","to_status":"deceased","count":1}] حتى لو ذكر النص أيضاً حصيلة جديدة أو عدداً متبقياً للجرحى.
@@ -114,6 +117,7 @@ Schema الإخراج الوحيد المسموح:
   "village": null,
   "village_roles": [],
   "action_description": null,
+  "sub_events": [],
   "casualties": {
     "total_deaths": null,
     "total_injuries": null,
@@ -167,6 +171,65 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
             },
         },
         "action_description": {"type": ["string", "null"]},
+        "sub_events": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "action_description": {"type": ["string", "null"]},
+                    "casualties": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "total_deaths": {"type": ["integer", "null"]},
+                            "total_injuries": {"type": ["integer", "null"]},
+                            "deaths": {"type": ["integer", "null"]},
+                            "injuries": {"type": ["integer", "null"]},
+                            "male_deaths": {"type": ["integer", "null"]},
+                            "male_injuries": {"type": ["integer", "null"]},
+                            "female_deaths": {"type": ["integer", "null"]},
+                            "female_injuries": {"type": ["integer", "null"]},
+                            "children_deaths": {"type": ["integer", "null"]},
+                            "children_injuries": {"type": ["integer", "null"]},
+                        },
+                    },
+                    "evidence_span": {"type": ["string", "null"]},
+                    "casualty_evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "field": {
+                                    "type": "string",
+                                    "enum": [
+                                        "total_deaths",
+                                        "total_injuries",
+                                        "deaths",
+                                        "injuries",
+                                        "male_deaths",
+                                        "male_injuries",
+                                        "female_deaths",
+                                        "female_injuries",
+                                        "children_deaths",
+                                        "children_injuries",
+                                    ],
+                                },
+                                "evidence_span": {"type": "string"},
+                            },
+                            "required": ["field", "evidence_span"],
+                        },
+                    },
+                },
+                "required": [
+                    "action_description",
+                    "casualties",
+                    "evidence_span",
+                    "casualty_evidence",
+                ],
+            },
+        },
         "casualties": {
             "type": "object",
             "additionalProperties": False,
@@ -243,6 +306,7 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
         "village",
         "village_roles",
         "action_description",
+        "sub_events",
         "casualties",
         "casualty_transitions",
         "casualty_evidence",
@@ -269,6 +333,7 @@ COMBINED_TIER1_RESPONSE_SCHEMA: JsonObject = {
         "village": {"type": ["array", "null"], "items": {"type": "string"}},
         "village_roles": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["village_roles"],  # type: ignore[index]
         "action_description": {"type": ["string", "null"]},
+        "sub_events": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["sub_events"],  # type: ignore[index]
         "casualties": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualties"],  # type: ignore[index]
         "casualty_transitions": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_transitions"],  # type: ignore[index]
         "casualty_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_evidence"],  # type: ignore[index]
@@ -282,6 +347,7 @@ COMBINED_TIER1_RESPONSE_SCHEMA: JsonObject = {
         "village",
         "village_roles",
         "action_description",
+        "sub_events",
         "casualties",
         "casualty_transitions",
         "casualty_evidence",
@@ -299,11 +365,23 @@ class _RawExtractionResponse(BaseModel):
     village: list[str] | str | None = None
     village_roles: list[VillageRoleEntry] = Field(default_factory=list)
     action_description: str | None = None
+    sub_events: list[ExtractionSubEvent] = Field(default_factory=list)
     casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
     casualty_transitions: list[CasualtyTransition] = Field(default_factory=list)
     casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
     casualty_scope: CasualtyScope = CasualtyScope.unspecified
     casualty_scope_evidence: str | None = None
+
+    @field_validator(
+        "village_roles",
+        "sub_events",
+        "casualty_transitions",
+        "casualty_evidence",
+        mode="before",
+    )
+    @classmethod
+    def _empty_list_for_none(cls, value: object) -> object:
+        return [] if value is None else value
 
 
 class OllamaExtractionService(ExtractionClassifierInterface):
@@ -382,6 +460,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 "village",
                 "village_roles",
                 "action_description",
+                "sub_events",
                 "casualties",
                 "casualty_transitions",
                 "casualty_evidence",
@@ -451,6 +530,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 field_name="action_description",
                 raw_message_id=raw_message_id,
             ),
+            sub_events=list(general_response.sub_events),
             categories=categories,
             casualties=casualties,
             casualty_evidence=casualty_evidence,
@@ -713,6 +793,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 field_name="action_description",
                 raw_message_id=raw_message_id,
             ),
+            sub_events=list(general_response.sub_events),
             categories=categories,
             casualties=casualties,
             casualty_evidence=casualty_evidence,

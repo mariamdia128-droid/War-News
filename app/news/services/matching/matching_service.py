@@ -22,7 +22,7 @@ from app.news.dtos import (
     MatchResultDTO,
     MatchResultStatus,
 )
-from app.news.dtos.match_result_dto import VillageMatchResult
+from app.news.dtos.match_result_dto import SubEventMatchResult, VillageMatchResult
 from app.news.interfaces import MatchingServiceInterface
 from app.news.interfaces import (
     ConditionRepositoryInterface,
@@ -153,6 +153,10 @@ class MatchingService(MatchingServiceInterface):
             extraction_result.action_description,
             self.conditions.find_similar,
         )
+        sub_event_matches = [
+            self._match_sub_event(index, sub_event)
+            for index, sub_event in enumerate(extraction_result.sub_events)
+        ]
         return MatchResultDTO(
             village_matches=village_matches,
             any_village_low_confidence=any_village_low_confidence,
@@ -161,6 +165,22 @@ class MatchingService(MatchingServiceInterface):
             condition_match_status=condition.status,
             condition_review_required=condition.status != MatchResultStatus.matched,
             raw_condition_text=extraction_result.action_description,
+            sub_event_matches=sub_event_matches,
+        )
+
+    def _match_sub_event(self, index: int, sub_event) -> SubEventMatchResult:
+        condition = self._match_mention(
+            sub_event.action_description,
+            self.conditions.find_similar,
+        )
+        return SubEventMatchResult(
+            index=index,
+            action_description=sub_event.action_description,
+            evidence_span=sub_event.evidence_span,
+            matched_condition_id=condition.matched_id,
+            condition_confidence=condition.confidence,
+            condition_match_status=condition.status,
+            condition_review_required=condition.status != MatchResultStatus.matched,
         )
 
     @staticmethod
