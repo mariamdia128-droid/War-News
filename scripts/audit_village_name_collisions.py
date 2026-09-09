@@ -175,13 +175,27 @@ def run_audit(output_path: Path) -> dict[str, int]:
                     EXISTS (
                         SELECT 1
                         FROM incident_updates AS updates
+                        JOIN users
+                          ON users.id = updates.performed_by
+                        JOIN roles
+                          ON roles.id = users.role_id
                         WHERE updates.incident_id = i.id
+                          AND roles.name::text IN ('admin', 'super_admin')
                           AND (
                             updates.old_values ? 'village_id'
                             OR updates.new_values ? 'village_id'
                             OR updates.old_values ? 'village'
                             OR updates.new_values ? 'village'
                           )
+                          AND COALESCE(
+                                updates.old_values->>'village_id',
+                                updates.old_values->>'village'
+                              )
+                              IS DISTINCT FROM
+                              COALESCE(
+                                updates.new_values->>'village_id',
+                                updates.new_values->>'village'
+                              )
                     ) AS admin_corrected
                 FROM incidents AS i
                 JOIN raw_messages AS r

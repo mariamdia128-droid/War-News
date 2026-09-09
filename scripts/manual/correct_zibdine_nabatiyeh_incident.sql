@@ -37,6 +37,36 @@ BEGIN
             affected_incident_id;
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+        FROM incident_updates AS updates
+        JOIN users
+          ON users.id = updates.performed_by
+        JOIN roles
+          ON roles.id = users.role_id
+        WHERE updates.incident_id = affected_incident_id
+          AND roles.name::text IN ('admin', 'super_admin')
+          AND (
+            updates.old_values ? 'village_id'
+            OR updates.new_values ? 'village_id'
+            OR updates.old_values ? 'village'
+            OR updates.new_values ? 'village'
+          )
+          AND COALESCE(
+                updates.old_values->>'village_id',
+                updates.old_values->>'village'
+              )
+              IS DISTINCT FROM
+              COALESCE(
+                updates.new_values->>'village_id',
+                updates.new_values->>'village'
+              )
+    ) THEN
+        RAISE EXCEPTION
+            'Incident % has a recorded human village correction',
+            affected_incident_id;
+    END IF;
+
     UPDATE incidents
     SET
         village_id = target_village_id,
