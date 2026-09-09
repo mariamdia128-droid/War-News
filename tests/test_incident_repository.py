@@ -332,6 +332,32 @@ def test_incident_list_item_accepts_excel_import_without_raw_message() -> None:
     assert item.raw_status is None
 
 
+def test_incident_list_item_accepts_story_group_and_village_id() -> None:
+    group_id = uuid4()
+    item = IncidentListItemDTO.model_validate(
+        {
+            "id": uuid4(),
+            "raw_message_id": 42,
+            "raw_status": "materialized",
+            "village": "Kfar Roummane",
+            "condition": "Bombs",
+            "event_date": date(2026, 9, 7),
+            "khabar": "غارة على منزل",
+            "source": "Telegram",
+            "source_reference": "channel",
+            "matched": True,
+            "duplicate_flag": "none",
+            "details_pending": False,
+            "created_at": datetime(2026, 9, 7, 11, 33, tzinfo=timezone.utc),
+            "village_id": 851,
+            "story_group_id": group_id,
+        }
+    )
+
+    assert item.village_id == 851
+    assert item.story_group_id == group_id
+
+
 def test_list_filters_needs_verification_requires_active_duplicate_flag() -> None:
     filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="needs_verification")

@@ -23,6 +23,8 @@ from app.news.dtos.incident_dto import (
     IncidentListResponse,
     IncidentUpdateDTO,
     IncidentVerificationDTO,
+    RelatedIncidentDTO,
+    TollRevisionDTO,
 )
 from app.news.dtos.import_dto import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
 from app.news.dtos.match_result_dto import (
@@ -56,6 +58,8 @@ __all__ = [
     "IncidentDetailsPatchDTO",
     "IncidentUpdateDTO",
     "IncidentVerificationDTO",
+    "RelatedIncidentDTO",
+    "TollRevisionDTO",
     "WorkbookImportRowErrorDTO",
     "WorkbookImportSummaryDTO",
     "MatchResultDTO",

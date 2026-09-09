@@ -35,6 +35,8 @@ class IncidentListItemDTO(BaseModel):
     version: int = 1
     locked_by_user_id: UUID | None = None
     edit_lock_expires_at: datetime | None = None
+    village_id: int | None = None
+    story_group_id: UUID | None = None
 
 
 class IncidentListParams(BaseModel):
@@ -117,6 +119,28 @@ class BulletinCasualtyGroupDTO(BaseModel):
     resolved_by_raw_message_id: int | None
 
 
+class TollRevisionDTO(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    updated_at: datetime
+    old_deaths: int | None = None
+    old_injuries: int | None = None
+    new_deaths: int | None = None
+    new_injuries: int | None = None
+
+
+class RelatedIncidentDTO(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    village: str | None = None
+    condition: str | None = None
+    raw_message_id: int | None = None
+    relation: Literal["same_bulletin_other_village", "same_location_sub_event"]
+    total_deaths: int | None = None
+    total_injuries: int | None = None
+
+
 class IncidentDetailDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True, frozen=True)
 
@@ -161,6 +185,8 @@ class IncidentDetailDTO(BaseModel):
     alternate_candidate_village_name: str | None = None
     casualty_demographics: CasualtyDemographicsDTO
     bulletin_group: BulletinCasualtyGroupDTO | None = None
+    toll_revisions: list[TollRevisionDTO] = Field(default_factory=list)
+    related_incidents: list[RelatedIncidentDTO] = Field(default_factory=list)
     lebanese_army: IncidentCategorySectionDTO | None = None
     unifil: IncidentCategorySectionDTO | None = None
     municipality: IncidentCategorySectionDTO | None = None

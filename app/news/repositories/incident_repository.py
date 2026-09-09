@@ -37,6 +37,8 @@ from app.news.dtos import (
     IncidentListParams,
     IncidentListResponse,
     IncidentUpdateDTO,
+    RelatedIncidentDTO,
+    TollRevisionDTO,
 )
 from app.news.interfaces import IncidentRepositoryInterface
 from app.news.models import (
@@ -71,6 +73,13 @@ from app.news.services.incident_details.casualty_transition_backstop import (
 from app.news.services.incident_details.incident_detail_merge import merge_incident_detail_fields
 from app.news.services.dedup.text_similarity import event_token_similarity
 from app.sources.models import Source, SourceType
+
+
+def _optional_count(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
 
 
 @dataclass(frozen=True)
@@ -180,6 +189,8 @@ class IncidentRepository(IncidentRepositoryInterface):
                 func.coalesce(Incident.version, 1).label("version"),
                 Incident.locked_by_user_id,
                 Incident.edit_lock_expires_at,
+                Incident.village_id,
+                Incident.story_group_id,
             )
             .select_from(Incident)
             .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
@@ -462,9 +473,101 @@ class IncidentRepository(IncidentRepositoryInterface):
                 children_i=detail.children_i if detail is not None else None,
             ),
             "bulletin_group": bulletin_group,
+            "toll_revisions": self._toll_revisions_for(incident.id),
+            "related_incidents": self._related_incidents_for(incident),
             **serialize_incident_category_sections(detail),
         }
         return IncidentDetailDTO.model_validate(values)
+
+    def _toll_revisions_for(self, incident_id: UUID) -> list[TollRevisionDTO]:
+        updates = self.db.scalars(
+            select(IncidentUpdate)
+            .where(
+                IncidentUpdate.incident_id == incident_id,
+                IncidentUpdate.action == UpdateAction.pipeline_merge,
+            )
+            .order_by(IncidentUpdate.created_at.asc())
+        ).all()
+        revisions: list[TollRevisionDTO] = []
+        for update in updates:
+            new_values = update.new_values or {}
+            if not new_values.get("story_revision"):
+                continue
+            old_values = update.old_values or {}
+            revisions.append(
+                TollRevisionDTO(
+                    updated_at=update.created_at,
+                    old_deaths=_optional_count(
+                        old_values.get("total_deaths"), old_values.get("deaths")
+                    ),
+                    old_injuries=_optional_count(
+                        old_values.get("total_injuries"), old_values.get("injuries")
+                    ),
+                    new_deaths=_optional_count(
+                        new_values.get("total_deaths"), new_values.get("deaths")
+                    ),
+                    new_injuries=_optional_count(
+                        new_values.get("total_injuries"), new_values.get("injuries")
+                    ),
+                )
+            )
+        return revisions
+
+    def _related_incidents_for(self, incident: Incident) -> list[RelatedIncidentDTO]:
+        clauses: list[Any] = []
+        if incident.story_group_id is not None:
+            clauses.append(Incident.story_group_id == incident.story_group_id)
+        if incident.raw_message_id is not None:
+            clauses.append(Incident.raw_message_id == incident.raw_message_id)
+        if not clauses:
+            return []
+        rows = self.db.execute(
+            select(
+                Incident,
+                Condition.action_en.label("condition"),
+                func.coalesce(Village.ref_name_en, Village.cad_name).label("village"),
+            )
+            .outerjoin(Condition, Condition.id == Incident.condition_id)
+            .outerjoin(Village, Village.id == Incident.village_id)
+            .where(
+                Incident.id != incident.id,
+                Incident.is_deleted.is_(False),
+                or_(*clauses),
+            )
+            .order_by(Incident.event_time.asc(), Incident.created_at.asc())
+        ).all()
+        related: list[RelatedIncidentDTO] = []
+        seen: set[UUID] = set()
+        for row in rows:
+            sibling: Incident = row.Incident
+            if sibling.id in seen:
+                continue
+            seen.add(sibling.id)
+            same_bulletin = (
+                incident.raw_message_id is not None
+                and sibling.raw_message_id == incident.raw_message_id
+            )
+            same_village = (
+                incident.village_id is not None
+                and sibling.village_id == incident.village_id
+            )
+            relation = (
+                "same_bulletin_other_village"
+                if same_bulletin and not same_village
+                else "same_location_sub_event"
+            )
+            related.append(
+                RelatedIncidentDTO(
+                    id=sibling.id,
+                    village=row.village,
+                    condition=row.condition,
+                    raw_message_id=sibling.raw_message_id,
+                    relation=relation,
+                    total_deaths=sibling.total_deaths,
+                    total_injuries=sibling.total_injuries,
+                )
+            )
+        return related
 
     def create_manual(self, payload: IncidentCreateDTO, created_by: UUID) -> IncidentDetailDTO:
         village_name = payload.village.strip()

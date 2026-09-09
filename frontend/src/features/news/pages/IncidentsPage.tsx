@@ -27,6 +27,45 @@ const DEFAULT_PAGE_SIZE = 150;
 const twoLineClampClass =
   "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]";
 
+const relatedSourceNotes = (row: Incident, pageRows: Incident[]): string[] => {
+  const notes: string[] = [];
+  const sameBulletin = pageRows.filter(
+    (other) =>
+      other.id !== row.id &&
+      row.raw_message_id != null &&
+      other.raw_message_id === row.raw_message_id,
+  );
+  const sameGroup = pageRows.filter(
+    (other) =>
+      other.id !== row.id &&
+      row.story_group_id != null &&
+      other.story_group_id === row.story_group_id,
+  );
+  const sameLocation = [...sameBulletin, ...sameGroup].find((other) => {
+    if (row.village_id == null || other.village_id == null) {
+      return other.story_group_id != null && other.story_group_id === row.story_group_id;
+    }
+    return other.village_id === row.village_id;
+  });
+  const otherVillage = sameBulletin.find(
+    (other) =>
+      row.village_id != null &&
+      other.village_id != null &&
+      other.village_id !== row.village_id,
+  );
+  if (sameLocation) {
+    notes.push(
+      `Related: ${sameLocation.condition || "related action"}, same location`,
+    );
+  }
+  if (otherVillage) {
+    notes.push("Related: same bulletin, different village");
+  } else if (!sameLocation && sameBulletin.length > 0) {
+    notes.push("Source: same bulletin as another village on this page");
+  }
+  return notes;
+};
+
 const preMaterializationStatus = (
   rawStatus: string | null,
   incidentId: string | null,
@@ -137,22 +176,6 @@ export const IncidentsPage = () => {
   useLiveQueryTitleAddon(data?.latest_incident_at ?? null, isFetching);
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
-
-  // Collect raw_message_ids that appear on more than one incident in the current
-  // page - these share the same source bulletin (multi-village extraction).
-  const sharedBulletinIds = useMemo(() => {
-    const counts = new Map<number, number>();
-    for (const row of rows) {
-      if (row.raw_message_id != null) {
-        counts.set(row.raw_message_id, (counts.get(row.raw_message_id) ?? 0) + 1);
-      }
-    }
-    const shared = new Set<number>();
-    for (const [id, count] of counts) {
-      if (count > 1) shared.add(id);
-    }
-    return shared;
-  }, [rows]);
   const flaggedCount = data?.needs_verification_count ?? 0;
   const casualtiesCount = data?.casualties_count ?? 0;
   const verificationOptions: SelectOption[] = [
@@ -249,12 +272,11 @@ export const IncidentsPage = () => {
           >
             {row.khabar}
           </p>
-          {row.raw_message_id != null &&
-          sharedBulletinIds.has(row.raw_message_id) ? (
-            <p className="text-caption text-text-muted">
-              Source: same bulletin as another village on this page
+          {relatedSourceNotes(row, rows).map((note) => (
+            <p key={note} className="text-caption text-text-muted">
+              {note}
             </p>
-          ) : null}
+          ))}
         </div>
       ),
     },

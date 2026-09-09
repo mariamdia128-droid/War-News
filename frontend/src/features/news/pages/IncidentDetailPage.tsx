@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { Button, ConfirmDialog, Dialog, EmptyState, Input, Label } from "../../../components/ui";
-import { formatDate, formatRelativeTime, formatTimeGap } from "../../../lib/formatters";
+import { formatDate, formatDateTime, formatRelativeTime, formatTimeGap } from "../../../lib/formatters";
 import { roleBaseFromPath } from "../../../lib/rolePath";
 import { useAuthStore } from "../../../stores/authStore";
 import { useIncidentDuplicateCandidateQuery, useIncidentQuery } from "../hooks";
@@ -504,6 +504,18 @@ export const IncidentDetailPage = () => {
         <h2 className="text-h4 font-semibold text-text-primary">
           Casualty demographics
         </h2>
+        {(incident.toll_revisions ?? []).length > 0 ? (
+          <div className="mt-3 space-y-1">
+            {(incident.toll_revisions ?? []).map((revision) => (
+              <p
+                key={revision.updated_at}
+                className="text-caption text-text-muted"
+              >
+                {`Toll updated ${formatDateTime(revision.updated_at)} — was ${revision.old_deaths ?? "—"}/${revision.old_injuries ?? "—"}, now ${revision.new_deaths ?? "—"}/${revision.new_injuries ?? "—"}`}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {casualtyFields.map(({ key, label }) => (
             <div
@@ -535,6 +547,26 @@ export const IncidentDetailPage = () => {
           ))}
         </dl>
       </section>
+
+      {(incident.related_incidents ?? []).length > 0 ? (
+        <section className="rounded-lg border border-border bg-surface-raised p-5">
+          <h2 className="text-h4 font-semibold text-text-primary">Related incidents</h2>
+          <ul className="mt-3 space-y-2">
+            {(incident.related_incidents ?? []).map((related) => (
+              <li key={related.id}>
+                <Link
+                  className="text-small font-semibold text-accent hover:text-accent-hover"
+                  to={`${roleBase}/incidents/${related.id}`}
+                >
+                  {related.relation === "same_bulletin_other_village"
+                    ? `Related: same bulletin, different village${related.village ? ` (${related.village})` : ""}`
+                    : `Related: ${related.condition || "related action"}, same location`}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {incident.bulletin_group ? (
         <section className="rounded-lg border border-accent bg-surface-raised p-5">

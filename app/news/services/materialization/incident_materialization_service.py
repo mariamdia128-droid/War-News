@@ -149,6 +149,7 @@ def _new_incident_payload(incident: Incident) -> str:
         "raw_message_id": incident.raw_message_id,
         "raw_status": raw_message.status.value if raw_message is not None else None,
         "village_id": incident.village_id,
+        "story_group_id": str(incident.story_group_id) if incident.story_group_id else None,
         "condition_id": incident.condition_id,
         "village": (
             village.ref_name_en or village.cad_name if village is not None else None
