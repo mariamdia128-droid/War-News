@@ -119,6 +119,12 @@ class Settings(BaseSettings):
     bulletin_reconciliation_window_hours: int = 60
     bulletin_reconciliation_sweep_interval_seconds: int = 1800
     bulletin_reconciliation_village_set_min_overlap: float = 1.0
+    # Story-continuation candidate search (Phase 1): same village from
+    # match_result, no condition_id gate, wide window, embedding rank.
+    # Shares village_ids_from_match_result with bulletin reconciliation.
+    story_candidate_window_hours: int = 72
+    story_candidate_embedding_threshold: float = 0.78
+    story_candidate_max_results: int = 10
     pg_application_name: str = "war-news"
     pipeline_role: str = "api"
     pipeline_worker_poll_seconds: float = 2.0

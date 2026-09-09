@@ -86,6 +86,17 @@ class FastDedupCandidate:
     token_similarity: float | None = None
 
 
+@dataclass(frozen=True)
+class StoryCandidate:
+    """Prior incident in the story-continuation window (no condition gate)."""
+
+    incident: Incident
+    time_gap_seconds: float
+    embedding_similarity: float | None
+    text_similarity: float | None = None
+    token_similarity: float | None = None
+
+
 class IncidentRepository(IncidentRepositoryInterface):
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -1291,6 +1302,111 @@ class IncidentRepository(IncidentRepositoryInterface):
 
         candidates.sort(key=lambda c: c.time_gap_seconds)
         return candidates
+
+    def find_story_candidates(
+        self,
+        *,
+        village_ids: set[int],
+        message_datetime: datetime,
+        window_hours: int,
+        embedding_threshold: float,
+        max_results: int,
+        candidate_text: str | None = None,
+        candidate_embedding: list[float] | None = None,
+        exclude_raw_message_id: int | None = None,
+    ) -> list[StoryCandidate]:
+        """Same-village prior incidents inside a wide hour window.
+
+        Unlike :meth:`find_fast_dedup_candidates` this path does **not**
+        require ``condition_id`` equality. Condition match/mismatch is an
+        input to story-relationship classification, not a pre-filter.
+
+        Ranked by embedding similarity descending and capped at
+        ``max_results``. Rows below ``embedding_threshold`` or without an
+        embedding are dropped. Returns empty when no village ids or no
+        candidate embedding is supplied.
+        """
+        village_ids = {
+            village_id
+            for village_id in village_ids
+            if isinstance(village_id, int) and not isinstance(village_id, bool)
+        }
+        if not village_ids or candidate_embedding is None or max_results <= 0:
+            return []
+
+        naive_dt = message_datetime.replace(tzinfo=None)
+        lookup_days = max(1, (int(window_hours) + 23) // 24)
+        event_date = naive_dt.date()
+        start_date = event_date - timedelta(days=lookup_days)
+        end_date = event_date + timedelta(days=lookup_days)
+        max_gap_seconds = float(window_hours) * 3600.0
+
+        columns: list[Any] = [Incident]
+        want_text = bool(candidate_text and candidate_text.strip())
+        columns.append(
+            (
+                1.0
+                - Incident.khabar_embedding.cosine_distance(candidate_embedding)
+            ).label("embedding_similarity")
+        )
+        if want_text:
+            columns.append(
+                func.word_similarity(
+                    normalize_arabic_sql(Incident.khabar),
+                    normalize_arabic_sql(literal(candidate_text)),
+                ).label("text_similarity")
+            )
+
+        filters = [
+            Incident.village_id.in_(village_ids),
+            Incident.is_deleted.is_(False),
+            Incident.event_date >= start_date,
+            Incident.event_date <= end_date,
+            Incident.khabar_embedding.is_not(None),
+        ]
+        if exclude_raw_message_id is not None:
+            filters.append(Incident.raw_message_id != exclude_raw_message_id)
+
+        rows = self.db.execute(select(*columns).where(*filters)).all()
+
+        candidates: list[StoryCandidate] = []
+        for row in rows:
+            incident = row[0]
+            embedding_value = row[1]
+            if embedding_value is None:
+                continue
+            embedding_similarity = float(embedding_value)
+            if embedding_similarity < embedding_threshold:
+                continue
+            text_similarity: float | None = None
+            if want_text:
+                text_similarity = float(row[2] or 0.0)
+            incident_dt = datetime.combine(
+                incident.event_date, incident.event_time or time(0, 0)
+            )
+            gap_seconds = abs((incident_dt - naive_dt).total_seconds())
+            if gap_seconds > max_gap_seconds:
+                continue
+            candidates.append(
+                StoryCandidate(
+                    incident=incident,
+                    time_gap_seconds=gap_seconds,
+                    embedding_similarity=embedding_similarity,
+                    text_similarity=text_similarity,
+                    token_similarity=event_token_similarity(
+                        incident.khabar,
+                        candidate_text,
+                    ),
+                )
+            )
+
+        candidates.sort(
+            key=lambda c: (
+                -(c.embedding_similarity or 0.0),
+                c.time_gap_seconds,
+            )
+        )
+        return candidates[:max_results]
 
     def find_cross_village_dedup_candidates(
         self,
