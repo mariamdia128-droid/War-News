@@ -15,7 +15,9 @@ from app.news.models import MessageStatus
 from app.news.repositories.pipeline_claim_repository import PipelineClaimRepository
 from app.news.repositories.raw_message_repository import RawMessageRepository
 from app.news.services.matching.condition_evidence_override import apply_condition_evidence_override
-from app.news.services.incident_details.casualty_gender_evidence import apply_explicit_arabic_gender_evidence
+from app.news.services.incident_details.casualty_gender_evidence import (
+    apply_casualty_gender_backstops,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,16 +61,13 @@ def run_tier1_extraction_for_message(raw_message_id: int) -> None:
             post_text=post_text,
             raw_message_id=raw_message_id,
         )
+        result = apply_casualty_gender_backstops(post_text, result)
         result = result.model_copy(
             update={
                 "action_description": _final_action_description(
                     post_text,
                     result.action_description,
                     cnrs_classification,
-                ),
-                "casualties": apply_explicit_arabic_gender_evidence(
-                    post_text,
-                    result.casualties,
                 ),
             }
         )

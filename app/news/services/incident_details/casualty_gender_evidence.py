@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 
-from app.llm.dtos import ExtractionCasualties
+from app.core.text_normalization import normalize_arabic_text
+from app.llm.dtos import ExtractionCasualties, ExtractionResult, ExtractionSubEvent
 
 
 _ARABIC_LETTER = r"\u0600-\u06ff"
@@ -112,3 +113,91 @@ def apply_explicit_arabic_gender_evidence(
             values[female_key] = confirmed_count
             values[male_key] = None
     return ExtractionCasualties.model_validate(values)
+
+
+_MALE_ROLE_NOUNS = (
+    "مسعف",
+    "جندي",
+    "عنصر",
+    "موظف",
+    "شرطي",
+    "اطفائي",
+    "ممرض",
+    "صحافي",
+    "صحفي",
+    "اعلامي",
+)
+_FEMALE_ROLE_NOUNS = (
+    "مسعفه",
+    "موظفه",
+    "ممرضه",
+    "شرطيه",
+    "صحافيه",
+    "صحفيه",
+    "اعلاميه",
+)
+
+
+def _role_alternation(roles: tuple[str, ...]) -> str:
+    return "|".join(re.escape(role) for role in roles)
+
+
+_MALE_OCCUPATION_DEATH = re.compile(
+    rf"(?:شهيد|استشهاد)\s+(?:ال)?(?:{_role_alternation(_MALE_ROLE_NOUNS)})"
+    rf"(?![{_ARABIC_LETTER}])"
+)
+_FEMALE_OCCUPATION_DEATH = re.compile(
+    rf"(?:شهيده|استشهاد)\s+(?:ال)?(?:{_role_alternation(_FEMALE_ROLE_NOUNS)})"
+    rf"(?![{_ARABIC_LETTER}])"
+)
+
+
+def apply_gendered_occupation_casualty_evidence(
+    text: str,
+    casualties: ExtractionCasualties,
+) -> ExtractionCasualties:
+    """Fill gender from unambiguous occupation grammar, without covering the total.
+
+    ``شهيد مسعف`` / ``استشهاد مسعف`` increment ``male_deaths`` even when the
+    bulletin also reports a larger mixed toll. Existing gender fields are left
+    unchanged.
+    """
+    normalized = normalize_arabic_text(text or "")
+    if not normalized:
+        return casualties
+    values = casualties.model_dump(mode="python")
+    female_hits = len(_FEMALE_OCCUPATION_DEATH.findall(normalized))
+    male_hits = len(_MALE_OCCUPATION_DEATH.findall(normalized))
+    if female_hits and values.get("female_deaths") is None:
+        values["female_deaths"] = female_hits
+    if male_hits and values.get("male_deaths") is None:
+        values["male_deaths"] = male_hits
+    return ExtractionCasualties.model_validate(values)
+
+
+def apply_casualty_gender_backstops(
+    text: str,
+    result: ExtractionResult,
+) -> ExtractionResult:
+    """Apply explicit-form and occupation gender backstops to root and sub-events."""
+    root = apply_gendered_occupation_casualty_evidence(
+        text,
+        apply_explicit_arabic_gender_evidence(text, result.casualties),
+    )
+    sub_events: list[ExtractionSubEvent] = []
+    for sub_event in result.sub_events:
+        span = sub_event.evidence_span or text
+        sub_events.append(
+            sub_event.model_copy(
+                update={
+                    "casualties": apply_gendered_occupation_casualty_evidence(
+                        span,
+                        apply_explicit_arabic_gender_evidence(
+                            span,
+                            sub_event.casualties,
+                        ),
+                    )
+                }
+            )
+        )
+    return result.model_copy(update={"casualties": root, "sub_events": sub_events})
