@@ -75,7 +75,7 @@ class _SessionStub:
         return self.scalar_result
 
     def execute(self, _statement, _params=None):
-        return None
+        return SimpleNamespace(all=lambda: [])
 
 
 @pytest.mark.parametrize("signal", ["duplicate_flag", "insufficient_score"])

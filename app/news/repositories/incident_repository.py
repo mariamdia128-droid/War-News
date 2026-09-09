@@ -5,7 +5,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     and_,
@@ -1192,6 +1192,109 @@ class IncidentRepository(IncidentRepositoryInterface):
                 )
             )
         self.db.add(existing)
+
+    def apply_story_revision(
+        self,
+        existing: Incident,
+        new_candidate_data: dict[str, Any],
+        raw_message_id: int,
+    ) -> None:
+        """Update casualty fields supplied by a later report of the same event.
+
+        Unmentioned fields are left unchanged. The same source message cannot
+        apply its revision twice (mirrors transition-merge idempotency).
+        """
+        if self._story_revision_already_applied(existing.id, raw_message_id):
+            return
+
+        raw_message = self.db.get(RawMessage, raw_message_id)
+        source_label = self._merge_source_label(raw_message)
+        detail = self.db.scalar(
+            select(IncidentDetail).where(IncidentDetail.incident_id == existing.id)
+        )
+        old_values = self._snapshot_merge_audit(existing, detail)
+
+        for field in ("deaths", "injuries", "total_deaths", "total_injuries"):
+            incoming = new_candidate_data.get(field)
+            if isinstance(incoming, int) and not isinstance(incoming, bool):
+                setattr(existing, field, incoming)
+        if isinstance(new_candidate_data.get("martyrs"), str) and new_candidate_data["martyrs"].strip():
+            existing.martyrs = new_candidate_data["martyrs"].strip()
+
+        mapped_fields = new_candidate_data.get("mapped_fields") or {}
+        demographic_updates = {
+            key: new_candidate_data[key]
+            for key in (
+                "male_d",
+                "male_i",
+                "female_d",
+                "female_i",
+                "children_d",
+                "children_i",
+            )
+            if new_candidate_data.get(key) is not None
+        }
+        if mapped_fields or demographic_updates:
+            if detail is None:
+                detail = IncidentDetail(incident_id=existing.id)
+                self.db.add(detail)
+                self.db.flush()
+            if mapped_fields:
+                merge_incident_detail_fields(detail, mapped_fields)
+            for key, value in demographic_updates.items():
+                setattr(detail, key, value)
+            self.db.add(detail)
+
+        new_values = self._snapshot_merge_audit(existing, detail)
+        khabar = new_candidate_data.get("khabar")
+        new_values = {
+            **new_values,
+            "story_revision": True,
+            "story_relationship": "revision",
+            "merged_from": {
+                "raw_message_id": raw_message_id,
+                "channel": source_label,
+                "khabar": khabar if isinstance(khabar, str) else None,
+            },
+        }
+        self.db.add(
+            IncidentUpdate(
+                incident_id=existing.id,
+                action=UpdateAction.pipeline_merge,
+                old_values=old_values,
+                new_values=new_values,
+                performed_by=None,
+            )
+        )
+        self.db.add(existing)
+
+    def _story_revision_already_applied(
+        self,
+        incident_id: UUID,
+        raw_message_id: int,
+    ) -> bool:
+        return (
+            self.db.scalar(
+                select(IncidentUpdate.id).where(
+                    IncidentUpdate.incident_id == incident_id,
+                    IncidentUpdate.action == UpdateAction.pipeline_merge,
+                    IncidentUpdate.new_values["merged_from"]["raw_message_id"].astext
+                    == str(raw_message_id),
+                    IncidentUpdate.new_values.has_key(  # type: ignore[attr-defined]
+                        "story_revision"
+                    ),
+                )
+            )
+            is not None
+        )
+
+    def link_story_group(self, left: Incident, right: Incident) -> UUID:
+        group_id = left.story_group_id or right.story_group_id or uuid4()
+        left.story_group_id = group_id
+        right.story_group_id = group_id
+        self.db.add(left)
+        self.db.add(right)
+        return group_id
 
     def find_active_incident_for_raw_message_village(
         self,

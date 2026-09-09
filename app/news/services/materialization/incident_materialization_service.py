@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.text_sanitizer import strip_emoji_and_pictographs
-from app.llm.dtos import CasualtyScope, ExtractionCasualties, ExtractionResult, VillageRole
+from app.llm.dtos import (
+    CasualtyScope,
+    ExtractionCasualties,
+    ExtractionResult,
+    StoryRelationship,
+    VillageRole,
+)
 from app.news.interfaces import DedupMatchingInterface
 from app.news.models import (
     Incident,
@@ -25,6 +31,7 @@ from app.news.models import (
     RawMessage,
     UpdateAction,
 )
+from app.news.repositories.incident_repository import IncidentRepository
 from app.news.repositories.emergency_organization_repository import (
     EmergencyOrganizationRepository,
 )
@@ -46,6 +53,7 @@ from app.news.services.dedup.fast_path_dedup import (
     FastPathDedupOutcome,
     FastPathDedupService,
 )
+from app.news.services.dedup.story_continuation_router import StoryContinuationRouter
 from app.news.services.pipeline.pipeline_advisory_lock import acquire_fast_path_village_lock
 from app.news.services.dedup.fast_path_eligibility import (
     ELIGIBLE_MATCH_STATUSES,
@@ -201,6 +209,7 @@ class IncidentMaterializationService:
         dedup_service: DedupMatchingInterface | None = None,
         emergency_org_matcher: EmergencyOrganizationMatchingService | None = None,
         bulletin_groups: BulletinCasualtyGroupRepository | None = None,
+        story_router: StoryContinuationRouter | None = None,
     ) -> None:
         self.db = db
         self.dedup_service = dedup_service
@@ -210,6 +219,9 @@ class IncidentMaterializationService:
             or EmergencyOrganizationMatchingService(
                 EmergencyOrganizationRepository(db)
             )
+        )
+        self.story_router = story_router or StoryContinuationRouter(
+            IncidentRepository(db)
         )
         self.stats = MaterializationStats()
         self.fast_stats = FastMaterializationStats()
@@ -320,6 +332,70 @@ class IncidentMaterializationService:
                 continue
 
             materializable_villages += 1
+
+            story_route = None
+            if decision.outcome != FastPathDedupOutcome.confident_duplicate:
+                story_route = self.story_router.route_for_village(
+                    match_result=match_result,
+                    message_datetime=event_datetime,
+                    candidate_text=representative.raw_text,
+                    candidate_embedding=representative.content_embedding,
+                    exclude_raw_message_id=representative.id,
+                    village_id=village_id,
+                )
+
+            if (
+                story_route is not None
+                and story_route.relationship == StoryRelationship.duplicate
+            ):
+                confident_duplicate_villages += 1
+                representative_raw_message_id = story_route.candidate.raw_message_id
+                self._merge_into_canonical(
+                    fast_dedup=fast_dedup,
+                    canonical_incident=story_route.candidate,
+                    representative=representative,
+                    extraction=extraction,
+                    village_casualties=village_casualties,
+                    village_deaths=village_deaths,
+                    village_injuries=village_injuries,
+                    origin_villages=origin_villages,
+                    is_multi_village=is_multi_village,
+                    similarity_score=1.0,
+                    similarity_method="story",
+                )
+                if holds_village_lock:
+                    self.db.commit()
+                continue
+
+            if (
+                story_route is not None
+                and story_route.relationship == StoryRelationship.revision
+            ):
+                confident_duplicate_villages += 1
+                representative_raw_message_id = story_route.candidate.raw_message_id
+                self.story_router.incidents.apply_story_revision(
+                    existing=story_route.candidate,
+                    new_candidate_data=self._story_revision_payload(
+                        representative=representative,
+                        extraction=extraction,
+                        village_casualties=village_casualties,
+                        village_deaths=village_deaths,
+                        village_injuries=village_injuries,
+                        is_multi_village=is_multi_village,
+                    ),
+                    raw_message_id=representative.id,
+                )
+                self.db.commit()
+                logger.info(
+                    "raw_message_id=%s village_id=%s story revision applied to "
+                    "incident_id=%s",
+                    representative.id,
+                    village_id,
+                    story_route.candidate.id,
+                )
+                if holds_village_lock:
+                    self.db.commit()
+                continue
 
             if decision.outcome == FastPathDedupOutcome.possible_duplicate:
                 # Flag for human review: materialize the row and link it to the
@@ -467,6 +543,16 @@ class IncidentMaterializationService:
                 else None,
             )
             if incident is not None:
+                if (
+                    story_route is not None
+                    and story_route.relationship
+                    == StoryRelationship.distinct_sub_event
+                ):
+                    self.story_router.incidents.link_story_group(
+                        incident,
+                        story_route.candidate,
+                    )
+                    self.db.commit()
                 created.append(incident)
 
         if (
@@ -504,6 +590,114 @@ class IncidentMaterializationService:
             )
 
         return created
+
+    def _merge_into_canonical(
+        self,
+        *,
+        fast_dedup: FastPathDedupService,
+        canonical_incident: Incident,
+        representative: RawMessage,
+        extraction: ExtractionResult,
+        village_casualties: ExtractionCasualties,
+        village_deaths: int | None,
+        village_injuries: int | None,
+        origin_villages: list[str],
+        is_multi_village: bool,
+        similarity_score: float,
+        similarity_method: str,
+    ) -> None:
+        mapped_fields = map_categories(
+            extraction.categories,
+            emergency_org_matcher=self.emergency_org_matcher,
+        )
+        if is_multi_village:
+            mapped_fields, _ = suppress_category_casualties(mapped_fields)
+        total_deaths, total_injuries = compute_rollups(
+            mapped_fields,
+            village_casualties,
+        )
+        payload = {
+            "deaths": village_deaths,
+            "injuries": village_injuries,
+            "total_deaths": total_deaths,
+            "total_injuries": total_injuries,
+            "khabar": representative.raw_text or "",
+            "origin_villages": origin_villages,
+            "mapped_fields": mapped_fields,
+            "casualty_transitions": [
+                item.model_dump(mode="json")
+                for item in extraction.casualty_transitions
+            ],
+        }
+        incidents = getattr(fast_dedup, "incidents", None) or self.story_router.incidents
+        try:
+            if self.dedup_service is not None:
+                self.dedup_service.merge_into_incident(
+                    existing=canonical_incident,
+                    new_candidate_data=payload,
+                    raw_message_id=representative.id,
+                )
+            else:
+                incidents.merge_existing(
+                    existing=canonical_incident,
+                    new_candidate_data=payload,
+                    raw_message_id=representative.id,
+                )
+            create_match = getattr(incidents, "create_fast_path_duplicate_match", None)
+            if create_match is not None:
+                create_match(
+                    canonical_incident=canonical_incident,
+                    raw_message_id=representative.id,
+                    status=MatchStatus.confirmed_duplicate,
+                    similarity_score=similarity_score,
+                )
+            self.db.commit()
+            logger.info(
+                "raw_message_id=%s story/fast-path merged into incident_id=%s "
+                "score=%.3f method=%s",
+                representative.id,
+                canonical_incident.id,
+                similarity_score,
+                similarity_method,
+            )
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _story_revision_payload(
+        self,
+        *,
+        representative: RawMessage,
+        extraction: ExtractionResult,
+        village_casualties: ExtractionCasualties,
+        village_deaths: int | None,
+        village_injuries: int | None,
+        is_multi_village: bool,
+    ) -> dict[str, Any]:
+        mapped_fields = map_categories(
+            extraction.categories,
+            emergency_org_matcher=self.emergency_org_matcher,
+        )
+        if is_multi_village:
+            mapped_fields, _ = suppress_category_casualties(mapped_fields)
+        total_deaths, total_injuries = compute_rollups(
+            mapped_fields,
+            village_casualties,
+        )
+        return {
+            "deaths": village_deaths,
+            "injuries": village_injuries,
+            "total_deaths": total_deaths,
+            "total_injuries": total_injuries,
+            "khabar": representative.raw_text or "",
+            "mapped_fields": mapped_fields,
+            "male_d": village_casualties.male_deaths,
+            "male_i": village_casualties.male_injuries,
+            "female_d": village_casualties.female_deaths,
+            "female_i": village_casualties.female_injuries,
+            "children_d": village_casualties.children_deaths,
+            "children_i": village_casualties.children_injuries,
+        }
 
     def _mark_unmaterializable(self, representative: RawMessage, reason: str) -> None:
         """Persist a terminal status in its own transaction.

@@ -67,6 +67,11 @@ class Incident(Base):
         Vector(384),
         nullable=True,
     )
+    story_group_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     moh: Mapped[str | None] = mapped_column(String, nullable=True)
     martyrs: Mapped[str | None] = mapped_column(Text, nullable=True)
