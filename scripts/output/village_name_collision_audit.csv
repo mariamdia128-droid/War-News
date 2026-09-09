@@ -1,0 +1,6 @@
+﻿incident_id,canonical_raw_message_id,raw_message_id,matched_village_id,matched_village,reasons,extracted_mentions,matched_mentions,dropped_extracted_mentions,alternate_candidates,raw_text
+e63e3aef-1385-4d84-84fc-d25da4b63f08,4201,4201,1529,Zibdine En-Nabatiyeh,uncorrected_low_confidence_match,مدينة النبطية,مدينة النبطية,,Zibdine Jbayl,عاجل: الطيران المسير الاسرائيلي أغار مستهدفًا سيارتين في مدينة النبطية.
+adaf82c3-ee63-45c8-af89-44049dc609f5,8788,8788,1530,Zibdine Jbayl,known_raw_location_missing_from_extraction,زبدين,زبدين,,Harouf En-Nabatiyeh | Zibdine En-Nabatiyeh,الطيران المسير المعادي استهدف دراجة نارية على طريق عام مرج حاروف - زبدين
+adaf82c3-ee63-45c8-af89-44049dc609f5,8788,8791,1530,Zibdine Jbayl,known_raw_location_missing_from_extraction,زبدين,زبدين,,Harouf En-Nabatiyeh | Zibdine En-Nabatiyeh,"صفحة الإعلامي الشهيد علي شعيب 
+
+الطيران المسير المعادي استهدف دراجة نارية على طريق عام مرج حاروف - زبدين"
