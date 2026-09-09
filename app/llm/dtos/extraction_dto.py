@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -36,6 +37,30 @@ class CasualtyScope(str, Enum):
     per_village_exact = "per_village_exact"
     bulletin_aggregate = "bulletin_aggregate"
     unspecified = "unspecified"
+
+
+class StoryRelationship(str, Enum):
+    duplicate = "duplicate"
+    revision = "revision"
+    distinct_sub_event = "distinct_sub_event"
+    unrelated = "unrelated"
+
+
+class StoryRelationshipClassification(BaseModel):
+    """Pairwise classification of a raw message against one prior candidate.
+
+    Kept off ``ExtractionResult`` because that DTO is per-message; this result
+    is only meaningful relative to a specific candidate incident.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    relationship: StoryRelationship
+    relationship_evidence: str | None = None
+    needs_review: bool = False
+    review_reason: str | None = None
+    candidate_incident_id: UUID | None = None
+    matched_keywords: tuple[str, ...] = ()
 
 
 class VillageRole(str, Enum):
