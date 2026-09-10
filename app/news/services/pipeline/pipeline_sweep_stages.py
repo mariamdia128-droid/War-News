@@ -26,6 +26,9 @@ from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.dedup.duplicate_match_reconciliation import (
     reconcile_orphaned_soft_deleted_incidents,
 )
+from app.news.services.dedup.orphaned_dedup_original_reconciliation import (
+    OrphanedDedupOriginalReconciliationService,
+)
 from app.news.services.materialization.incident_materialization_service import (
     IncidentMaterializationService,
 )
@@ -225,6 +228,50 @@ def sweep_pre_extraction_dedup(
     elapsed_seconds = time.monotonic() - started_at
     return StageSweepResult(
         stage="pre_extraction_dedup",
+        processed=processed,
+        succeeded=succeeded,
+        failed=failed,
+        elapsed_seconds=elapsed_seconds,
+    )
+
+
+def sweep_reconcile_orphaned_dedup_originals(
+    db: Session,
+    *,
+    max_rows: int | None = None,
+) -> StageSweepResult:
+    """Promote duplicate children when their pre-dedup original is permanently dead."""
+    started_at = time.monotonic()
+    service = OrphanedDedupOriginalReconciliationService(db)
+    processed = 0
+    succeeded = 0
+    failed = 0
+
+    original_ids = service.dead_original_ids(
+        retry_limit=settings.extraction_max_retries,
+        limit=max_rows,
+    )
+    for original_id in original_ids:
+        processed += 1
+        try:
+            result = service.reconcile_original(
+                original_id,
+                retry_limit=settings.extraction_max_retries,
+            )
+            if result.promoted_id is not None:
+                succeeded += 1
+        except Exception as exc:
+            db.rollback()
+            failed += 1
+            logger.error(
+                "dead dedup original reconciliation failed original_id=%s: %s",
+                original_id,
+                _format_exception(exc),
+            )
+
+    elapsed_seconds = time.monotonic() - started_at
+    return StageSweepResult(
+        stage="dedup_original_reconciliation",
         processed=processed,
         succeeded=succeeded,
         failed=failed,

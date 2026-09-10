@@ -33,6 +33,7 @@ class RejectedNewsItem(BaseModel):
     rejection_reason_en: str
     rejection_reason_ar: str
     duplicate_of_id: int | None
+    dedup_promotion_note: str | None
 
 
 class RejectedNewsList(BaseModel):
@@ -189,6 +190,7 @@ def _item(
         rejection_reason_en=rejection_reason_en,
         rejection_reason_ar=rejection_reason_ar,
         duplicate_of_id=message.duplicate_of_id,
+        dedup_promotion_note=getattr(message, "dedup_promotion_note", None),
     )
 
 

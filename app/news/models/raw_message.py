@@ -124,6 +124,7 @@ class RawMessage(Base):
         server_default=text("'pending'"),
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedup_promotion_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     extraction_retry_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
