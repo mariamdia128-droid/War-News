@@ -178,17 +178,19 @@ BEGIN
                 = original_village_id
       );
 
-    IF NOT EXISTS (
-        SELECT 1
+    IF (
+        SELECT count(*)
         FROM raw_messages
         WHERE id IN (8788, 8791)
-        GROUP BY true
-        HAVING count(*) = 2
-           AND bool_and(
-               (match_result->'village_matches'->0->>'matched_village_id')::integer
-               = target_village_id
-           )
-    ) THEN
+          AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(
+                  match_result->'village_matches'
+              ) AS matches(entry)
+              WHERE (entry->>'matched_village_id')::integer
+                    = target_village_id
+          )
+    ) <> 2 THEN
         RAISE EXCEPTION
             'Both raw messages were not corrected; transaction will roll back';
     END IF;
