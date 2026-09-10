@@ -436,15 +436,13 @@ class IncidentRepository(IncidentRepositoryInterface):
             "verification_status": (
                 incident.verification_status
                 if incident.verification_status != "needs_verification"
-                or self._is_casualty_review_reason(incident.verification_reason)
-                or incident.duplicate_flag
+                or self._is_user_visible_needs_verification(incident)
                 else "auto_processed"
             ),
             "verification_reason": (
                 incident.verification_reason
                 if incident.verification_status != "needs_verification"
-                or self._is_casualty_review_reason(incident.verification_reason)
-                or incident.duplicate_flag
+                or self._is_user_visible_needs_verification(incident)
                 else None
             ),
             "duplicate_flag": row.duplicate_flag,
@@ -883,7 +881,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             incident.duplicate_flag = False
             if (
                 incident.verification_status == "needs_verification"
-                and not self._is_casualty_review_reason(
+                and not self._should_keep_needs_verification_after_duplicate_clear(
                     incident.verification_reason
                 )
             ):
@@ -1223,7 +1221,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             existing.duplicate_flag = False
             if (
                 existing.verification_status == "needs_verification"
-                and not self._is_casualty_review_reason(
+                and not self._should_keep_needs_verification_after_duplicate_clear(
                     existing.verification_reason
                 )
             ):
@@ -1878,6 +1876,28 @@ class IncidentRepository(IncidentRepositoryInterface):
                 ("Category casualties", "Unsupported casualty_scope")
             )
         )
+
+    @classmethod
+    def _is_user_visible_needs_verification(cls, incident: Incident) -> bool:
+        """True when stored NV should surface to list/detail clients."""
+        return bool(
+            incident.verification_status == "needs_verification"
+            and (
+                incident.duplicate_flag
+                or cls._is_casualty_review_reason(incident.verification_reason)
+                or incident.verification_reason
+                == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+            )
+        )
+
+    @classmethod
+    def _should_keep_needs_verification_after_duplicate_clear(
+        cls, reason: str | None
+    ) -> bool:
+        """Keep independent review signals when a duplicate flag is cleared."""
+        return cls._is_casualty_review_reason(
+            reason
+        ) or reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
 
     @classmethod
     def _list_filters(cls, params: IncidentListParams) -> list[object]:

@@ -9,6 +9,9 @@ import app.sources.models  # noqa: F401
 from app.news.dtos import IncidentListItemDTO, IncidentListParams
 from app.news.models import Incident, MessageStatus
 from app.news.repositories.incident_repository import IncidentRepository
+from app.news.services.materialization.verification_signals import (
+    LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+)
 
 
 def _compiled_filters(filters: list[object]) -> str:
@@ -393,6 +396,27 @@ def test_list_filters_hide_rejected_and_low_confidence_village_review_by_default
     assert "incidents.verification_status = " in " ".join(
         str(filter_) for filter_ in rejected_filters
     ).lower()
+
+
+def test_user_visible_needs_verification_includes_low_confidence_village_reason() -> None:
+    incident = Incident()
+    incident.verification_status = "needs_verification"
+    incident.duplicate_flag = False
+    incident.verification_reason = LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+
+    assert IncidentRepository._is_user_visible_needs_verification(incident)
+    assert IncidentRepository._should_keep_needs_verification_after_duplicate_clear(
+        incident.verification_reason
+    )
+
+
+def test_user_visible_needs_verification_hides_stale_unreasoned_nv() -> None:
+    incident = Incident()
+    incident.verification_status = "needs_verification"
+    incident.duplicate_flag = False
+    incident.verification_reason = None
+
+    assert not IncidentRepository._is_user_visible_needs_verification(incident)
 
 
 def test_list_filters_matched_alias_excludes_needs_verification_column() -> None:
