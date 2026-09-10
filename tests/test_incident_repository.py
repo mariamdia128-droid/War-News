@@ -11,6 +11,13 @@ from app.news.models import Incident, MessageStatus
 from app.news.repositories.incident_repository import IncidentRepository
 
 
+def _compiled_filters(filters: list[object]) -> str:
+    return " ".join(
+        str(filter_.compile(compile_kwargs={"literal_binds": True}))
+        for filter_ in filters
+    ).lower()
+
+
 class _ScalarResult:
     def __init__(self, incidents: list[Incident]) -> None:
         self.incidents = incidents
@@ -358,18 +365,19 @@ def test_incident_list_item_accepts_story_group_and_village_id() -> None:
     assert item.story_group_id == group_id
 
 
-def test_list_filters_needs_verification_requires_active_duplicate_flag() -> None:
+def test_list_filters_needs_verification_uses_user_facing_review_reasons() -> None:
     filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="needs_verification")
     )
-    compiled = " ".join(str(f) for f in filters).lower()
+    compiled = _compiled_filters(filters)
     assert "incidents.verification_status" in compiled
     assert "incidents.duplicate_flag" in compiled
+    assert "low-confidence village match requires manual review" in compiled
     assert "any_village_low_confidence" not in compiled
     assert "match_result" not in compiled
 
 
-def test_list_filters_hide_rejected_incidents_by_default() -> None:
+def test_list_filters_hide_rejected_and_low_confidence_village_review_by_default() -> None:
     default_filters = IncidentRepository._list_filters(IncidentListParams())
     rejected_filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="rejected")
@@ -378,6 +386,10 @@ def test_list_filters_hide_rejected_incidents_by_default() -> None:
     assert "incidents.verification_status != " in " ".join(
         str(filter_) for filter_ in default_filters
     ).lower()
+    assert (
+        "low-confidence village match requires manual review"
+        in _compiled_filters(default_filters)
+    )
     assert "incidents.verification_status = " in " ".join(
         str(filter_) for filter_ in rejected_filters
     ).lower()

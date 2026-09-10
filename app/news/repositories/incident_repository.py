@@ -72,6 +72,9 @@ from app.news.services.incident_details.casualty_transition_backstop import (
 )
 from app.news.services.incident_details.incident_detail_merge import merge_incident_detail_fields
 from app.news.services.dedup.text_similarity import event_token_similarity
+from app.news.services.materialization.verification_signals import (
+    LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+)
 from app.sources.models import Source, SourceType
 
 
@@ -1851,12 +1854,11 @@ class IncidentRepository(IncidentRepositoryInterface):
 
     @staticmethod
     def _needs_verification_column() -> object:
-        """User-facing verification means an unresolved possible duplicate.
+        """User-facing verification means an unresolved review reason.
 
-        Historical low-confidence matching rows can still carry the stored
-        ``needs_verification`` value. They must not reappear in list filters,
-        dashboard counts, or the ``matched`` DTO field unless the incident
-        also has an active duplicate flag.
+        Low-confidence village matches are included only when the new,
+        explicit reason is present. Historical low-confidence matching rows
+        without that reason stay out of this user-facing bucket.
         """
         return and_(
             Incident.verification_status == "needs_verification",
@@ -1864,6 +1866,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                 Incident.duplicate_flag.is_(True),
                 Incident.verification_reason.like("Category casualties%"),
                 Incident.verification_reason.like("Unsupported casualty_scope%"),
+                Incident.verification_reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
             ),
         )
 
@@ -1889,6 +1892,12 @@ class IncidentRepository(IncidentRepositoryInterface):
             filters.extend(
                 [
                     Incident.verification_status != "rejected",
+                    or_(
+                        Incident.verification_status != "needs_verification",
+                        Incident.verification_reason.is_(None),
+                        Incident.verification_reason
+                        != LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+                    ),
                     or_(
                         RawMessage.id.is_(None),
                         RawMessage.status != MessageStatus.rejected,

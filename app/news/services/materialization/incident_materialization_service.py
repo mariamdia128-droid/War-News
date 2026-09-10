@@ -73,17 +73,20 @@ def _initial_verification_status(
     *,
     duplicate_flag: bool = False,
     insufficient_score: bool = False,
+    low_confidence_village_match: bool = False,
 ) -> str:
-    """Return the initial review state — duplicate signals only.
+    """Return the initial review state for materialized incidents.
 
-    Verification is reserved for possible-duplicate cases. Relevance
-    uncertainty, casualty-transition ambiguity, and low-confidence
-    village/condition matches no longer force manual review; they
-    materialize as auto_processed. (`match_result` is kept as a parameter
-    for call-site compatibility even though it's unused here — do not
-    remove it without also updating both call sites.)
+    Relevance uncertainty, casualty-transition ambiguity, and
+    low-confidence condition matches do not force manual review here. A
+    low-confidence village match does, because the displayed village name is
+    otherwise indistinguishable from a full-confidence match.
     """
-    return "needs_verification" if (duplicate_flag or insufficient_score) else "auto_processed"
+    return (
+        "needs_verification"
+        if (duplicate_flag or insufficient_score or low_confidence_village_match)
+        else "auto_processed"
+    )
 
 
 def _relevance_review_details(
@@ -441,6 +444,9 @@ class IncidentMaterializationService:
                     scope_review_reason=extraction.casualty_scope_review_reason
                     if extraction.casualty_scope_needs_review
                     else None,
+                    low_confidence_village_match=(
+                        village_status == "matched_low_confidence"
+                    ),
                     hash_suffix=unit.hash_suffix,
                     story_group_id=unit.story_group_id,
                 )
@@ -571,6 +577,9 @@ class IncidentMaterializationService:
                 scope_review_reason=extraction.casualty_scope_review_reason
                 if extraction.casualty_scope_needs_review
                 else None,
+                low_confidence_village_match=(
+                    village_status == "matched_low_confidence"
+                ),
                 hash_suffix=unit.hash_suffix,
                 story_group_id=unit.story_group_id,
             )
@@ -768,6 +777,7 @@ class IncidentMaterializationService:
         injuries: int | None,
         duplicate_flag: bool = False,
         scope_review_reason: str | None = None,
+        low_confidence_village_match: bool = False,
         hash_suffix: str | None = None,
         story_group_id: UUID | None = None,
     ) -> Incident | None:
@@ -794,6 +804,7 @@ class IncidentMaterializationService:
             # An insufficient-score duplicate is always created with the
             # duplicate flag, before its audit record is persisted.
             insufficient_score=duplicate_flag,
+            low_confidence_village_match=low_confidence_village_match,
         )
         if scope_review_reason:
             verification_status = "needs_verification"
@@ -804,6 +815,7 @@ class IncidentMaterializationService:
                     representative.match_result,
                     duplicate_flag=duplicate_flag,
                     insufficient_score=duplicate_flag,
+                    low_confidence_village_match=low_confidence_village_match,
                 )
                 if verification_status == "needs_verification"
                 else None
@@ -1105,6 +1117,9 @@ class IncidentMaterializationService:
             verification_status = _initial_verification_status(
                 representative.match_result,
                 duplicate_flag=duplicate_flag,
+                low_confidence_village_match=(
+                    village_status == "matched_low_confidence"
+                ),
             )
             if category_casualties_suppressed or extraction.casualty_scope_needs_review:
                 verification_status = "needs_verification"
@@ -1119,6 +1134,9 @@ class IncidentMaterializationService:
                     duplicate_flag=duplicate_flag,
                     duplicate_level=duplicate_level,
                     duplicate_similarity_score=duplicate_score,
+                    low_confidence_village_match=(
+                        village_status == "matched_low_confidence"
+                    ),
                 )
                 if verification_status == "needs_verification"
                 else None

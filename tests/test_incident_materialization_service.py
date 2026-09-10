@@ -27,6 +27,9 @@ from app.news.services.materialization.incident_materialization_service import (
     _initial_verification_status,
     _verification_reason,
 )
+from app.news.services.materialization.verification_signals import (
+    LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+)
 
 
 class _SessionStub:
@@ -90,7 +93,6 @@ def test_initial_verification_status_flags_duplicate_signals(signal: str) -> Non
     "match_kwargs",
     [
         {},
-        {"village_status": "matched_low_confidence"},
         {"village_status": "unmatched", "village_id": None},
         {"condition_status": "matched_low_confidence"},
         {"condition_status": "unmatched", "condition_id": None},
@@ -102,6 +104,16 @@ def test_initial_verification_status_auto_processes_non_duplicate_matches(
     assert (
         _initial_verification_status(_match_result(**match_kwargs))
         == "auto_processed"
+    )
+
+
+def test_initial_verification_status_flags_low_confidence_village_match() -> None:
+    assert (
+        _initial_verification_status(
+            _match_result(village_status="matched_low_confidence"),
+            low_confidence_village_match=True,
+        )
+        == "needs_verification"
     )
 
 
@@ -134,6 +146,16 @@ def test_verification_reason_ignores_non_duplicate_match_signals() -> None:
     result["village_matches"][0]["village_confidence"] = 0.35
 
     assert _verification_reason(result) is None
+
+
+def test_verification_reason_flags_low_confidence_village_match() -> None:
+    assert (
+        _verification_reason(
+            _match_result(village_status="matched_low_confidence"),
+            low_confidence_village_match=True,
+        )
+        == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +297,21 @@ def test_eligible_representative_inserts_incident_and_detail() -> None:
     assert detail.incident_id == incident.id
     assert service.stats.inserted == 1
     assert representative.status == MessageStatus.materialized
+
+
+def test_low_confidence_village_match_materializes_needing_review() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    match_result = _match_result(village_status="matched_low_confidence")
+
+    result = service.materialize(_representative(match_result=match_result))
+
+    assert len(result) == 1
+    incident = next(value for value in db.committed if isinstance(value, Incident))
+    assert incident.verification_status == "needs_verification"
+    assert incident.verification_reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+    assert incident.duplicate_flag is False
+    assert service.stats.inserted == 1
 
 
 def test_casualty_fields_map_from_top_level_extraction_result() -> None:
