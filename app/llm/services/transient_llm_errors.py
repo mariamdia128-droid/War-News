@@ -2,6 +2,21 @@ from __future__ import annotations
 
 import httpx
 
+TRANSIENT_LLM_ERROR_MARKERS = (
+    "readtimeout",
+    "connecttimeout",
+    "timeouterror",
+    "timed out",
+    "connection reset",
+    "connection refused",
+    "connecterror",
+    "networkerror",
+    "temporarily unavailable",
+    "503",
+    "502",
+    "504",
+)
+
 
 class ExtractionRetryCappedError(Exception):
     """Raised when a transient extraction failure hits the retry cap."""
@@ -30,16 +45,4 @@ def is_transient_llm_error(exc: BaseException) -> bool:
     if not message:
         return False
 
-    transient_markers = (
-        "readtimeout",
-        "connecttimeout",
-        "timeouterror",
-        "timed out",
-        "connection reset",
-        "connection refused",
-        "temporarily unavailable",
-        "503",
-        "502",
-        "504",
-    )
-    return any(marker in message for marker in transient_markers)
+    return any(marker in message for marker in TRANSIENT_LLM_ERROR_MARKERS)

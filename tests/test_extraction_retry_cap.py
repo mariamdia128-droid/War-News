@@ -109,3 +109,20 @@ def test_reset_retryable_extraction_errors_respects_cap() -> None:
     assert at_cap.status == MessageStatus.error
     assert at_cap.error_message.startswith("extraction: exceeded max retries (5)")
     db.commit.assert_called_once()
+
+
+def test_reset_retryable_extraction_errors_query_includes_connection_refused() -> None:
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    repo = RawMessageRepository(db)
+
+    repo.reset_retryable_extraction_errors(max_retries=5)
+
+    stmt = db.scalars.call_args.args[0]
+    compiled = stmt.compile()
+    params = [str(value).lower() for value in compiled.params.values()]
+    assert "%readtimeout%" in params
+    assert "%connecttimeout%" in params
+    assert "%timed out%" in params
+    assert "%connecterror%" in params
+    assert "%connection refused%" in params
