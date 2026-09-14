@@ -123,3 +123,37 @@
 - term: "غارة"
   category: evidence_override
   meaning: "Bombs"
+
+# --- Condition ID glossary (IDs remain Python constants; Arabic labels for prompts) ---
+# Confirmed B.3 (2026-09-14): routing/filter sets stay code-only. These rows exist so
+# PromptBuilder can explain what each special condition looks like in Arabic text.
+
+- term: "غارة تحذيرية / تحذيريه"
+  category: condition_id_label
+  meaning: "Warning Raid"
+  notes: "condition_id=2. Distinguishing token تحذيريه required in matching_service; ID stays in Python."
+
+- term: "طيران حربي / مقاتلات حربية"
+  category: condition_id_label
+  meaning: "Warplane air violation"
+  notes: "condition_id=35. Member of AIR_VIOLATION_CONDITION_IDS; ID stays in Python/SQL."
+
+- term: "طيران استطلاعي / مسيرة / مسير"
+  category: condition_id_label
+  meaning: "Drone / recon air violation"
+  notes: "condition_id=36. Member of AIR_VIOLATION_CONDITION_IDS; ID stays in Python/SQL."
+
+- term: "طيران مروحي / مروحيه / هليكوبتر"
+  category: condition_id_label
+  meaning: "Helicopter air violation"
+  notes: "condition_id=38. Member of AIR_VIOLATION_CONDITION_IDS; ID stays in Python/SQL."
+
+- term: "غارات وهمية / وهميه"
+  category: condition_id_label
+  meaning: "Feigned Attacks"
+  notes: "condition_id=39. Distinguishing token وهميه required; ID stays in Python."
+
+- term: "انتهاك جوي غير مصنف"
+  category: condition_id_label
+  meaning: "Unclassified air violation"
+  notes: "condition_id=45 (UNCLASSIFIED_AIR_CONDITION_ID). Fallback when air phrases do not map to 35/36/38; ID stays in Python."

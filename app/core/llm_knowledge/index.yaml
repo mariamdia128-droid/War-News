@@ -12,6 +12,7 @@ tier1_extraction:
     - terminology/role_terms.yaml
     - terminology/revision_language_markers.yaml
     - terminology/casualty_gender.yaml
+    - terminology/condition_labels.yaml
 
 combined_tier1:
   rules:

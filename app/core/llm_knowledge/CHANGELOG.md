@@ -1,5 +1,11 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-14 — B.3 confirm air-violation / special condition IDs
+
+**Decision (reconfirmed):** condition IDs `2`, `35`, `36`, `38`, `39`, `45` remain Python/SQL constants for deterministic routing, distinguishing-token gates, fast-path exclusion, and unclassified fallback. They must not move into PromptBuilder as authoritative IDs.
+
+**Prompt gap closed:** added `condition_id_label` rows in `terminology/condition_labels.yaml` with Arabic surface forms + documented `condition_id=N` notes for LLM explanation only. Wired `condition_labels.yaml` into `tier1_extraction` index terminology.
+
 ## 2026-09-14 — B.2 expand terminology coverage
 
 | Change | Reason |
