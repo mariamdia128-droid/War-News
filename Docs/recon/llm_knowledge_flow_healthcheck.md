@@ -205,6 +205,70 @@ matches the failing input path.
 - **minor:** the mixed-toll occupation example is in a different pool from
   the combined Tier-1 stage and is therefore not available to that prompt.
 
+## Phase 3: Root-Cause Investigation
+
+### 3.1 Revision detection under-specification
+
+The three failing revision cases use the `story_revision` stage in the
+evaluation harness. Its `index.yaml` entry loads only `rules/casualty_merge.md`
+and `revision_language_markers.yaml`. The assembled rule text describes
+casualty scope and injured-to-deceased transitions, but it does not instruct
+the model to classify preliminary tolls, rising tolls, obituary/named-victim
+follow-ups, or `relationship_hint="revision"`.
+
+The terminology file is present and the deterministic
+`story_revision_backstop.py` recognizes these patterns, but the eval call
+tests the LLM stage output directly. This explains the failures for
+`المعلومات الأولية`, `تنعى`, and `حصيلة أولية`; the passing `ارتفاع عدد` case
+is model behavior rather than evidence that the prompt is complete.
+
+**Finding:** **bug**, confirmed knowledge/prompt gap.
+
+**Proposed fix:** add `rules/story_revision_prompt.md` with the backstop's
+preliminary-toll, rising-toll, toll-correction, and named-victim follow-up
+patterns, then wire it to the `story_revision` entry in `index.yaml`. Keep the
+existing Python backstop unchanged and additive.
+
+**Risk:** low; pure knowledge addition plus one index reference, with no
+backstop behavior change.
+
+### 3.2 Gendered occupation in a mixed toll
+
+For the exact failing mixed-toll input, the combined Tier-1 prompt contains
+the matched `مسعف` terminology entry and the existing mandatory two-action
+example in `combined_tier1_prompt.md`. The `scope_examples.jsonl` pool still
+returns transition/scope examples and contains no example whose expected
+output attributes an occupation-linked casualty independently inside a
+separate mixed-victim toll.
+
+The standalone `مسعف` cases pass, and the exact terminology match succeeds
+offline. Therefore this is not a missing term or Arabic-normalization defect.
+
+**Finding:** **minor**, suspected few-shot coverage gap confirmed by pool
+inspection; the live partial result is model behavior.
+
+**Proposed fix:** add a `scope_examples.jsonl` example based on the failing
+house-plus-car bulletin, with the separate car sub-event assigning
+`male_deaths=1` for `مسعف` while preserving the unrelated house toll.
+
+**Risk:** low; pure few-shot knowledge addition.
+
+### 3.3 Intentionally unmapped context-dependent terms
+
+`مدني شهيد` and `طفل شهيد` remain intentionally unmapped. The current
+terminology design avoids turning context-dependent adjectives into automatic
+demographic counts. No live failure in the supplied 16-case validation run
+requires changing that decision.
+
+**Finding:** **clean by design**; retain as a review candidate only if a
+future corpus case establishes a reliable disambiguation rule.
+
+### 3.4 Phase 3 disposition
+
+Both authorized Phase 4 changes are appropriately narrow: one revision rule
+file/index wiring change and one mixed-toll few-shot example. No backstop code,
+schema, or expected output requires modification.
+
 ---
 
 ## Phase 3: Root Cause Analysis — Live Validation Failures
