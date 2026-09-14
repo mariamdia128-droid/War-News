@@ -1,0 +1,125 @@
+# Condition matching labels and Arabic aliases.
+# Sources: condition_aliases.py, CONDITION_DISTINGUISHING_TOKENS,
+# AIR_KEYWORDS (phrases only — IDs stay in Python), condition_evidence_override.py
+#
+# Numeric condition IDs remain code-only (Phase 2.5). meaning uses action_ar or action_en.
+
+# --- Similarity aliases (canonical action_ar → alternate phrasing) ---
+
+- term: "مدفعية العدو تستهدف"
+  category: condition_alias
+  meaning: "قصف مدفعي"
+  notes: "raw_message_ids=521,527,529"
+
+- term: "قذيفة مدفعية استهدفت"
+  category: condition_alias
+  meaning: "قصف مدفعي"
+  notes: "raw_message_ids=358"
+
+- term: "ألقت محلقة قنبلة صوتية"
+  category: condition_alias
+  meaning: "قنابل صوتية"
+  notes: "raw_message_ids=272"
+
+- term: "تلقي قنبلة صوتية"
+  category: condition_alias
+  meaning: "قنابل صوتية"
+  notes: "raw_message_ids=343"
+
+- term: "تنفيذ عملية تفجير"
+  category: condition_alias
+  meaning: "تلغيم وتفجير"
+  notes: "raw_message_ids=2889,3124"
+
+- term: "ألقت مسيرة معادية قنبلة"
+  category: condition_alias
+  meaning: "قنابل"
+  notes: "raw_message_ids=255"
+
+- term: "تمشيط بالأسلحة الرشاشة"
+  category: condition_alias
+  meaning: "عملية تمشيط"
+  notes: "raw_message_ids=703"
+
+# --- Distinguishing tokens (IDs stay in matching_service) ---
+
+- term: "تحذيريه"
+  category: distinguishing_token
+  meaning: "Warning Raid"
+  notes: "Required substring for condition id 2."
+
+- term: "وهميه"
+  category: distinguishing_token
+  meaning: "Feigned Attacks"
+  notes: "Required substring for condition id 39."
+
+# --- Air-violation keyword phrases (IDs 35/36/38 stay in Python) ---
+
+- term: "طيران حربي"
+  category: air_violation_keyword
+  meaning: "Warplane"
+  notes: "Maps to condition id 35 in red_alert_collector."
+
+- term: "مقاتلات حربية"
+  category: air_violation_keyword
+  meaning: "Warplane"
+
+- term: "مقاتله حربيه"
+  category: air_violation_keyword
+  meaning: "Warplane"
+
+- term: "مقاتلات حربيه"
+  category: air_violation_keyword
+  meaning: "Warplane"
+
+- term: "طيران استطلاعي"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+  notes: "Maps to condition id 36."
+
+- term: "طائره استطلاع"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "مسيره"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "مسير"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "طيران مروحي"
+  category: air_violation_keyword
+  meaning: "Helicopter"
+  notes: "Maps to condition id 38."
+
+- term: "مروحيه"
+  category: air_violation_keyword
+  meaning: "Helicopter"
+
+- term: "هليكوبتر"
+  category: air_violation_keyword
+  meaning: "Helicopter"
+
+# --- Evidence-override stems (return action_en) ---
+
+- term: "دبابة"
+  category: evidence_override
+  meaning: "Tank Fire"
+
+- term: "ميركافا"
+  category: evidence_override
+  meaning: "Tank Fire"
+
+- term: "غارة تحذيرية"
+  category: evidence_override
+  meaning: "Warning Raid"
+
+- term: "غارات وهمية"
+  category: evidence_override
+  meaning: "Feigned Attacks"
+
+- term: "غارة"
+  category: evidence_override
+  meaning: "Bombs"

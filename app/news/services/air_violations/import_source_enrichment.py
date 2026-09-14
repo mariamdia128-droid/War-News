@@ -8,8 +8,21 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import or_, select
 
+from app.core.llm_knowledge.loader import load_terminology
 from app.news.models import RawMessage
 from app.sources.services.red_alert_collector import match_village, normalize_arabic
+
+
+def _import_village_aliases() -> dict[str, int]:
+    aliases: dict[str, int] = {}
+    for entry in load_terminology("terminology/village_aliases.yaml"):
+        if entry.category != "village_location_alias":
+            continue
+        meaning = entry.meaning or ""
+        if not meaning.startswith("acs:"):
+            continue
+        aliases[normalize_arabic(entry.term)] = int(meaning.removeprefix("acs:"))
+    return aliases
 
 
 def telegram_post_url(link: str) -> str | None:
@@ -130,10 +143,8 @@ def match_import_village(text, villages, source_link=None):
             return village, import_location_text(text)
     location = import_location_text(text) or text
     key = normalize_arabic(location)
-    # Kafra: Ministry of Interior 2025 Bint Jbeil municipality results.
-    # Chaat: PDA Lebanon's North Baalbek municipal-union reference.
-    # Nabatieh: existing Data/VillageLocationAliases.json city-seat alias.
-    aliases = {'كفره': 72257, 'شعث': 53274, 'النبطيه': 71111}
+    # ACS aliases from llm_knowledge/terminology/village_aliases.yaml
+    aliases = _import_village_aliases()
     code = aliases.get(key)
     if code:
         village = next((item for item in villages if item.acs_code == code), None)

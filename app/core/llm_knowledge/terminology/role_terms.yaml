@@ -1,5 +1,54 @@
-# Location markers, targeting verbs, and vehicle terms used in presence gate / extraction.
-# Source: ollama_presence_gate_service.py
+# Presence-gate / extraction role, location, vehicle, and municipal terms.
+# Source: app/llm/services/ollama_presence_gate_service.py term tuples.
+# Heuristic functions (_is_context_only_evidence etc.) stay in Python (Phase 2.5/3.4).
+
+# --- Municipal infrastructure ---
+
+- term: "بلدية"
+  category: municipal_infrastructure
+  meaning: municipality
+
+- term: "مبنى البلدية"
+  category: municipal_infrastructure
+  meaning: municipal_building
+
+- term: "مباني البلدية"
+  category: municipal_infrastructure
+  meaning: municipal_buildings
+
+- term: "مجلس بلدي"
+  category: municipal_infrastructure
+  meaning: municipal_council
+
+- term: "مجلس البلدة"
+  category: municipal_infrastructure
+  meaning: town_council
+
+- term: "موظف"
+  category: municipal_infrastructure
+  meaning: employee
+
+- term: "موظفين"
+  category: municipal_infrastructure
+  meaning: employees
+
+- term: "موظفي البلدية"
+  category: municipal_infrastructure
+  meaning: municipal_staff
+
+- term: "عامل"
+  category: municipal_infrastructure
+  meaning: worker
+
+- term: "عاملين"
+  category: municipal_infrastructure
+  meaning: workers
+
+- term: "موظف بلدي"
+  category: municipal_infrastructure
+  meaning: municipal_employee
+
+# --- Village location markers ---
 
 - term: "بلدة"
   category: village_location_marker
@@ -9,9 +58,29 @@
   category: village_location_marker
   meaning: city
 
+- term: "قرية"
+  category: village_location_marker
+  meaning: village_alt
+
+- term: "مزارع"
+  category: village_location_marker
+  meaning: farms
+
 - term: "دوحة"
   category: village_location_marker
   meaning: neighborhood_farm
+
+- term: "مشاع"
+  category: village_location_marker
+  meaning: commons
+
+- term: "اطراف"
+  category: village_location_marker
+  meaning: outskirts
+
+- term: "أطراف"
+  category: village_location_marker
+  meaning: outskirts
 
 - term: "حرش"
   category: village_location_marker
@@ -21,13 +90,15 @@
   category: village_location_marker
   meaning: valley
 
-- term: "أطراف"
-  category: village_location_marker
-  meaning: outskirts
+# --- Targeting verbs ---
 
 - term: "استهدف"
   category: targeting_verb
   meaning: targeted
+
+- term: "استهدفت"
+  category: targeting_verb
+  meaning: targeted_f
 
 - term: "قصف"
   category: targeting_verb
@@ -37,23 +108,282 @@
   category: targeting_verb
   meaning: airstrike
 
+- term: "أغار"
+  category: targeting_verb
+  meaning: raided
+
+- term: "اعتد"
+  category: targeting_verb
+  meaning: assaulted
+
+# --- Vehicle terms ---
+
 - term: "سيارة"
   category: vehicle_term
   meaning: car
 
+- term: "سيارات"
+  category: vehicle_term
+  meaning: cars
+
+- term: "مركبة"
+  category: vehicle_term
+  meaning: vehicle
+
+- term: "مركبات"
+  category: vehicle_term
+  meaning: vehicles
+
+- term: "آلية"
+  category: vehicle_term
+  meaning: apparatus
+
+- term: "آليات"
+  category: vehicle_term
+  meaning: apparatuses
+
 - term: "دراج"
   category: vehicle_term
   meaning: motorcycle_stem
+  notes: "Stem matches possessed forms e.g. دراجتهما."
+
+- term: "دراجة"
+  category: vehicle_term
+  meaning: motorcycle
+
+- term: "دراجات"
+  category: vehicle_term
+  meaning: motorcycles
 
 - term: "موتور"
   category: vehicle_term
   meaning: motorcycle
 
+- term: "موتورات"
+  category: vehicle_term
+  meaning: motorcycles
+
+- term: "شاحنة"
+  category: vehicle_term
+  meaning: truck
+
+- term: "شاحنات"
+  category: vehicle_term
+  meaning: trucks
+
+- term: "جرافة"
+  category: vehicle_term
+  meaning: bulldozer
+
+- term: "جرافات"
+  category: vehicle_term
+  meaning: bulldozers
+
+- term: "حفارة"
+  category: vehicle_term
+  meaning: excavator
+
+- term: "حفارات"
+  category: vehicle_term
+  meaning: excavators
+
 - term: "دبابة"
   category: vehicle_term
   meaning: tank
+
+- term: "دبابات"
+  category: vehicle_term
+  meaning: tanks
+
+- term: "كميون"
+  category: vehicle_term
+  meaning: truck_colloquial
+
+- term: "بلدوزر"
+  category: vehicle_term
+  meaning: bulldozer_loan
 
 - term: "مرج "
   category: route_area_prefix
   meaning: marj_route
   notes: "Used with dash-route village splitting."
+
+# --- Context-only heuristic proximity / impact terms ---
+
+- term: "قرب"
+  category: proximity_term
+  meaning: near
+
+- term: "بالقرب"
+  category: proximity_term
+  meaning: nearby
+
+- term: "بجوار"
+  category: proximity_term
+  meaning: beside
+
+- term: "بجانب"
+  category: proximity_term
+  meaning: next_to
+
+- term: "محيط"
+  category: proximity_term
+  meaning: surroundings
+
+- term: "أمام"
+  category: proximity_term
+  meaning: in_front
+
+- term: "محاذاة"
+  category: proximity_term
+  meaning: alongside
+
+- term: "لم تسجل أضرار"
+  category: negative_impact_term
+  meaning: no_damage_recorded
+
+- term: "لم تسجّل أضرار"
+  category: negative_impact_term
+  meaning: no_damage_recorded
+
+- term: "دون تسجيل إصابات"
+  category: negative_impact_term
+  meaning: no_injuries_recorded
+
+- term: "من دون تسجيل إصابات"
+  category: negative_impact_term
+  meaning: no_injuries_recorded
+
+- term: "لا أضرار"
+  category: negative_impact_term
+  meaning: no_damage
+
+- term: "أصاب"
+  category: direct_impact_term
+  meaning: hit
+
+- term: "أصابت"
+  category: direct_impact_term
+  meaning: hit_f
+
+- term: "سقطت"
+  category: direct_impact_term
+  meaning: fell
+
+- term: "تضرر"
+  category: direct_impact_term
+  meaning: damaged
+
+- term: "تضررت"
+  category: direct_impact_term
+  meaning: damaged_f
+
+- term: "أضرار"
+  category: direct_impact_term
+  meaning: damage
+
+- term: "دمر"
+  category: direct_impact_term
+  meaning: destroyed
+
+- term: "دمرت"
+  category: direct_impact_term
+  meaning: destroyed_f
+
+- term: "قطع"
+  category: direct_impact_term
+  meaning: cut_blocked
+
+- term: "تعذر مرور"
+  category: direct_impact_term
+  meaning: passage_blocked
+
+- term: "أصيب"
+  category: direct_impact_term
+  meaning: was_injured
+
+- term: "أصيبت"
+  category: direct_impact_term
+  meaning: was_injured_f
+
+- term: "قتل"
+  category: direct_impact_term
+  meaning: killed
+
+- term: "قتلت"
+  category: direct_impact_term
+  meaning: killed_f
+
+- term: "استشهد"
+  category: direct_impact_term
+  meaning: martyred
+
+- term: "جرح"
+  category: direct_impact_term
+  meaning: wounded
+
+- term: "جرحت"
+  category: direct_impact_term
+  meaning: wounded_f
+
+- term: "إخلاء"
+  category: direct_impact_term
+  meaning: evacuation
+
+# --- Presence-gate remaining heuristic literals (completeness audit M3) ---
+
+- term: "الطريق"
+  category: road_entity
+  meaning: the_road
+
+- term: "الجسر"
+  category: road_entity
+  meaning: the_bridge
+
+- term: "الأوتوستراد"
+  category: road_entity
+  meaning: the_highway
+
+- term: "استهدف الطريق"
+  category: road_direct_impact
+  meaning: targeted_road
+
+- term: "استهدفت الطريق"
+  category: road_direct_impact
+  meaning: targeted_road_f
+
+- term: "مواكبة"
+  category: escort_context
+  meaning: escort
+
+- term: "بمواكبة"
+  category: escort_context
+  meaning: with_escort
+
+- term: "استهدف الجيش"
+  category: army_direct_impact
+  meaning: targeted_army
+
+- term: "استهدفت الجيش"
+  category: army_direct_impact
+  meaning: targeted_army_f
+
+- term: "أصيب عسكري"
+  category: army_direct_impact
+  meaning: soldier_injured
+
+- term: "قتل عسكري"
+  category: army_direct_impact
+  meaning: soldier_killed
+
+- term: "قسم الطوارئ"
+  category: hospital_context_only
+  meaning: emergency_department
+
+- term: "إلى المستشفى"
+  category: hospital_transport
+  meaning: transported_to_hospital
+
+- term: "الى المستشفى"
+  category: hospital_transport
+  meaning: transported_to_hospital

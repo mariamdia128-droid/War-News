@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.database import SessionLocal
+from app.core.llm_knowledge.loader import terms_by_category
 from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import (
     ExtractionCasualties,
@@ -23,7 +24,16 @@ SUBTYPE_ACTIONS = {
     "fire_incident": "Burning Properties",
 }
 
-_MOTORCYCLE_TEXT_MARKERS = ("دراج", "موتور")
+_MOTORCYCLE_TEXT_MARKERS = tuple(
+    term
+    for term in terms_by_category("terminology/role_terms.yaml", "vehicle_term")
+    if term in {"دراج", "موتور"}
+) or ("دراج", "موتور")
+_TANK_MARKERS = tuple(
+    term
+    for term in terms_by_category("terminology/role_terms.yaml", "vehicle_term")
+    if term in {"دبابة", "دبابات"}
+) or ("دبابة",)
 
 
 def trusted_cnrs_action(
@@ -35,7 +45,11 @@ def trusted_cnrs_action(
         return None
     subtype = str(classification.get("event_subtype") or "").strip().lower()
     if subtype == "direct_attack":
-        return "Tank Fire" if "دبابة" in post_text else "Bombs"
+        return (
+            "Tank Fire"
+            if any(marker in post_text for marker in _TANK_MARKERS)
+            else "Bombs"
+        )
     return SUBTYPE_ACTIONS.get(subtype)
 
 

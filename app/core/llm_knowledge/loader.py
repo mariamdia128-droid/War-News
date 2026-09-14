@@ -305,3 +305,40 @@ def get_prompt_builder(
 ) -> PromptBuilder:
     """Factory for a cached-index PromptBuilder instance."""
     return PromptBuilder(embedding_service=embedding_service)
+
+
+def load_terminology(
+    relative_path: str,
+    *,
+    root: Path | None = None,
+) -> tuple[TerminologyEntry, ...]:
+    """Load a terminology YAML file (cached). Used by code-level backstops."""
+    return _load_terminology_file(relative_path, str(root or KNOWLEDGE_ROOT))
+
+
+def terms_by_category(
+    relative_path: str,
+    category: str,
+    *,
+    root: Path | None = None,
+) -> tuple[str, ...]:
+    """Return term strings for one category from a terminology file."""
+    return tuple(
+        entry.term
+        for entry in load_terminology(relative_path, root=root)
+        if entry.category == category
+    )
+
+
+def terms_by_meaning(
+    relative_path: str,
+    meaning: str,
+    *,
+    root: Path | None = None,
+) -> tuple[str, ...]:
+    """Return term strings for one meaning from a terminology file."""
+    return tuple(
+        entry.term
+        for entry in load_terminology(relative_path, root=root)
+        if entry.meaning == meaning
+    )

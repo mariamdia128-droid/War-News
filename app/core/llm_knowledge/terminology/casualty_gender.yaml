@@ -1,10 +1,20 @@
 # Exact/substring-match casualty gender and status terms.
-# Migrated from app/news/services/incident_details/casualty_gender_evidence.py (Phase 2 seed).
+# Sources:
+#   - app/news/services/incident_details/casualty_gender_evidence.py
+#   - app/news/services/incident_details/casualty_count_backstop.py
+# Verified against tests/test_casualty_gender_evidence.py fixtures.
+
+# --- Explicit singular / dual forms ---
 
 - term: "شهيد"
   category: male_death_singular
   meaning: male_death
-  notes: "Standalone token; allows optional و/ال prefix in matcher."
+  notes: "Standalone token; allows optional و/ال prefix in matcher. Fixture: شهيد في ياطر."
+
+- term: "شهيدا"
+  category: male_death_singular
+  meaning: male_death
+  notes: "Accusative form used by casualty_count_backstop."
 
 - term: "شهيدان"
   category: male_death_dual
@@ -19,6 +29,7 @@
 - term: "شهيدة"
   category: female_death_singular
   meaning: female_death
+  notes: "Fixture: شهيدة وجريحة."
 
 - term: "شهيدتان"
   category: female_death_dual
@@ -34,9 +45,37 @@
   category: male_injury_singular
   meaning: male_injury
 
+- term: "جريحا"
+  category: male_injury_singular
+  meaning: male_injury
+
 - term: "مصاب"
   category: male_injury_singular
   meaning: male_injury
+
+- term: "مصابا"
+  category: male_injury_singular
+  meaning: male_injury
+
+- term: "جريحان"
+  category: male_injury_dual
+  meaning: male_injury
+  normalized: "2"
+
+- term: "جريحين"
+  category: male_injury_dual
+  meaning: male_injury
+  normalized: "2"
+
+- term: "مصابان"
+  category: male_injury_dual
+  meaning: male_injury
+  normalized: "2"
+
+- term: "مصابين"
+  category: male_injury_dual
+  meaning: male_injury
+  normalized: "2"
 
 - term: "جريحة"
   category: female_injury_singular
@@ -46,6 +85,28 @@
   category: female_injury_singular
   meaning: female_injury
 
+- term: "جريحتان"
+  category: female_injury_dual
+  meaning: female_injury
+  normalized: "2"
+
+- term: "جريحتين"
+  category: female_injury_dual
+  meaning: female_injury
+  normalized: "2"
+
+- term: "مصابتان"
+  category: female_injury_dual
+  meaning: female_injury
+  normalized: "2"
+
+- term: "مصابتين"
+  category: female_injury_dual
+  meaning: female_injury
+  normalized: "2"
+
+# --- Counted plurals ---
+
 - term: "شهداء"
   category: male_death_plural
   meaning: male_death
@@ -54,37 +115,120 @@
 - term: "شهيدات"
   category: female_death_plural
   meaning: female_death
+  notes: "Fixture: ٣ شهيدات و٤ جريحات."
 
 - term: "جرحى"
   category: male_injury_plural
   meaning: male_injury
 
+- term: "مصابون"
+  category: male_injury_plural
+  meaning: male_injury
+
+- term: "مصابين"
+  category: male_injury_plural
+  meaning: male_injury
+  notes: "Also dual/plural overlap in Arabic orthography."
+
 - term: "جريحات"
   category: female_injury_plural
   meaning: female_injury
 
+- term: "مصابات"
+  category: female_injury_plural
+  meaning: female_injury
+
+# --- Death count synonyms (casualty_count_backstop) ---
+
+- term: "قتيل"
+  category: death_count_word
+  meaning: death
+
+- term: "قتيلا"
+  category: death_count_word
+  meaning: death
+
+- term: "قتيلة"
+  category: death_count_word
+  meaning: death
+
+- term: "قتيلان"
+  category: death_count_word
+  meaning: death
+  normalized: "2"
+
+- term: "قتيلين"
+  category: death_count_word
+  meaning: death
+  normalized: "2"
+
+# --- Gendered occupation / role nouns ---
+
 - term: "مسعف"
   category: male_role_noun
   meaning: male_occupation_death
-  notes: "With شهيد/استشهاد prefix → male_deaths increment."
+  notes: "With شهيد/استشهاد prefix → male_deaths. Fixture: استشهاد مسعف."
 
-- term: "مسعفه"
-  category: female_role_noun
-  meaning: female_occupation_death
+- term: "جندي"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "عنصر"
+  category: male_role_noun
+  meaning: male_occupation_death
 
 - term: "موظف"
   category: male_role_noun
   meaning: male_occupation_death
 
+- term: "شرطي"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "اطفائي"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "ممرض"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "صحافي"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "صحفي"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "اعلامي"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "مسعفه"
+  category: female_role_noun
+  meaning: female_occupation_death
+
 - term: "موظفه"
   category: female_role_noun
   meaning: female_occupation_death
 
-- term: "قتيل"
-  category: death_count_word
-  meaning: death
-  notes: "Used by casualty_count_backstop for explicit count 1."
+- term: "ممرضه"
+  category: female_role_noun
+  meaning: female_occupation_death
 
-- term: "قتيلة"
-  category: death_count_word
-  meaning: death
+- term: "شرطيه"
+  category: female_role_noun
+  meaning: female_occupation_death
+
+- term: "صحافيه"
+  category: female_role_noun
+  meaning: female_occupation_death
+
+- term: "صحفيه"
+  category: female_role_noun
+  meaning: female_occupation_death
+
+- term: "اعلاميه"
+  category: female_role_noun
+  meaning: female_occupation_death

@@ -15,6 +15,7 @@ from collections.abc import Callable
 from math import hypot
 
 from app.core.config import settings
+from app.core.llm_knowledge.loader import load_terminology
 from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import ExtractionResult
 from app.llm.dtos import VillageRole, VillageRoleEntry
@@ -41,9 +42,20 @@ LOW_CONFIDENCE_THRESHOLD = 0.35
 # ~0.29 margin. 0.05 catches exact/near ties without demoting clear winners.
 MATCH_TIE_MARGIN = 0.05
 DEFAULT_CANDIDATE_LIMIT = 5
+
+
+def _distinguishing_tokens(meaning: str) -> tuple[str, ...]:
+    return tuple(
+        entry.term
+        for entry in load_terminology("terminology/condition_labels.yaml")
+        if entry.category == "distinguishing_token" and entry.meaning == meaning
+    )
+
+
+# Numeric IDs stay code-only (Phase 2.5). Arabic tokens load from terminology.
 CONDITION_DISTINGUISHING_TOKENS: dict[int, tuple[str, ...]] = {
-    2: ("تحذيريه",),
-    39: ("وهميه",),
+    2: _distinguishing_tokens("Warning Raid") or ("تحذيريه",),
+    39: _distinguishing_tokens("Feigned Attacks") or ("وهميه",),
 }
 
 @dataclass(frozen=True)

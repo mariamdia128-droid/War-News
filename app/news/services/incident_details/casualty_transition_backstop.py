@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.core.llm_knowledge.loader import terms_by_category
 from app.core.text_normalization import normalize_arabic_text
 
 
@@ -12,6 +13,9 @@ class CasualtyTransitionBackstopResult:
     matched_keywords: tuple[str, ...]
 
 
+# Fragment classification (Phase 3.5):
+#   knowledge — transition *labels* in revision_language_markers.yaml
+#   code-logic — compiled regex detectors below (deterministic backstop)
 _KEYWORD_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "استشهاد أحد جريحي/الجرحى",
@@ -56,7 +60,12 @@ _KEYWORD_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 def casualty_transition_keyword_labels() -> tuple[str, ...]:
-    return tuple(label for label, _ in _KEYWORD_PATTERNS)
+    yaml_labels = terms_by_category(
+        "terminology/revision_language_markers.yaml",
+        "casualty_transition",
+    )
+    # Prefer YAML catalogue when present; fall back to regex-table labels.
+    return yaml_labels or tuple(label for label, _ in _KEYWORD_PATTERNS)
 
 
 def detect_casualty_transition_backstop(

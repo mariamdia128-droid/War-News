@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.llm_knowledge.loader import load_terminology
 from app.news.models import Condition, MessageStatus, RawMessage, Village
 from app.news.repositories.air_violation_repository import AirViolationRepository
 from app.news.services.air_violations.red_alert_air_violation_service import RedAlertAirViolationService
@@ -31,6 +32,7 @@ OCR_VERSION = 3
 RED_ZONE_OCR_MARKER = "__RED_ZONE_TEXT__"
 # Exact labels used by the Red Alert map, mapped to canonical Villages.json
 # ACS codes. These are spelling aliases only; they never select a nearby place.
+# Intentionally code-only / ingestion-scoped (Phase 2.5 clarification #5).
 RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "beirut": 10999,
     "burj el brajne": 21177,
@@ -44,15 +46,24 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "al bazuriya": 62246,
     "al bazuriye": 62246,
 }
+
+
+def _air_keyword_phrases(meaning: str) -> tuple[str, ...]:
+    return tuple(
+        entry.term
+        for entry in load_terminology("terminology/condition_labels.yaml")
+        if entry.category == "air_violation_keyword" and entry.meaning == meaning
+    )
+
+
+# IDs stay code-only (Phase 2.5). Standard Arabic phrases load from terminology;
+# OCR/English typos remain local to Red Alert ingestion.
 AIR_KEYWORDS: tuple[tuple[int, tuple[str, ...]], ...] = (
-    (35, ("طيران حربي", "مقاتلات حربية", "مقاتله حربيه", "مقاتلات حربيه")),
+    (35, _air_keyword_phrases("Warplane")),
     (
         36,
-        (
-            "طيران استطلاعي",
-            "طائره استطلاع",
-            "مسيره",
-            "مسير",
+        _air_keyword_phrases("Drone / recon")
+        + (
             # Common Tesseract output from Red Alert drone-map headers.
             "معم سر",
             "معمر سر",
@@ -60,10 +71,8 @@ AIR_KEYWORDS: tuple[tuple[int, tuple[str, ...]], ...] = (
     ),
     (
         38,
-        (
-            "طيران مروحي",
-            "مروحيه",
-            "هليكوبتر",
+        _air_keyword_phrases("Helicopter")
+        + (
             "apache",
             "ah-64",
             # Common Tesseract substitution in Red Alert helicopter headers.

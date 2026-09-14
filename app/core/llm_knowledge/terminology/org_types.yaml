@@ -1,5 +1,16 @@
-# Emergency / civil-defense organization terms.
-# Source: app/llm/services/ollama_presence_gate_service.py CIVIL_DEFENSE_ORG_TERMS
+# Emergency / civil-defense / health-organization terms.
+# Sources:
+#   - Data/EmergencyOrganizations.json (canonical named orgs)
+#   - app/llm/services/ollama_presence_gate_service.py CIVIL_DEFENSE_ORG_TERMS
+
+# ---------------------------------------------------------------------------
+# Named organizations (from EmergencyOrganizations.json)
+# ---------------------------------------------------------------------------
+
+- term: "الدفاع المدني اللبناني"
+  category: emergency_civil_defense
+  meaning: lebanese_civil_defense
+  notes: "Canonical name from EmergencyOrganizations.json."
 
 - term: "الدفاع المدني"
   category: emergency_civil_defense
@@ -10,6 +21,11 @@
   category: emergency_civil_defense
   meaning: civil_defense
 
+- term: "الصليب الأحمر اللبناني"
+  category: emergency_civil_defense
+  meaning: lebanese_red_cross
+  notes: "Canonical name from EmergencyOrganizations.json."
+
 - term: "الصليب الأحمر"
   category: emergency_civil_defense
   meaning: red_cross
@@ -17,6 +33,45 @@
 - term: "الهلال الأحمر"
   category: emergency_civil_defense
   meaning: red_crescent
+
+- term: "مركز عمليات طوارئ الصحة العامة"
+  category: health_organization
+  meaning: public_health_emergency_ops
+  notes: "Public Health Emergency Operations Center (MOPH)."
+
+- term: "الهيئة الصحية الإسلامية"
+  category: health_organization
+  meaning: islamic_health_society
+  notes: "Islamic Health Society — often abbreviated الهيئة الصحية."
+
+- term: "الهيئة الصحية"
+  category: health_organization
+  meaning: islamic_health_society
+  notes: "Short form of الهيئة الصحية الإسلامية."
+
+- term: "كشافة الرسالة الإسلامية"
+  category: scout_paramedic
+  meaning: islamic_message_scouts
+  notes: "Islamic Message Scouts (Al-Risala)."
+
+- term: "جمعية الرسالة للإسعاف الصحي"
+  category: scout_paramedic
+  meaning: al_risala_ambulance
+  notes: "Al-Risala Health Ambulance Association."
+
+- term: "الرسالة"
+  category: scout_paramedic
+  meaning: al_risala
+  notes: "Short bulletin form for كشافة/جمعية الرسالة."
+
+- term: "فرقة إسعاف غير محددة"
+  category: emergency_civil_defense
+  meaning: unspecified_emergency_unit
+  notes: "Generic fallback org when crew type is unnamed."
+
+# ---------------------------------------------------------------------------
+# Generic role / vehicle terms (presence-gate keywords)
+# ---------------------------------------------------------------------------
 
 - term: "الإسعاف"
   category: emergency_civil_defense
@@ -26,17 +81,35 @@
   category: emergency_civil_defense
   meaning: ambulance_service
 
+- term: "فرق الإسعاف"
+  category: emergency_civil_defense
+  meaning: ambulance_crews
+  notes: "Alias of فرقة إسعاف غير محددة."
+
 - term: "مسعف"
   category: emergency_civil_defense
   meaning: paramedic
+
+- term: "مسعفون"
+  category: emergency_civil_defense
+  meaning: paramedics
+  notes: "Alias of فرقة إسعاف غير محددة."
 
 - term: "سيارة إسعاف"
   category: emergency_civil_defense
   meaning: ambulance_vehicle
 
+- term: "سيارات إسعاف"
+  category: emergency_civil_defense
+  meaning: ambulance_vehicles
+
 - term: "فرق الإنقاذ"
   category: emergency_civil_defense
   meaning: rescue_teams
+
+# ---------------------------------------------------------------------------
+# Municipality (presence-gate, not EmergencyOrganizations.json)
+# ---------------------------------------------------------------------------
 
 - term: "بلدية"
   category: municipality

@@ -1,18 +1,78 @@
 # llm_knowledge CHANGELOG
 
-## 2026-09-14 — Phase 2 architecture (additive seed)
+## 2026-09-14 — Completeness audit A.2 stragglers
 
-Initial structure under `app/core/llm_knowledge/`. Content seeded from Phase 1 recon; call sites not yet wired (Phase 3).
+| Fragment | Destination | Status |
+|----------|-------------|--------|
+| Tier 2 category detail prompts | `rules/tier2_*_prompt.md` + PromptBuilder | migrated |
+| Relevance classification prompt | `rules/relevance_filter_prompt.md` + PromptBuilder | migrated |
+| Presence heuristic literals (road/escort/hospital) | `terminology/role_terms.yaml` | migrated |
+| CNRS motorcycle/tank markers | load from `role_terms.yaml` | migrated |
+| Dash-route `_ROUTE_AREA_PREFIXES` | load from `role_terms.yaml` | migrated |
+| Import ACS aliases كفره/شعث/النبطيه | `terminology/village_aliases.yaml` | migrated |
+
+
+Resolved all 8 recon "needs clarification" items in
+`Docs/recon/llm_knowledge_migration_recon.md`. Summary: category_mapper
+keywords, numeric condition IDs, boilerplate strip, Red Alert OCR aliases,
+and evidence-override control flow stay **code-only**; Arabic labels/phrases
+migrate; uncertain aliases → eval negatives; legacy extraction_instruction.txt
+stays scripts-only until harness update.
+
+## 2026-09-14 — Batch 3.1 pure terminology
 
 | Fragment source | New location | Status |
 |-----------------|--------------|--------|
-| `casualty_gender_evidence.py` explicit forms + role nouns | `terminology/casualty_gender.yaml` | seeded |
-| `ollama_presence_gate_service.py` org terms | `terminology/org_types.yaml` | seeded |
-| `ollama_presence_gate_service.py` location/vehicle/verb terms | `terminology/role_terms.yaml` | seeded |
-| `story_revision_backstop.py` + `casualty_transition_backstop.py` markers | `terminology/revision_language_markers.yaml` | seeded |
-| `GENERAL_EXTRACTION_PROMPT` core rules | `rules/tier1_core.md` | seeded |
-| Multi-village prompt sections | `rules/tier1_multi_village.md` | seeded |
-| casualty_scope / merge / transitions | `rules/casualty_merge.md` | seeded |
-| `matching_service.py` thresholds + alias notes | `rules/village_matching.md` | seeded |
-| Inline prompt examples | `fewshot/*.jsonl` | seeded |
-| Recon bug cases | `eval/corpus/*.jsonl` | seeded |
+| Full `_EXPLICIT_FORMS` + duals + plurals + count words | `terminology/casualty_gender.yaml` | completed |
+| Full `_MALE_ROLE_NOUNS` / `_FEMALE_ROLE_NOUNS` | `terminology/casualty_gender.yaml` | completed |
+| All revision + transition labels | `terminology/revision_language_markers.yaml` | completed |
+| Named orgs from EmergencyOrganizations.json | `terminology/org_types.yaml` | completed (prior expand) |
+| `load_terminology` / `terms_by_category` / `terms_by_meaning` API | `loader.py` | added for 3.4/3.5 wiring |
+
+## 2026-09-14 — Batch 3.2 Tier 1 prompt + fewshot
+
+| Fragment source | New location | Status |
+|-----------------|--------------|--------|
+| Inline `GENERAL_EXTRACTION_PROMPT` | `rules/tier1_general_prompt.md` | migrated verbatim |
+| `combined_tier1_presence_extraction_instruction.txt` | `rules/combined_tier1_prompt.md` | migrated verbatim |
+| `build_stage_system_prompt()` | `prompt_assembly.py` | wired |
+| `ollama_extraction_service` Tier 1 + combined calls | uses `PromptBuilder` via prompt_assembly | wired |
+| Prompt few-shot examples | `fewshot/scope_examples.jsonl` | expanded |
+
+## 2026-09-14 — Batch 3.3 matching aliases
+
+| Fragment source | New location | Status |
+|-----------------|--------------|--------|
+| `CONDITION_ALIASES` phrases | `terminology/condition_labels.yaml` | migrated; `condition_aliases.py` loads YAML |
+| Distinguishing tokens `تحذيريه`/`وهميه` | `terminology/condition_labels.yaml` | migrated; IDs stay in `matching_service` |
+| Air keyword Arabic phrases | `terminology/condition_labels.yaml` | migrated; IDs + OCR typos stay in Red Alert |
+| `PROPOSED_VILLAGE_LOCATION_ALIASES` | `terminology/village_aliases.yaml` | migrated; `village_aliases.py` loads YAML |
+| Uncertain alias notes | `eval/corpus/village_matching.jsonl` negatives | documented |
+
+## 2026-09-14 — Batch 3.4 presence gate
+
+| Fragment source | New location | Status |
+|-----------------|--------------|--------|
+| `MUNICIPAL_*` / `VILLAGE_*` / `TARGETING_*` / `VEHICLE_*` | `terminology/role_terms.yaml` | migrated |
+| `CIVIL_DEFENSE_ORG_TERMS` | `terminology/org_types.yaml` | migrated |
+| Proximity / negative / direct impact term lists | `terminology/role_terms.yaml` | migrated |
+| `presence_gate_instruction.txt` | `rules/presence_gate_prompt.md` | migrated |
+| `_is_context_only_evidence` branching | stays in Python | code-logic (Phase 2.5) |
+| Presence chat system prompt | `build_stage_system_prompt("presence_gate")` | wired |
+
+## 2026-09-14 — Batch 3.5 backstop terminology
+
+| Fragment | Classification | Action |
+|----------|----------------|--------|
+| Explicit gender term lists | knowledge | load from `casualty_gender.yaml` |
+| Role noun lists | knowledge | load from YAML |
+| `_standalone` / cover-total / apply_* | code-logic | unchanged behavior, uses loaded terms |
+| Transition regex patterns | code-logic | kept in Python |
+| Transition labels | knowledge | mirrored in YAML; `keyword_labels()` prefers YAML |
+| Revision regex patterns | code-logic | kept in Python |
+| Revision labels | knowledge | mirrored in YAML |
+| `casualty_count_backstop` count words | knowledge | load from YAML |
+
+## 2026-09-14 — Phase 2 architecture (additive seed)
+
+Initial structure under `app/core/llm_knowledge/`. See earlier commits.

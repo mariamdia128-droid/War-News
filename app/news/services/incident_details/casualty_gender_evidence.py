@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import re
 
+from app.core.llm_knowledge.loader import terms_by_category
 from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import ExtractionCasualties, ExtractionResult, ExtractionSubEvent
 
 
 _ARABIC_LETTER = r"\u0600-\u06ff"
+_CASUALTY_GENDER_YAML = "terminology/casualty_gender.yaml"
+
+# ---------------------------------------------------------------------------
+# Fragment classification (Phase 3.5):
+#   knowledge  — Arabic term lists (loaded from casualty_gender.yaml)
+#   code-logic — regex construction, cover-total arithmetic, apply_* functions
+# ---------------------------------------------------------------------------
 
 
 def _standalone(word: str) -> re.Pattern[str]:
@@ -21,34 +29,44 @@ def _standalone(word: str) -> re.Pattern[str]:
     )
 
 
+def _explicit_form_patterns(
+    singular_category: str,
+    dual_category: str,
+) -> tuple[tuple[int, re.Pattern[str]], ...]:
+    """Build count→pattern pairs from terminology categories (code-logic)."""
+    patterns: list[tuple[int, re.Pattern[str]]] = []
+    singular = terms_by_category(_CASUALTY_GENDER_YAML, singular_category)
+    if singular:
+        # One pattern per singular synonym so each can independently cover total=1.
+        for term in singular:
+            patterns.append((1, _standalone(re.escape(term))))
+    dual = terms_by_category(_CASUALTY_GENDER_YAML, dual_category)
+    if dual:
+        alternation = "|".join(re.escape(term) for term in dual)
+        patterns.append((2, _standalone(alternation)))
+    return tuple(patterns)
+
+
 _EXPLICIT_FORMS: dict[str, tuple[tuple[int, re.Pattern[str]], ...]] = {
-    "male_deaths": (
-        (1, _standalone("شهيد")),
-        (2, _standalone("شهيدان|شهيدين")),
+    "male_deaths": _explicit_form_patterns("male_death_singular", "male_death_dual"),
+    "female_deaths": _explicit_form_patterns(
+        "female_death_singular", "female_death_dual"
     ),
-    "female_deaths": (
-        (1, _standalone("شهيدة")),
-        (2, _standalone("شهيدتان|شهيدتين")),
+    "male_injuries": _explicit_form_patterns(
+        "male_injury_singular", "male_injury_dual"
     ),
-    "male_injuries": (
-        (1, _standalone("جريح")),
-        (1, _standalone("مصاب")),
-        (2, _standalone("جريحان|جريحين")),
-        (2, _standalone("مصابان|مصابين")),
-    ),
-    "female_injuries": (
-        (1, _standalone("جريحة")),
-        (1, _standalone("مصابة")),
-        (2, _standalone("جريحتان|جريحتين")),
-        (2, _standalone("مصابتان|مصابتين")),
+    "female_injuries": _explicit_form_patterns(
+        "female_injury_singular", "female_injury_dual"
     ),
 }
 
 _COUNTED_PLURALS: dict[str, tuple[str, ...]] = {
-    "male_deaths": ("شهداء",),
-    "female_deaths": ("شهيدات",),
-    "male_injuries": ("جرحى", "مصابون", "مصابين"),
-    "female_injuries": ("جريحات", "مصابات"),
+    "male_deaths": terms_by_category(_CASUALTY_GENDER_YAML, "male_death_plural"),
+    "female_deaths": terms_by_category(_CASUALTY_GENDER_YAML, "female_death_plural"),
+    "male_injuries": terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_plural"),
+    "female_injuries": terms_by_category(
+        _CASUALTY_GENDER_YAML, "female_injury_plural"
+    ),
 }
 
 
@@ -115,27 +133,9 @@ def apply_explicit_arabic_gender_evidence(
     return ExtractionCasualties.model_validate(values)
 
 
-_MALE_ROLE_NOUNS = (
-    "مسعف",
-    "جندي",
-    "عنصر",
-    "موظف",
-    "شرطي",
-    "اطفائي",
-    "ممرض",
-    "صحافي",
-    "صحفي",
-    "اعلامي",
-)
-_FEMALE_ROLE_NOUNS = (
-    "مسعفه",
-    "موظفه",
-    "ممرضه",
-    "شرطيه",
-    "صحافيه",
-    "صحفيه",
-    "اعلاميه",
-)
+# knowledge: role nouns from YAML. code-logic: occupation-death regexes below.
+_MALE_ROLE_NOUNS = terms_by_category(_CASUALTY_GENDER_YAML, "male_role_noun")
+_FEMALE_ROLE_NOUNS = terms_by_category(_CASUALTY_GENDER_YAML, "female_role_noun")
 
 
 def _role_alternation(roles: tuple[str, ...]) -> str:

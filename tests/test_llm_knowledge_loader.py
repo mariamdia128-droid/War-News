@@ -7,6 +7,7 @@ from app.core.llm_knowledge.loader import (
     PromptBuilder,
     is_multi_village_candidate,
     scan_terminology,
+    terms_by_category,
     _load_terminology_file,
     TerminologyEntry,
 )
@@ -89,6 +90,14 @@ def test_missing_terminology_file_returns_empty() -> None:
     _load_terminology_file.cache_clear()
     result = _load_terminology_file("missing.yaml", missing_root)
     assert result == ()
+
+
+def test_terms_by_category_loads_role_nouns() -> None:
+    male = terms_by_category("terminology/casualty_gender.yaml", "male_role_noun")
+    assert "مسعف" in male
+    assert "جندي" in male
+    female = terms_by_category("terminology/casualty_gender.yaml", "female_role_noun")
+    assert "مسعفه" in female
 
 
 def test_as_prompt_fragment_includes_matched_terminology(builder: PromptBuilder) -> None:

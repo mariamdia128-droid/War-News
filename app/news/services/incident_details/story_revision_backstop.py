@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.core.llm_knowledge.loader import terms_by_category
 from app.core.text_normalization import normalize_arabic_text
 
 
@@ -14,6 +15,9 @@ class StoryRevisionBackstopResult:
     evidence: str | None
 
 
+# Fragment classification (Phase 3.5):
+#   knowledge — revision/named-victim labels in revision_language_markers.yaml
+#   code-logic — regex detectors and candidate-toll heuristics below
 _REVISION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("حصيلة أولية", re.compile(r"حصيله اوليه")),
     ("حصيلة مؤقتة", re.compile(r"حصيله مؤقته")),
@@ -36,8 +40,16 @@ _NAMED_IN_CANDIDATE = re.compile(r"تنعي|الشهيده\s+\S{2,}\s+\S{2,}")
 
 
 def story_revision_keyword_labels() -> tuple[str, ...]:
-    return tuple(label for label, _ in _REVISION_PATTERNS) + tuple(
-        label for label, _ in _NAMED_VICTIM_PATTERNS
+    yaml_labels = terms_by_category(
+        "terminology/revision_language_markers.yaml",
+        "revision_language",
+    ) + terms_by_category(
+        "terminology/revision_language_markers.yaml",
+        "named_victim_followup",
+    )
+    return yaml_labels or (
+        tuple(label for label, _ in _REVISION_PATTERNS)
+        + tuple(label for label, _ in _NAMED_VICTIM_PATTERNS)
     )
 
 

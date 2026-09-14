@@ -234,21 +234,59 @@ Prompt-building functions: **8** (see dedicated section).
 
 1. **`CONDITION_DISTINGUISHING_TOKENS` IDs 2 and 39** — Confirm these always match seeded `conditions.id` across environments; migrate tokens only or also document ID→condition mapping in `index.yaml`?
 
+   **Resolved (Phase 2.5):** **Split.** Numeric IDs stay in Python (`matching_service.CONDITION_DISTINGUISHING_TOKENS`) — they gate deterministic condition acceptance and must not become fuzzy. Arabic tokens (`تحذيريه`, `وهميه`) migrate to `terminology/condition_labels.yaml` as labels; the Python dict continues to hold the ID→token map (or loads tokens from YAML keyed by stable `action_en` / documented seed ID). Decision test: ID routing = code-logic; Arabic label = knowledge. Do **not** put IDs in `index.yaml`.
+
 2. **Air violation IDs 35/36/38/45** — Spec mentions these explicitly. Keep as Python/ SQL constants (operational routing) while migrating Arabic keyword lists to YAML, or move full ID maps to config?
+
+   **Resolved (Phase 2.5):** **Both, split cleanly.** Keep `{35, 36, 38}` and `45` as Python/SQL constants (`AIR_VIOLATION_CONDITION_IDS`, `UNCLASSIFIED_AIR_CONDITION_ID`) — they drive `routed_air_violation` and fast-path exclusion and must remain exact. Migrate Arabic keyword phrases from `AIR_KEYWORDS` into `terminology/condition_labels.yaml` (or air-specific YAML). Red Alert classifier code keeps the ID→keyword wiring in Python, loading keyword strings from YAML.
 
 3. **`category_mapper.py` English+Arabic keyword sets** — Tier 2 post-processing, not LLM prompts. Include in `llm_knowledge/terminology` or leave as materialization logic?
 
+   **Resolved (Phase 2.5):** **Intentionally code-only.** `map_categories()` uses these frozensets for deterministic field routing after Tier 2 extraction (school vs university, bridge vs road, etc.). They never enter an LLM prompt. Leave in `category_mapper.py`. Optional future: mirror into terminology for documentation only — not required for PromptBuilder.
+
 4. **`raw_message_embedding_service.py` boilerplate patterns** — Text normalization for embeddings, not extraction prompts. Out of scope?
+
+   **Resolved (Phase 2.5):** **Out of scope / code-only.** `strip_boilerplate` is deterministic text hygiene for embeddings, dedup, and story routing — not LLM knowledge. Do not migrate to `llm_knowledge/`.
 
 5. **`RED_ALERT_VILLAGE_ALIASES` / OCR-specific typos** (`معم سر`, `كوترية`) — Red Alert ingestion only; separate namespace from war-news bulletin pipeline?
 
+   **Resolved (Phase 2.5):** **Keep in Red Alert code; do not merge into bulletin `llm_knowledge` village aliases.** OCR typo aliases and map-label ACS maps are ingestion-domain, not war-news LLM prompts. Optional: a separate `terminology/red_alert_ocr.yaml` later if Red Alert wants centralization — out of Phase 3 bulletin migration scope. Count as **code-only (ingestion)**.
+
 6. **`UNCERTAIN_VILLAGE_LOCATION_ALIAS_NOTES`** — Document as eval corpus negative cases or hold until human review?
+
+   **Resolved (Phase 2.5):** **Hold as documentation + eval negative cases.** Do not seed into `village_location_aliases` or production terminology. Copy into `eval/corpus/village_matching.jsonl` as `expected_output: {match: null, reason: "ambiguous"}` entries so the harness documents known non-matches. Leave the notes tuple in `village_aliases.py` until Phase 3.3 migrates proposed aliases; then keep notes in CHANGELOG / eval only.
 
 7. **`condition_evidence_override` English condition names** (`Tank Fire`, `Bombs`) — Maps to DB `action_en`; terminology file should use Arabic, English, or condition key?
 
+   **Resolved (Phase 2.5):** **Code-logic stays; Arabic regex patterns are knowledge.** Override function remains Python (deterministic weapon→`action_en` remap before matching). Migrate Arabic pattern stems/phrases to `terminology/condition_labels.yaml` with `meaning` = English `action_en` (matches DB). Return type stays English `action_en` for repository compatibility. Do not switch to Arabic keys or numeric IDs here.
+
 8. **Legacy `extraction_instruction.txt`** — Still used by `scripts/phase2-extraction-testing/run_extraction_test.ps1`; migrate or deprecate with test harness?
 
+   **Resolved (Phase 2.5):** **Deprecate for production migration; keep file for harness until harness points at `llm_knowledge`.** Production Tier 1 uses `GENERAL_EXTRACTION_PROMPT` / `combined_tier1_presence_extraction_instruction.txt`. Legacy file is scripts-only. Phase 3.2 migrates production prompts only. Follow-up TODO: update `run_extraction_test.ps1` / `quick_test.ps1` to load `rules/tier1_core.md` (or assembled PromptBuilder fragment) and then delete `extraction_instruction.txt`. Until then: **intentionally scripts-only, not deleted in Phase 4.**
+
+### Phase 2.5 tally — intentionally code-only (excluded from PromptBuilder migration)
+
+| Item | Reason |
+|------|--------|
+| `category_mapper.py` keyword frozensets | Deterministic post-LLM field routing |
+| Air / condition numeric IDs (2, 35, 36, 38, 39, 45) | Deterministic routing / eligibility |
+| `strip_boilerplate` regexes | Embedding/dedup hygiene |
+| `RED_ALERT_VILLAGE_ALIASES` + OCR typos | Ingestion-only, separate domain |
+| `condition_evidence_override` control flow | Deterministic remapping (Arabic stems migrate) |
+| Legacy `extraction_instruction.txt` | Scripts harness only until harness update |
+
+### Phase 2.5 tally — migrates to `llm_knowledge/`
+
+| Item | Destination |
+|------|-------------|
+| Distinguishing Arabic tokens `تحذيريه`/`وهميه` | `terminology/condition_labels.yaml` |
+| Air keyword Arabic phrases | `terminology/condition_labels.yaml` |
+| Condition alias Arabic phrases | `terminology/condition_labels.yaml` |
+| Evidence-override Arabic pattern stems | `terminology/condition_labels.yaml` |
+| Uncertain alias notes | `eval/corpus/village_matching.jsonl` (negative) |
+
 ---
+
 
 ## Recommended `index.yaml` stage mapping (preview for Phase 2)
 

@@ -1,0 +1,109 @@
+# Village location aliases (proposed seeds).
+# Source: village_aliases.py / Data/VillageLocationAliases.json
+
+- term: "النبطية"
+  category: village_location_alias
+  meaning: "acs:71111"
+  notes: "Bare city/caza-seat mention → Nabatieh Et-Tahta. confidence=proposed; recon 2026-09-07 Douair 0.615 ال-suffix trap"
+
+- term: "مدينة النبطية"
+  category: village_location_alias
+  meaning: "acs:71111"
+  notes: "Explicit city phrasing → Nabatieh Et-Tahta. confidence=proposed; recon 2026-09-07 Zibdine 0.474"
+
+- term: "حي المسلخ"
+  category: village_location_alias
+  meaning: "acs:71111"
+  notes: "Nabatiyeh-city neighborhood → Et-Tahta, not Masqa. confidence=proposed; recon maslakh cluster; Masqa is المتن"
+
+- term: "المسلخ"
+  category: village_location_alias
+  meaning: "acs:71111"
+  notes: "Extractor often strips حي. confidence=proposed; recon المسلخ → Masqa 0.40"
+
+- term: "محيط النبطية الفوقا"
+  category: village_location_alias
+  meaning: "acs:71113"
+  notes: "Descriptor+name → El-Faouka. confidence=proposed; 14d Houmine 703 vs Douair 543 split"
+
+- term: "دوحة كفررمان"
+  category: village_location_alias
+  meaning: "acs:71133"
+  notes: "Compound of Kfar Roummane. confidence=proposed; 89-pair backlog: 21 msgs low-confidence → 851"
+
+- term: "وادي زبقين"
+  category: village_location_alias
+  meaning: "acs:62286"
+  notes: "Valley-of-village → Zebqine. confidence=proposed; 89-pair backlog: 9 msgs low-confidence → 1523"
+
+- term: "حرش كونين"
+  category: village_location_alias
+  meaning: "acs:72251"
+  notes: "Grove + village → Kounine. confidence=proposed; 89-pair backlog: 3 msgs"
+
+- term: "حرش علي الطاهر"
+  category: village_location_alias
+  meaning: "acs:71115"
+  notes: "Grove + village → Aali Et-Taher. confidence=proposed; 89-pair backlog: 3 msgs"
+
+- term: "محيط المنصوري"
+  category: village_location_alias
+  meaning: "acs:62296"
+  notes: "Outskirts → Mansouri Sour. confidence=proposed; 89-pair backlog: المنصوري top non-Nabatiyeh (26 msgs)"
+
+- term: "أطراف المنصوري"
+  category: village_location_alias
+  meaning: "acs:62296"
+  notes: "Outskirts → Mansouri Sour. confidence=proposed; bulletin phrasing with المنصوري"
+
+- term: "محيط علي الطاهر"
+  category: village_location_alias
+  meaning: "acs:71115"
+  notes: "Outskirts → Aali Et-Taher. confidence=proposed; 89-pair backlog: علي الطاهر in 10 msgs"
+
+- term: "أطراف علي الطاهر"
+  category: village_location_alias
+  meaning: "acs:71115"
+  notes: "Outskirts → Aali Et-Taher. confidence=proposed; bulletin phrasing with علي الطاهر"
+
+- term: "القنطرة"
+  category: village_location_alias
+  meaning: "acs:73276"
+  notes: "Marjayoun قنطرة, not Akkar Qantarat. confidence=proposed; 89-pair backlog: 11 msgs → Akkar 1229; correct ACS 73276"
+
+- term: "عيناثا"
+  category: village_location_alias
+  meaning: "acs:72119"
+  notes: "Aaynata Bent Jbayl, not Metn Aaynab. confidence=proposed; 89-pair backlog: 4 msgs → 142 Aaynab; ACS 72119"
+
+- term: "عيناتا"
+  category: village_location_alias
+  meaning: "acs:72119"
+  notes: "Spelling variant → Aaynata Bent Jbayl (war-news default). confidence=proposed; Baalbek عيناتا also exists; southern usage dominates backlog"
+
+- term: "المجيدية"
+  category: village_location_alias
+  meaning: "acs:74177"
+  notes: "Majidiye Hasbaya, not Massaaoudiyé Akkar. confidence=proposed; 89-pair backlog: 2 msgs → 998; ACS 74177"
+
+- term: "حاروف"
+  category: village_location_alias
+  meaning: "acs:71331"
+  notes: "Common Arabic spelling → Harouf En-Nabatiyeh. confidence=proposed; Road bulletin spelling; ACS ref_name_ar stores حروف."
+
+# --- Import workbook aliases (from import_source_enrichment.py) ---
+
+- term: "كفره"
+  category: village_location_alias
+  meaning: "acs:72257"
+  notes: "Import alias for Kafra Bint Jbeil. confidence=proposed; Ministry of Interior 2025."
+
+- term: "شعث"
+  category: village_location_alias
+  meaning: "acs:53274"
+  notes: "Import alias for Chaat North Baalbek. confidence=proposed; PDA municipal-union ref."
+
+- term: "النبطيه"
+  category: village_location_alias
+  meaning: "acs:71111"
+  notes: "Normalized spelling of النبطية city-seat. confidence=proposed; mirrors VillageLocationAliases."

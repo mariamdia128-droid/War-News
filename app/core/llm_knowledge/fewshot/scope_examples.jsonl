@@ -1,5 +1,9 @@
-{"input": "المنصوري: شهيد و3 جرحى؛ مجدل زون: 4 جرحى", "expected": {"casualty_scope": "per_village_exact", "village_roles": [{"village": "المنصوري", "deaths": 1, "injuries": 3}, {"village": "مجدل زون", "injuries": 4}]}, "note": "Per-village explicit counts in separate clauses"}
-{"input": "غارة على المنصوري ومجدل زون أدت إلى 5 شهداء و12 جريحاً", "expected": {"casualty_scope": "bulletin_aggregate", "casualties": {"total_deaths": 5, "total_injuries": 12, "deaths": null, "injuries": null}}, "note": "Shared toll across two targets without per-village breakdown"}
-{"input": "قصف على بلدة عيتا الشعب", "expected": {"casualty_scope": "unspecified"}, "note": "No casualty numbers mentioned"}
-{"input": "عشرات الجرحى والشهداء في القصف", "expected": {"casualties": {"deaths": null, "injuries": null, "total_deaths": null, "total_injuries": null}}, "note": "Vague quantifier must not become a number"}
-{"input": "4 شهداء و33 جريحا من بينهم 6 أطفال و4 سيدات", "expected": {"casualties": {"deaths": 4, "injuries": 33, "children_injuries": 6, "female_injuries": 4}}, "note": "Demographic split applies to injuries after من بينهم"}
+{"input": "توفى أحد الجرحى جراء إصابته", "expected": {"casualty_transitions": [{"from_status": "injured", "to_status": "deceased", "count": 1}]}, "note": "From GENERAL_EXTRACTION_PROMPT example 1"}
+{"input": "بقي 3 جرحى وتوفي واحد", "expected": {"casualty_transitions": [{"from_status": "injured", "to_status": "deceased", "count": 1}]}, "note": "From GENERAL_EXTRACTION_PROMPT example 2"}
+{"input": "أعلنت وزارة الصحة وفاة أحد المصابين متأثراً بجراحه", "expected": {"casualty_transitions": [{"from_status": "injured", "to_status": "deceased", "count": 1}]}, "note": "From GENERAL_EXTRACTION_PROMPT example 3"}
+{"input": "أحد جريحي الانفجار استشهد لتصبح الحصيلة 3 شهداء وجريح واحد", "expected": {"casualty_transitions": [{"from_status": "injured", "to_status": "deceased", "count": 1}]}, "note": "Transition + refreshed tally in same sentence"}
+{"input": "أصيب 5 جرحى إضافيين", "expected": {"casualty_transitions": []}, "note": "Additive only — no transition"}
+{"input": "المنصوري: شهيد و3 جرحى؛ مجدل زون: 4 جرحى", "expected": {"casualty_scope": "per_village_exact"}, "note": "Per-village explicit counts"}
+{"input": "غارة على المنصوري ومجدل زون أدت إلى 5 شهداء و12 جريحاً", "expected": {"casualty_scope": "bulletin_aggregate"}, "note": "Shared toll"}
+{"input": "عشرات الجرحى والشهداء في القصف", "expected": {"casualties": {"deaths": null, "injuries": null}}, "note": "Vague quantifier"}
+{"input": "4 شهداء و33 جريحا من بينهم 6 أطفال و4 سيدات", "expected": {"casualties": {"deaths": 4, "injuries": 33, "children_injuries": 6, "female_injuries": 4}}, "note": "Demographic split on injuries"}

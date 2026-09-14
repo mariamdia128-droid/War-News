@@ -1,7 +1,7 @@
 tier1_extraction:
   rules:
     core:
-      - rules/tier1_core.md
+      - rules/tier1_general_prompt.md
     situational:
       - trigger: is_multi_village_candidate
         load: rules/tier1_multi_village.md
@@ -11,6 +11,23 @@ tier1_extraction:
   terminology:
     - terminology/role_terms.yaml
     - terminology/revision_language_markers.yaml
+    - terminology/casualty_gender.yaml
+
+combined_tier1:
+  rules:
+    core:
+      - rules/combined_tier1_prompt.md
+    situational:
+      - trigger: is_multi_village_candidate
+        load: rules/tier1_multi_village.md
+  fewshot:
+    source: fewshot/scope_examples.jsonl
+    k: 3
+  terminology:
+    - terminology/org_types.yaml
+    - terminology/role_terms.yaml
+    - terminology/revision_language_markers.yaml
+    - terminology/casualty_gender.yaml
 
 casualty_scope:
   rules:
@@ -41,11 +58,13 @@ village_matching:
     k: 3
   terminology:
     - terminology/role_terms.yaml
+    - terminology/village_aliases.yaml
+    - terminology/condition_labels.yaml
 
 presence_gate:
   rules:
     core:
-      - rules/tier1_core.md
+      - rules/presence_gate_prompt.md
   terminology:
     - terminology/org_types.yaml
     - terminology/role_terms.yaml
@@ -59,4 +78,23 @@ story_revision:
 
 relevance_filter:
   rules:
-    core: []
+    core:
+      - rules/relevance_filter_prompt.md
+
+tier2_detail:
+  rules:
+    core:
+      - rules/tier2_category_detail_prompt.md
+  terminology:
+    - terminology/org_types.yaml
+    - terminology/role_terms.yaml
+    - terminology/casualty_gender.yaml
+
+tier2_detail_batched:
+  rules:
+    core:
+      - rules/tier2_batched_category_detail_prompt.md
+  terminology:
+    - terminology/org_types.yaml
+    - terminology/role_terms.yaml
+    - terminology/casualty_gender.yaml

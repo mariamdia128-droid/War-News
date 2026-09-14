@@ -1,5 +1,10 @@
-# Story revision and preliminary-toll language markers.
-# Source: app/news/services/incident_details/story_revision_backstop.py
+# Story revision, named-victim follow-up, and casualty-transition markers.
+# Sources:
+#   - app/news/services/incident_details/story_revision_backstop.py
+#   - app/news/services/incident_details/casualty_transition_backstop.py
+# Pattern *logic* stays in those modules (Phase 2.5/3.5); labels/terms live here.
+
+# --- Revision / preliminary toll language ---
 
 - term: "حصيلة أولية"
   category: revision_language
@@ -15,6 +20,10 @@
   category: revision_language
   meaning: toll_update
   normalized: "تحديث الحصيله"
+
+- term: "ارتفاع عدد الشهداء/الجرحى"
+  category: revision_language
+  meaning: rising_toll
 
 - term: "ارتفاع عدد"
   category: revision_language
@@ -34,6 +43,8 @@
   meaning: preliminary_info
   normalized: "معلومات اوليه"
 
+# --- Named-victim follow-ups ---
+
 - term: "تنعى"
   category: named_victim_followup
   meaning: obituary_announcement
@@ -43,7 +54,27 @@
   category: named_victim_followup
   meaning: named_female_martyr
 
+- term: "الموظفة/الموظف named martyr"
+  category: named_victim_followup
+  meaning: named_staff_martyr
+  notes: "Label only; regex stays in story_revision_backstop.py."
+
+- term: "زهراء-style full name + martyrdom"
+  category: named_victim_followup
+  meaning: named_full_name_martyrdom
+  notes: "Label only; regex stays in story_revision_backstop.py."
+
+# --- Casualty transition trigger labels ---
+
+- term: "استشهاد أحد جريحي/الجرحى"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
 - term: "استشهاد أحد جريحي"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "وفاة أحد المصابين متأثراً بجراحه"
   category: casualty_transition
   meaning: injured_to_deceased
 
@@ -51,6 +82,30 @@
   category: casualty_transition
   meaning: injured_to_deceased
 
+- term: "توفي أحد الجرحى/المصابين"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
 - term: "توفى أحد الجرحى"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "توفي واحد من الجرحى"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "أحد الجرحى استشهد"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "وفاة/توفي جريح متأثراً بإصابته أو بجراحه"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "استشهاد/وفاة متأثراً بجراحه التي أصيب بها"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "فارق الحياة بعد إصابة سابقة"
   category: casualty_transition
   meaning: injured_to_deceased

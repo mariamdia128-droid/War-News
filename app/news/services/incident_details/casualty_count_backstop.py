@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 
+from app.core.llm_knowledge.loader import terms_by_category
 from app.llm.dtos import CasualtyCountEvidence, ExtractionCasualties
 
 logger = logging.getLogger(__name__)
@@ -21,15 +22,30 @@ CASUALTY_COUNT_FIELDS: tuple[str, ...] = (
 )
 
 _WESTERN_TO_ARABIC_INDIC = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
+_CASUALTY_GENDER_YAML = "terminology/casualty_gender.yaml"
+
+# knowledge: Arabic count words from YAML. code-logic: digit/span validation below.
+def _death_count_words(*, dual: bool) -> tuple[str, ...]:
+    words = terms_by_category(_CASUALTY_GENDER_YAML, "death_count_word")
+    if dual:
+        return tuple(term for term in words if term.endswith(("ان", "ين")))
+    return tuple(term for term in words if not term.endswith(("ان", "ين")))
+
 
 _EXPLICIT_COUNT_WORDS: dict[str, dict[int, tuple[str, ...]]] = {
     "deaths": {
-        1: ("شهيد", "شهيدا", "شهيدة", "قتيل", "قتيلا", "قتيلة"),
-        2: ("شهيدان", "شهيدين", "قتيلان", "قتيلين"),
+        1: terms_by_category(_CASUALTY_GENDER_YAML, "male_death_singular")
+        + terms_by_category(_CASUALTY_GENDER_YAML, "female_death_singular")
+        + _death_count_words(dual=False),
+        2: terms_by_category(_CASUALTY_GENDER_YAML, "male_death_dual")
+        + terms_by_category(_CASUALTY_GENDER_YAML, "female_death_dual")
+        + _death_count_words(dual=True),
     },
     "injuries": {
-        1: ("جريح", "جريحا", "جريحة", "مصاب", "مصابا", "مصابة"),
-        2: ("جريحان", "جريحين", "مصابان", "مصابين"),
+        1: terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_singular")
+        + terms_by_category(_CASUALTY_GENDER_YAML, "female_injury_singular"),
+        2: terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_dual")
+        + terms_by_category(_CASUALTY_GENDER_YAML, "female_injury_dual"),
     },
 }
 

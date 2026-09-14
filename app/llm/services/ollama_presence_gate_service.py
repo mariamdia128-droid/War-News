@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.core.llm_knowledge.loader import terms_by_category
+from app.core.llm_knowledge.prompt_assembly import build_stage_system_prompt
 from app.core.ollama_client import JsonObject, OllamaChatClient, OllamaChatMessage
 from app.llm.dtos import ExtractionCategoryKey
 
@@ -15,82 +17,46 @@ ALLOWED_EXTRACTION_CATEGORY_KEYS = frozenset(
     category.value for category in ExtractionCategoryKey
 )
 LOW_TEMPERATURE = 0.0
-MUNICIPAL_INFRASTRUCTURE_TERMS = (
-    "بلدية",
-    "مبنى البلدية",
-    "مباني البلدية",
-    "مجلس بلدي",
-    "مجلس البلدة",
-    "موظف",
-    "موظفين",
-    "موظفي البلدية",
-    "عامل",
-    "عاملين",
-    "موظف بلدي",
+
+
+def _terms(*categories: str) -> tuple[str, ...]:
+    collected: list[str] = []
+    for category in categories:
+        collected.extend(terms_by_category("terminology/role_terms.yaml", category))
+    return tuple(dict.fromkeys(collected))
+
+
+MUNICIPAL_INFRASTRUCTURE_TERMS = _terms("municipal_infrastructure")
+VILLAGE_LOCATION_MARKERS = _terms("village_location_marker")
+TARGETING_VERBS = _terms("targeting_verb")
+VEHICLE_TERMS = _terms("vehicle_term")
+CIVIL_DEFENSE_ORG_TERMS = tuple(
+    dict.fromkeys(
+        [
+            *terms_by_category("terminology/org_types.yaml", "emergency_civil_defense"),
+            *terms_by_category("terminology/org_types.yaml", "health_organization"),
+            *terms_by_category("terminology/org_types.yaml", "scout_paramedic"),
+        ]
+    )
 )
-VILLAGE_LOCATION_MARKERS = (
-    "بلدة",
-    "مدينة",
-    "قرية",
-    "مزارع",
-    "دوحة",
-    "مشاع",
-    "اطراف",
-    "أطراف",
-    "حرش",
-    "وادي",
+_PROXIMITY_TERMS = _terms("proximity_term")
+_NEGATIVE_IMPACT_TERMS = _terms("negative_impact_term")
+_DIRECT_IMPACT_TERMS = tuple(
+    dict.fromkeys(
+        [
+            *_terms("direct_impact_term"),
+            *_terms("targeting_verb"),
+        ]
+    )
 )
-TARGETING_VERBS = (
-    "استهدف",
-    "استهدفت",
-    "قصف",
-    "غارة",
-    "أغار",
-    "اعتد",
-)
-VEHICLE_TERMS = (
-    "سيارة",
-    "سيارات",
-    "مركبة",
-    "مركبات",
-    "آلية",
-    "آليات",
-    # Stem form also matches possessed inflections such as "دراجتهما".
-    "دراج",
-    "دراجة",
-    "دراجات",
-    "موتور",
-    "موتورات",
-    "شاحنة",
-    "شاحنات",
-    "جرافة",
-    "جرافات",
-    "حفارة",
-    "حفارات",
-    "دبابة",
-    "دبابات",
-    "كميون",
-    "بلدوزر",
-)
-CIVIL_DEFENSE_ORG_TERMS = (
-    "الدفاع المدني",
-    "دفاع مدني",
-    "الصليب الأحمر",
-    "الهلال الأحمر",
-    "الإسعاف",
-    "إسعاف",
-    "مسعف",
-    "سيارة إسعاف",
-    "سيارات إسعاف",
-    "فرق الإنقاذ",
-)
-PROMPT_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "scripts"
-    / "phase2-extraction-testing"
-    / "presence_gate_instruction.txt"
-)
-PRESENCE_GATE_PROMPT = PROMPT_PATH.read_text(encoding="utf-8")
+
+PRESENCE_GATE_PROMPT = (
+    Path(__file__).resolve().parents[2]
+    / "core"
+    / "llm_knowledge"
+    / "rules"
+    / "presence_gate_prompt.md"
+).read_text(encoding="utf-8")
 PRESENCE_GATE_RESPONSE_SCHEMA: JsonObject = {
     "type": "object",
     "additionalProperties": False,
@@ -178,7 +144,10 @@ class OllamaPresenceGateService:
     ) -> PresenceGateResult:
         content = self.client.chat(
             [
-                OllamaChatMessage(role="system", content=PRESENCE_GATE_PROMPT),
+                OllamaChatMessage(
+                    role="system",
+                    content=build_stage_system_prompt("presence_gate", post_text),
+                ),
                 OllamaChatMessage(role="user", content=post_text),
             ],
             response_format=PRESENCE_GATE_RESPONSE_SCHEMA,
@@ -403,44 +372,9 @@ class OllamaPresenceGateService:
         post_text: str,
     ) -> bool:
         text = f"{evidence_span}\n{post_text}"
-        proximity_terms = (
-            "قرب",
-            "بالقرب",
-            "بجوار",
-            "بجانب",
-            "محيط",
-            "أمام",
-            "محاذاة",
-        )
-        negative_impact_terms = (
-            "لم تسجل أضرار",
-            "لم تسجّل أضرار",
-            "دون تسجيل إصابات",
-            "من دون تسجيل إصابات",
-            "لا أضرار",
-        )
-        direct_impact_terms = (
-            "استهدف",
-            "استهدفت",
-            "أصاب",
-            "أصابت",
-            "سقطت",
-            "تضرر",
-            "تضررت",
-            "أضرار",
-            "دمر",
-            "دمرت",
-            "قطع",
-            "تعذر مرور",
-            "أصيب",
-            "أصيبت",
-            "قتل",
-            "قتلت",
-            "استشهد",
-            "جرح",
-            "جرحت",
-            "إخلاء",
-        )
+        proximity_terms = _PROXIMITY_TERMS
+        negative_impact_terms = _NEGATIVE_IMPACT_TERMS
+        direct_impact_terms = _DIRECT_IMPACT_TERMS
 
         if any(term in text for term in negative_impact_terms) and category_key in {
                 ExtractionCategoryKey.hospital,
@@ -464,23 +398,29 @@ class OllamaPresenceGateService:
                 return not any(term in evidence_span for term in direct_impact_terms)
 
         if category_key == ExtractionCategoryKey.road_bridge:
-            if any(term in evidence_span for term in ("الطريق", "الجسر", "الأوتوستراد")) and not any(
-                term in evidence_span
-                for term in ("استهدف الطريق", "استهدفت الطريق", "قطع", "تعذر مرور")
+            road_entities = terms_by_category("terminology/role_terms.yaml", "road_entity")
+            road_impacts = terms_by_category(
+                "terminology/role_terms.yaml", "road_direct_impact"
+            ) + ("قطع", "تعذر مرور")
+            if any(term in evidence_span for term in road_entities) and not any(
+                term in evidence_span for term in road_impacts
             ):
                 return True
 
         if category_key == ExtractionCategoryKey.lebanese_army:
-            if "مواكبة" in text or "بمواكبة" in text:
-                return not any(
-                    term in text
-                    for term in ("استهدف الجيش", "استهدفت الجيش", "أصيب عسكري", "قتل عسكري")
-                )
+            escort_terms = terms_by_category("terminology/role_terms.yaml", "escort_context")
+            army_impacts = terms_by_category(
+                "terminology/role_terms.yaml", "army_direct_impact"
+            )
+            if any(term in text for term in escort_terms):
+                return not any(term in text for term in army_impacts)
 
         if category_key == ExtractionCategoryKey.emergency_civil_defense:
-            if "قسم الطوارئ" in text and not any(
-                term in text
-                for term in ("الدفاع المدني", "الصليب الأحمر", "إسعاف", "مسعف")
+            hospital_context = terms_by_category(
+                "terminology/role_terms.yaml", "hospital_context_only"
+            )
+            if any(term in text for term in hospital_context) and not any(
+                term in text for term in CIVIL_DEFENSE_ORG_TERMS
             ):
                 return True
 
@@ -497,7 +437,10 @@ class OllamaPresenceGateService:
                 return True
 
         if category_key == ExtractionCategoryKey.hospital:
-            if "إلى المستشفى" in text or "الى المستشفى" in text:
+            transport_terms = terms_by_category(
+                "terminology/role_terms.yaml", "hospital_transport"
+            )
+            if any(term in text for term in transport_terms):
                 return not any(term in text for term in direct_impact_terms)
 
         return False

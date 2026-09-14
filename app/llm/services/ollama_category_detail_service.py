@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.core.llm_knowledge.loader import terms_by_category
+from app.core.llm_knowledge.prompt_assembly import build_stage_system_prompt
 from app.core.ollama_client import JsonObject, OllamaChatClient, OllamaChatMessage
 from app.llm.dtos import (
     CasualtyCountEvidence,
@@ -23,7 +25,11 @@ from app.news.services.incident_details.casualty_count_backstop import (
 
 logger = logging.getLogger(__name__)
 
-_MOTORCYCLE_TEXT_MARKERS = ("دراج", "موتور")
+_MOTORCYCLE_TEXT_MARKERS = tuple(
+    term
+    for term in terms_by_category("terminology/role_terms.yaml", "vehicle_term")
+    if term in {"دراج", "موتور"}
+) or ("دراج", "موتور")
 
 
 def _ground_motorcycle_flag(
@@ -40,20 +46,21 @@ def _ground_motorcycle_flag(
     return vehicles.model_copy(update={"moto": True})
 
 
-PROMPT_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "scripts"
-    / "phase2-extraction-testing"
-    / "category_detail_instruction.txt"
-)
-CATEGORY_DETAIL_PROMPT = PROMPT_PATH.read_text(encoding="utf-8")
-BATCHED_PROMPT_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "scripts"
-    / "phase2-extraction-testing"
-    / "batched_category_detail_instruction.txt"
-)
-BATCHED_CATEGORY_DETAIL_PROMPT = BATCHED_PROMPT_PATH.read_text(encoding="utf-8")
+# Deprecated aliases — runtime uses build_stage_system_prompt().
+CATEGORY_DETAIL_PROMPT = (
+    Path(__file__).resolve().parents[2]
+    / "core"
+    / "llm_knowledge"
+    / "rules"
+    / "tier2_category_detail_prompt.md"
+).read_text(encoding="utf-8")
+BATCHED_CATEGORY_DETAIL_PROMPT = (
+    Path(__file__).resolve().parents[2]
+    / "core"
+    / "llm_knowledge"
+    / "rules"
+    / "tier2_batched_category_detail_prompt.md"
+).read_text(encoding="utf-8")
 _CATEGORY_KEY_ENUM = [
     category.value for category in ExtractionCategoryKey
 ]
@@ -178,7 +185,10 @@ class OllamaCategoryDetailService:
     ) -> ExtractionCategory:
         content = self.client.chat(
             [
-                OllamaChatMessage(role="system", content=CATEGORY_DETAIL_PROMPT),
+                OllamaChatMessage(
+                    role="system",
+                    content=build_stage_system_prompt("tier2_detail", post_text),
+                ),
                 OllamaChatMessage(
                     role="user",
                     content=(
@@ -209,7 +219,13 @@ class OllamaCategoryDetailService:
         keys_csv = ", ".join(key.value for key in category_keys)
         content = self.client.chat(
             [
-                OllamaChatMessage(role="system", content=BATCHED_CATEGORY_DETAIL_PROMPT),
+                OllamaChatMessage(
+                    role="system",
+                    content=build_stage_system_prompt(
+                        "tier2_detail_batched",
+                        post_text,
+                    ),
+                ),
                 OllamaChatMessage(
                     role="user",
                     content=(
