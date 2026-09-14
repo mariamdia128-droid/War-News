@@ -30,8 +30,15 @@ const friendlyAuditAction = (action: string) => ({
 export const SuperAdminDashboardPage = () => {
   const contentSources = useContentSourcesQuery();
   const sources = useSourcesQuery();
-  const incidents = useIncidentsQuery({ limit: 1 }, false);
-  const incidentsToday = useIncidentsQuery({ limit: 1, eventDateFrom: today() }, false);
+  const monthStart = `${today().slice(0, 7)}-01`;
+  const incidents = useIncidentsQuery(
+    { limit: 1, eventDateFrom: monthStart, eventDateTo: today() },
+    false,
+  );
+  const incidentsToday = useIncidentsQuery(
+    { limit: 1, eventDateFrom: today(), eventDateTo: today() },
+    false,
+  );
   const airViolations = useAirViolationsQuery({ limit: 1, offset: 0 }, false);
   const airViolationsToday = useAirViolationsQuery({ limit: 1, offset: 0, eventDateFrom: today() }, false);
   const [failedLoginCutoff, setFailedLoginCutoff] = useState(() => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
