@@ -134,7 +134,76 @@ All YAML and JSONL files parsed successfully:
 
 ## Phase 2: Stage Wiring and Prompt Assembly
 
-*(To be completed)*
+### 2.1 Ollama call-site inventory
+
+The runtime Ollama call sites are:
+
+| Stage | Owner | PromptBuilder stage | Result |
+|---|---|---|---|
+| Relevance filter | `app/llm/services/local_llm_relevance_classifier.py` | `relevance_filter` | **clean** |
+| Presence gate | `app/llm/services/ollama_presence_gate_service.py` | `presence_gate` | **clean** |
+| Tier 1 general extraction | `app/llm/services/ollama_extraction_service.py` | `tier1_extraction` | **clean** |
+| Combined Tier 1 extraction | `app/llm/services/ollama_extraction_service.py` | `combined_tier1` | **clean** |
+| Tier 2 detail | `app/llm/services/ollama_category_detail_service.py` | `tier2_detail` | **clean** |
+| Batched Tier 2 detail | `app/llm/services/ollama_category_detail_service.py` | `tier2_detail_batched` | **clean** |
+
+The legacy module-level prompt constants remain as compatibility aliases, but
+the runtime calls use `build_stage_system_prompt`; no leftover runtime local
+prompt-construction path was found.
+
+The evaluation harness also calls `build_stage_system_prompt` for all corpus
+stages, including `story_revision`. That stage has no production Ollama
+service of its own; its prompt is assembled by `eval/run_eval.py`.
+
+### 2.2 Prompt assembly spot checks
+
+Offline `PromptBuilder` assembly was exercised for representative inputs from
+the extraction, scope, village, presence, detail, relevance, and revision
+stages. Core rule text was present for every configured stage. The situational
+`tier1_multi_village.md` rule loaded for multi-village candidates and did not
+load for a single-village input. Matched terminology included the expected
+Arabic terms for `مسعف`, revision markers, village aliases, and organization
+terms when present in the source text.
+
+No prompt-assembly omission was found in the runtime stages. The exception is
+the `story_revision` configuration itself, documented in Phase 3: it assembles
+the wrong core rule file for the revision task.
+
+### 2.3 Few-shot retrieval
+
+The configured few-shot pools returned non-empty results in the loader test
+and offline spot checks. With no embedding service, retrieval intentionally
+falls back to file order. With an embedding service, the loader scores every
+non-empty example input and returns the top `k` results; no empty-pool or
+dimension-mismatch behavior was observed in the checked path.
+
+The mixed-village/mixed-victim example is present in
+`village_collision_examples.jsonl`, but the failing `gendered-occupation`
+case runs through the combined Tier-1 stage, whose configured pool is
+`scope_examples.jsonl`. That pool has no example showing independent
+occupation-linked attribution inside a mixed toll. This is a Phase 3 finding,
+not a retrieval implementation bug.
+
+### 2.4 Arabic normalization
+
+`scan_terminology` applies `normalize_arabic_text` to both source text and
+terminology probes. The normalizer removes tashkeel and tatweel, maps alef
+variants, and maps `ى` to `ي`. Existing tests verify equivalent normalized
+spellings such as `حصيلة أولية` / `حصيله اوليه`, and the direct `مسعف` lookup
+matches the failing input path.
+
+**Status:** **clean**. No Phase 2 normalization bug was found.
+
+### 2.5 Phase 2 finding summary
+
+- **clean:** all six runtime Ollama stage families use `PromptBuilder`.
+- **clean:** configured core and situational rule assembly works offline.
+- **clean:** few-shot retrieval returns configured examples and has a tested
+  file-order fallback.
+- **clean:** Arabic diacritic and alef/yaa normalization covers the checked
+  variants.
+- **minor:** the mixed-toll occupation example is in a different pool from
+  the combined Tier-1 stage and is therefore not available to that prompt.
 
 ---
 
