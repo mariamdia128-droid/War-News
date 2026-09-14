@@ -232,3 +232,138 @@
 - term: "اعلاميه"
   category: female_role_noun
   meaning: female_occupation_death
+
+- term: "جندية"
+  category: female_role_noun
+  meaning: female_occupation_death
+  notes: "Female soldier; same death grammar as جندي."
+
+- term: "اطفائية"
+  category: female_role_noun
+  meaning: female_occupation_death
+  notes: "Female firefighter; pair of اطفائي."
+
+- term: "مسعفة"
+  category: female_role_noun
+  meaning: female_occupation_death
+  notes: "Taa-marbuta spelling of مسعفه; normalize_arabic collapses ة→ه in matcher."
+
+# --- Explicit occupation+status compounds (unambiguous from role×status pattern) ---
+# Backstop regex matches status-then-role (شهيد مسعف / استشهاد مسعف).
+# These glossary rows document both word orders for prompt/LLM use.
+
+- term: "شهيد مسعف"
+  category: occupation_death_compound
+  meaning: male_death
+  notes: "Unambiguous: male paramedic death."
+
+- term: "استشهاد مسعف"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "مسعف شهيد"
+  category: occupation_death_compound
+  meaning: male_death
+  notes: "Role-first order common in bulletins; same meaning as شهيد مسعف."
+
+- term: "شهيد عنصر"
+  category: occupation_death_compound
+  meaning: male_death
+  notes: "Pattern clone of شهيد مسعف with عنصر role noun."
+
+- term: "استشهاد عنصر"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد جندي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد جندي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد موظف"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد موظف"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد شرطي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد شرطي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد اطفائي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد اطفائي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد ممرض"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد ممرض"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد صحافي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد صحفي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد صحافي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد صحفي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "شهيد اعلامي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد اعلامي"
+  category: occupation_death_compound
+  meaning: male_death
+
+- term: "استشهاد مسعفة"
+  category: occupation_death_compound
+  meaning: female_death
+
+- term: "استشهاد مسعفه"
+  category: occupation_death_compound
+  meaning: female_death
+
+- term: "شهيدة مسعفة"
+  category: occupation_death_compound
+  meaning: female_death
+
+- term: "استشهاد موظفه"
+  category: occupation_death_compound
+  meaning: female_death
+
+- term: "استشهاد موظفة"
+  category: occupation_death_compound
+  meaning: female_death
+
+- term: "شهيدة موظفة"
+  category: occupation_death_compound
+  meaning: female_death
+
+# Ambiguous / do-not-auto-map (documented, not used as gender backstop):
+# - "مدني شهيد" / "شهيد مدني": civilian vs Civil Defense conflation risk.
+# - "طفل شهيد" / "طفلة شهيدة": age demographic, not occupation gender.
+# - Mixed "شهداء" without gender-explicit forms: may be mixed group.

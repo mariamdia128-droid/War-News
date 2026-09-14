@@ -50,9 +50,28 @@
   meaning: obituary_announcement
   normalized: "تنعي"
 
+- term: "تنعي"
+  category: named_victim_followup
+  meaning: obituary_announcement
+  notes: "Orthography used by story_revision_backstop regex after normalize_arabic."
+
 - term: "الشهيدة"
   category: named_victim_followup
   meaning: named_female_martyr
+
+- term: "الشهيده"
+  category: named_victim_followup
+  meaning: named_female_martyr
+  notes: "Normalized spelling paired with full-name martyrdom regex."
+
+- term: "مراجعة الحصيلة"
+  category: revision_language
+  meaning: toll_revision
+  notes: "Seen in follow-up bulletins; same revision class as تحديث الحصيلة."
+
+- term: "تصحيح الحصيلة"
+  category: revision_language
+  meaning: toll_correction
 
 - term: "الموظفة/الموظف named martyr"
   category: named_victim_followup

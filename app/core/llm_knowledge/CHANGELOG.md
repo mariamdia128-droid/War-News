@@ -1,5 +1,14 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-14 — B.2 expand terminology coverage
+
+| Change | Reason |
+|--------|--------|
+| `casualty_gender.yaml`: occupation×status compounds + جندية/اطفائية/مسعفة | Document unambiguous role×death patterns for prompts; flag مدني/طفل as ambiguous |
+| `org_types.yaml`: sharpen الرسالة vs الهيئة الصحية notes | Confirm two distinct orgs (scout_paramedic vs health_organization), not merged |
+| `revision_language_markers.yaml`: تنعي/الشهيده + مراجعة/تصحيح الحصيلة | Orthography used by backstop regex + common revision phrasing from audits |
+| `role_terms.yaml`: مسيرة/مسيّرة/طيران حربي/مروحية | Air-platform nouns from real bulletin text for prompt glossary |
+
 ## 2026-09-14 — B.1 eval corpus from historical bugs
 
 | Corpus file | Entries (approx) | Coverage |

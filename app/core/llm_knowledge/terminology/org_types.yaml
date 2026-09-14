@@ -42,27 +42,27 @@
 - term: "الهيئة الصحية الإسلامية"
   category: health_organization
   meaning: islamic_health_society
-  notes: "Islamic Health Society — often abbreviated الهيئة الصحية."
+  notes: "Islamic Health Society — distinct from الرسالة/Al-Risala scouts. Often abbreviated الهيئة الصحية."
 
 - term: "الهيئة الصحية"
   category: health_organization
   meaning: islamic_health_society
-  notes: "Short form of الهيئة الصحية الإسلامية."
+  notes: "Short form of الهيئة الصحية الإسلامية only — NOT a message-source label and NOT Al-Risala."
 
 - term: "كشافة الرسالة الإسلامية"
   category: scout_paramedic
   meaning: islamic_message_scouts
-  notes: "Islamic Message Scouts (Al-Risala)."
+  notes: "Islamic Message Scouts (Al-Risala). Distinct organization from الهيئة الصحية الإسلامية."
 
 - term: "جمعية الرسالة للإسعاف الصحي"
   category: scout_paramedic
   meaning: al_risala_ambulance
-  notes: "Al-Risala Health Ambulance Association."
+  notes: "Al-Risala Health Ambulance Association — same org family as كشافة الرسالة, not الهيئة الصحية."
 
 - term: "الرسالة"
   category: scout_paramedic
   meaning: al_risala
-  notes: "Short bulletin form for كشافة/جمعية الرسالة."
+  notes: "Short bulletin form for كشافة/جمعية الرسالة ONLY. Do not map to الهيئة الصحية."
 
 - term: "فرقة إسعاف غير محددة"
   category: emergency_civil_defense

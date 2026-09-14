@@ -387,3 +387,26 @@
 - term: "الى المستشفى"
   category: hospital_transport
   meaning: transported_to_hospital
+
+# --- Common air platform nouns (prompt glossary; condition IDs stay in Python) ---
+
+- term: "مسيرة"
+  category: air_platform
+  meaning: drone
+  notes: "From completeness-audit message text; condition routing uses IDs 35/36/38 in code."
+
+- term: "مسيّرة"
+  category: air_platform
+  meaning: drone
+
+- term: "طائرة مسيرة"
+  category: air_platform
+  meaning: drone
+
+- term: "طيران حربي"
+  category: air_platform
+  meaning: warplane
+
+- term: "مروحية"
+  category: air_platform
+  meaning: helicopter
