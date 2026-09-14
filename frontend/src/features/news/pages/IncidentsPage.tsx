@@ -24,6 +24,7 @@ import { useContentSourcesQuery } from "../../sources/hooks";
 import type { Incident } from "../types";
 
 const DEFAULT_PAGE_SIZE = 150;
+const DEFAULT_EVENT_DATE_FROM = "2026-09-09";
 const twoLineClampClass =
   "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]";
 
@@ -119,8 +120,8 @@ export const IncidentsPage = () => {
   const condition = params.get("condition") ?? "";
   const sourceName = params.get("source_name") ?? "";
   const verificationStatus = params.get("verification_status") as Incident["verification_status"] | "";
-  const eventDateFrom = params.get("event_date_from") ?? "";
-  const eventDateTo = params.get("event_date_to") ?? "";
+  const eventDateFrom = params.get("event_date_from") ?? DEFAULT_EVENT_DATE_FROM;
+  const eventDateTo = params.get("event_date_to") ?? getBeirutDate();
   const sortOrder = (params.get("sort_order") as "newest" | "oldest" | null) ?? "newest";
   const duplicateOnly = params.get("duplicate_only") === "true";
   const hasCasualties = params.get("has_casualties") === "true";
@@ -180,7 +181,6 @@ export const IncidentsPage = () => {
   const casualtiesCount = data?.casualties_count ?? 0;
   const verificationOptions: SelectOption[] = [
     { value: "needs_verification", label: "Needs verification" },
-    { value: "auto_processed", label: "Automatically processed" },
     { value: "verified", label: "Verified" },
   ];
   const verificationBadge = (row: Incident) => {
@@ -189,7 +189,7 @@ export const IncidentsPage = () => {
     if (row.verification_status === "needs_verification" && row.duplicate_flag === "possible") {
       return { label: "Needs verification", variant: "warning" as const };
     }
-    return { label: "Automatically processed", variant: "neutral" as const };
+    return null;
   };
   const sourceOptions = useMemo<SelectOption[]>(() => {
     const channels = new Map<string, SelectOption>();
@@ -305,7 +305,7 @@ export const IncidentsPage = () => {
       cellClassName: "w-[9.5rem]",
       render: (row) => (
         <div className="space-y-1">
-          <StatusBadge {...verificationBadge(row)} />
+          {verificationBadge(row) ? <StatusBadge {...verificationBadge(row)!} /> : null}
           {row.verification_reason ? <p className="text-caption text-text-muted">{row.verification_reason}</p> : null}
         </div>
       ),
@@ -529,7 +529,12 @@ export const IncidentsPage = () => {
                   type="button"
                   variant="ghost"
                   className="h-11 w-full rounded-xl px-4 sm:w-auto"
-                  onClick={() => setParams({})}
+                  onClick={() =>
+                    setParams({
+                      event_date_from: DEFAULT_EVENT_DATE_FROM,
+                      event_date_to: getBeirutDate(),
+                    })
+                  }
                 >
                   Clear filters
                 </Button>
@@ -577,7 +582,7 @@ export const IncidentsPage = () => {
           }
           actions={(row) => (
             <div className="flex flex-nowrap justify-end gap-2">
-            {row.id && row.verification_status !== "verified" && row.verification_status !== "rejected" ? (
+            {row.id && row.verification_status === "needs_verification" ? (
               row.duplicate_flag === "possible" ? (
                 <Button
                   type="button"

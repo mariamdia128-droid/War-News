@@ -76,7 +76,9 @@ services:
       PIPELINE_ROLE: worker
     volumes:
       - .:/app
-    command: python -m app.core.scripts.run_module_with_reload app.core.scripts.run_pipeline_worker
+    # Temporary: disable reload — host bind-mount races were crash-looping the
+    # worker on SyntaxError conflict-marker ghosts and blocking Sep 9–10 drains.
+    command: python -m app.core.scripts.run_pipeline_worker
     restart: unless-stopped
     networks:
       - appnet

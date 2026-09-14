@@ -261,18 +261,10 @@ class IncidentRepository(IncidentRepositoryInterface):
             )
             .select_from(Incident)
             .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
-            .where(
-                Incident.is_deleted.is_(False),
-                Incident.verification_status != "rejected",
-                or_(
-                    RawMessage.id.is_(None),
-                    RawMessage.status != MessageStatus.rejected,
-                ),
-                or_(
-                    RawMessage.id.is_(None),
-                    ~RawMessage.raw_payload.op("?")("ocr_text"),
-                ),
-            )
+            .outerjoin(Village, Village.id == Incident.village_id)
+            .outerjoin(Condition, Condition.id == Incident.condition_id)
+            .outerjoin(Source, Source.id == Incident.source_id)
+            .where(*filters)
         ).one()
 
         return IncidentListResponse(
