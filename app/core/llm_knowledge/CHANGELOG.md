@@ -1,5 +1,16 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-14 — B.1 eval corpus from historical bugs
+
+| Corpus file | Entries (approx) | Coverage |
+|-------------|------------------|----------|
+| `tier1_extraction.jsonl` | 11 | vague quantifiers, gender/occupation, transitions |
+| `casualty_scope.jsonl` | 6 | multi-village misattribution, null-not-shared, merge-before-max-wins |
+| `village_matching.jsonl` | 9 | maslakh/nabatieh/qantara/aynata/kafra + ambiguous negatives |
+| `revision_detection.jsonl` | 5 (new) | preliminary toll, named victim, rising toll markers |
+
+Tagged `source: real_bug` with `bug_ref` for each historical accuracy class named in the enrichment prompt.
+
 ## 2026-09-14 — Completeness audit A.2 stragglers
 
 | Fragment | Destination | Status |

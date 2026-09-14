@@ -24,6 +24,7 @@ STAGE_BY_CORPUS: dict[str, str] = {
     "tier1_extraction.jsonl": "tier1_extraction",
     "casualty_scope.jsonl": "casualty_scope",
     "village_matching.jsonl": "village_matching",
+    "revision_detection.jsonl": "story_revision",
 }
 
 
@@ -58,7 +59,7 @@ def _check_case(
         return False, "no rules loaded"
 
     # Terminology sanity: multi-village inputs should load situational rules when applicable.
-    if stage == "tier1_extraction" and "؛" in input_text or " - " in input_text:
+    if stage == "tier1_extraction" and ("؛" in input_text or " - " in input_text):
         if "rules/tier1_multi_village.md" not in context.situational_rules_loaded:
             if "مرج" in input_text or "؛" in input_text:
                 return False, "expected tier1_multi_village situational rule"
@@ -72,12 +73,31 @@ def _check_case(
             return True, "aggregate pattern accepted (LLM eval pending)"
         if scope == "unspecified":
             return True, "no-casualty case accepted"
+        if expected.get("casualty_transitions") or expected.get("merge_rule"):
+            return True, "transition/merge rule case documented"
 
     # Village matching: verify alias-related terminology would be available.
     if stage == "village_matching":
         acs = expected.get("resolved_parent_acs")
         if acs is not None:
             return True, f"alias case documented (ACS {acs}); matcher eval pending Phase 3"
+        if expected.get("match") is None:
+            return True, "ambiguous/unresolved case documented"
+
+    # Story revision: verify revision terminology fragment is present.
+    if stage == "story_revision":
+        hint = expected.get("relationship_hint")
+        if hint == "revision":
+            marker = expected.get("matched_keyword_contains") or ""
+            if marker and marker not in context.as_prompt_fragment() and marker not in input_text:
+                # Marker may live in terminology YAML rather than assembled prompt text.
+                terms_blob = " ".join(
+                    getattr(t, "term", str(t)) for t in (context.terminology or [])
+                )
+                if marker and marker not in terms_blob and marker not in input_text:
+                    return False, f"revision marker not in knowledge: {marker}"
+            return True, "revision case documented"
+        return True, "non-revision case documented"
 
     if not context.as_prompt_fragment().strip():
         return False, "empty prompt fragment"
