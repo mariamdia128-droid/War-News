@@ -96,3 +96,54 @@ No other Ollama chat call sites found under `app/`.
 ## A.1 complete
 
 This report is reviewable independently of A.2. Next: migrate M1–M6 in per-module batches.
+
+---
+
+## A.2 migration status
+
+Committed in `f62eda7` (`refactor(llm_knowledge): wire PromptBuilder and migrate completeness stragglers`):
+
+| ID | Action taken |
+|----|--------------|
+| M1 | Tier 2 prompts → `rules/tier2_*_prompt.md`; wired via `build_stage_system_prompt` + `tier2_detail` / `tier2_detail_batched` in `index.yaml` |
+| M2 | Relevance prompt → `rules/relevance_filter_prompt.md`; wired via PromptBuilder |
+| M3 | Remaining presence heuristic terms → `role_terms.yaml`; `_is_context_only_evidence` loads categories |
+| M4 | CNRS motorcycle/tank markers load from `role_terms.yaml` |
+| M5 | `_ROUTE_AREA_PREFIXES` loads from `route_area_prefix` terminology |
+| M6 | Import ACS aliases → `village_aliases.yaml`; `import_source_enrichment` loads them |
+
+---
+
+## A.3 confirmation re-scan (2026-09-14)
+
+Re-ran the same Arabic Unicode scan after A.2:
+
+| Metric | A.1 | A.3 |
+|--------|----:|----:|
+| Files with hits | 23 | 23 |
+| Total hits | 205 | 201 |
+| Presence-gate hardcoded heuristic literals | 6 | **1** (only residual punctuation/comment-free load path) |
+
+**LLM PromptBuilder coverage (re-checked):**
+
+| Stage | PromptBuilder? |
+|-------|----------------|
+| `tier1_extraction` | Yes |
+| `combined_tier1` | Yes |
+| `presence_gate` | Yes |
+| `relevance_filter` | Yes |
+| `tier2_detail` | Yes |
+| `tier2_detail_batched` | Yes |
+
+**Remaining Arabic hits are exclusively code-only** (C1–C17 from A.1 catalog):
+- Red Alert ingestion / OCR / UI rejection strings
+- `category_mapper` deterministic routing keywords
+- Backstop **regex** detectors (labels already in YAML)
+- Boilerplate strip, text normalization, story-relationship heuristics
+- Defensive fallbacks (`or ("دراج", "موتور")`) when YAML empty
+- Dash-route regex character classes
+- Model/docstring comments
+
+**No remaining migrate-class LLM prompt text outside `llm_knowledge/`.**
+
+Test suite after A.2/A.3: **665 passed / 15 failed / 3 errors / 11 skipped** — identical failure names to baseline; no new regressions.
