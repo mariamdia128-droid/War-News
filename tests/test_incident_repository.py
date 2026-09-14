@@ -106,7 +106,7 @@ def test_list_all_defaults_to_newest_event_first() -> None:
     assert "coalesce(incidents.event_date" in compiled
 
 
-def test_list_all_starts_from_incidents_and_raw_message_is_optional() -> None:
+def test_list_all_starts_from_incidents_and_requires_materialized_raw_message() -> None:
     db = _ListSessionStub()
 
     IncidentRepository(db).list_all(IncidentListParams())  # type: ignore[arg-type]
@@ -115,9 +115,9 @@ def test_list_all_starts_from_incidents_and_raw_message_is_optional() -> None:
         db.statements[0].compile(compile_kwargs={"literal_binds": True})
     ).lower()
     assert "from incidents left outer join raw_messages" in compiled
-    assert "raw_messages.status in" not in compiled
     assert "incidents.is_deleted is false" in compiled
-    assert "raw_messages.id is null" in compiled
+    assert "raw_messages.id is not null" in compiled
+    assert "raw_messages.status = 'materialized'" in compiled
 
 
 def test_list_all_excludes_ocr_payload_rows() -> None:
@@ -129,6 +129,17 @@ def test_list_all_excludes_ocr_payload_rows() -> None:
         db.statements[0].compile(compile_kwargs={"literal_binds": True})
     ).lower()
     assert "not (raw_messages.raw_payload ? 'ocr_text')" in compiled
+
+
+def test_list_all_excludes_non_materialized_raw_message_rows() -> None:
+    db = _ListSessionStub()
+
+    IncidentRepository(db).list_all(IncidentListParams())  # type: ignore[arg-type]
+
+    compiled = str(
+        db.statements[0].compile(compile_kwargs={"literal_binds": True})
+    ).lower()
+    assert "raw_messages.status = 'materialized'" in compiled
 
 
 def test_list_all_incident_scoped_filters_require_active_incident() -> None:

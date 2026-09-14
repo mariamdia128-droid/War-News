@@ -47,6 +47,7 @@ from app.news.models import (
     IncidentUpdate,
     MatchStatus,
     MatchType,
+    MessageStatus,
     RawMessage,
     UpdateAction,
     Village,
@@ -224,10 +225,9 @@ class IncidentRepository(IncidentRepositoryInterface):
             .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
             .where(
                 Incident.is_deleted.is_(False),
-                or_(
-                    RawMessage.id.is_(None),
-                    ~RawMessage.raw_payload.op("?")("ocr_text"),
-                ),
+                RawMessage.id.is_not(None),
+                RawMessage.status == MessageStatus.materialized,
+                ~RawMessage.raw_payload.op("?")("ocr_text"),
             )
         ).one()
 
@@ -1291,10 +1291,9 @@ class IncidentRepository(IncidentRepositoryInterface):
     def _list_filters(cls, params: IncidentListParams) -> list[object]:
         filters: list[object] = [
             Incident.is_deleted.is_(False),
-            or_(
-                RawMessage.id.is_(None),
-                ~RawMessage.raw_payload.op("?")("ocr_text"),
-            ),
+            RawMessage.id.is_not(None),
+            RawMessage.status == MessageStatus.materialized,
+            ~RawMessage.raw_payload.op("?")("ocr_text"),
         ]
         if params.village:
             village_pattern = f"%{params.village}%"

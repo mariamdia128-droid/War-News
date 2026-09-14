@@ -15,7 +15,7 @@ import {
 } from "../../../components/ui";
 import { useLiveQueryTitleAddon } from "../../../hooks/useLiveQueryTitleAddon";
 import { formatDate } from "../../../lib/formatters";
-import { getBeirutDate } from "../../../lib/localDate";
+import { getBeirutDate, normalizeDateInputValue } from "../../../lib/localDate";
 import { roleBaseFromPath } from "../../../lib/rolePath";
 import { ConditionSelect } from "../components/ConditionSelect";
 import { useConditionsQuery, useIncidentStream, useIncidentsQuery, useVillagesQuery } from "../hooks";
@@ -24,6 +24,7 @@ import { useContentSourcesQuery } from "../../sources/hooks";
 import type { Incident } from "../types";
 
 const DEFAULT_PAGE_SIZE = 150;
+const INCIDENTS_START_DATE = "2026-08-20";
 const twoLineClampClass =
   "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]";
 
@@ -80,8 +81,8 @@ export const IncidentsPage = () => {
   const condition = params.get("condition") ?? "";
   const sourceName = params.get("source_name") ?? "";
   const verificationStatus = params.get("verification_status") as Incident["verification_status"] | "";
-  const eventDateFrom = params.get("event_date_from") ?? "";
-  const eventDateTo = params.get("event_date_to") ?? "";
+  const eventDateFrom = normalizeDateInputValue(params.get("event_date_from")) || INCIDENTS_START_DATE;
+  const eventDateTo = normalizeDateInputValue(params.get("event_date_to"));
   const sortOrder = (params.get("sort_order") as "newest" | "oldest" | null) ?? "newest";
   const duplicateOnly = params.get("duplicate_only") === "true";
   const hasCasualties = params.get("has_casualties") === "true";

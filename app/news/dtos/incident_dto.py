@@ -5,6 +5,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+INCIDENTS_START_DATE = date(2026, 8, 20)
+
+
 class IncidentListItemDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True, frozen=True)
 
@@ -46,7 +49,7 @@ class IncidentListParams(BaseModel):
     condition: str | None = None
     source_type: str | None = None
     source_name: str | None = None
-    event_date_from: date | None = None
+    event_date_from: date | None = INCIDENTS_START_DATE
     event_date_to: date | None = None
     flagged_only: bool = False
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] | None = None
