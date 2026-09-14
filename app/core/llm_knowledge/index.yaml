@@ -73,7 +73,7 @@ presence_gate:
 story_revision:
   rules:
     core:
-      - rules/casualty_merge.md
+      - rules/story_revision_prompt.md
   terminology:
     - terminology/revision_language_markers.yaml
 
