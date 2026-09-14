@@ -1905,12 +1905,6 @@ class IncidentRepository(IncidentRepositoryInterface):
                 [
                     Incident.verification_status != "rejected",
                     or_(
-                        Incident.verification_status != "needs_verification",
-                        Incident.verification_reason.is_(None),
-                        Incident.verification_reason
-                        != LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
-                    ),
-                    or_(
                         RawMessage.id.is_(None),
                         RawMessage.status != MessageStatus.rejected,
                     ),

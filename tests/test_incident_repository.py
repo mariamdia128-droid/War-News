@@ -380,7 +380,7 @@ def test_list_filters_needs_verification_uses_user_facing_review_reasons() -> No
     assert "match_result" not in compiled
 
 
-def test_list_filters_hide_rejected_and_low_confidence_village_review_by_default() -> None:
+def test_list_filters_hide_rejected_but_keep_needs_verification_by_default() -> None:
     default_filters = IncidentRepository._list_filters(IncidentListParams())
     rejected_filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="rejected")
@@ -389,10 +389,7 @@ def test_list_filters_hide_rejected_and_low_confidence_village_review_by_default
     assert "incidents.verification_status != " in " ".join(
         str(filter_) for filter_ in default_filters
     ).lower()
-    assert (
-        "low-confidence village match requires manual review"
-        in _compiled_filters(default_filters)
-    )
+    assert "low-confidence village match requires manual review" not in _compiled_filters(default_filters)
     assert "incidents.verification_status = " in " ".join(
         str(filter_) for filter_ in rejected_filters
     ).lower()
