@@ -2,6 +2,7 @@ from app.llm.dtos import ExtractionCasualties
 from app.news.services.incident_details.casualty_gender_evidence import (
     _EXPLICIT_FORMS,
     apply_explicit_arabic_gender_evidence,
+    apply_gendered_occupation_casualty_evidence,
 )
 
 
@@ -129,3 +130,37 @@ def test_null_gender_is_never_defaulted_to_male() -> None:
     assert result.female_deaths is None
     assert result.male_injuries is None
     assert result.female_injuries is None
+
+
+def test_istishhad_paramedic_fills_male_deaths_without_male_word() -> None:
+    text = (
+        "استشهاد مسعف وإصابة 2 آخرين جراء استهداف سيارة "
+        "في بلدة كفررمان"
+    )
+    result = apply_gendered_occupation_casualty_evidence(
+        text,
+        ExtractionCasualties(deaths=8, injuries=12),
+    )
+
+    assert result.male_deaths == 1
+    assert result.female_deaths is None
+    assert result.deaths == 8
+
+
+def test_occupation_gender_does_not_overwrite_existing_male_deaths() -> None:
+    result = apply_gendered_occupation_casualty_evidence(
+        "استشهاد مسعف",
+        ExtractionCasualties(deaths=8, male_deaths=2),
+    )
+
+    assert result.male_deaths == 2
+
+
+def test_female_employee_occupation_fills_female_deaths() -> None:
+    result = apply_gendered_occupation_casualty_evidence(
+        "استشهاد الموظفة زهراء أيوب",
+        ExtractionCasualties(deaths=8),
+    )
+
+    assert result.female_deaths == 1
+    assert result.male_deaths is None

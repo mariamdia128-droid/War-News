@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -32,6 +33,36 @@ class CasualtyTransitionStatus(str, Enum):
     deceased = "deceased"
 
 
+class CasualtyScope(str, Enum):
+    per_village_exact = "per_village_exact"
+    bulletin_aggregate = "bulletin_aggregate"
+    unspecified = "unspecified"
+
+
+class StoryRelationship(str, Enum):
+    duplicate = "duplicate"
+    revision = "revision"
+    distinct_sub_event = "distinct_sub_event"
+    unrelated = "unrelated"
+
+
+class StoryRelationshipClassification(BaseModel):
+    """Pairwise classification of a raw message against one prior candidate.
+
+    Kept off ``ExtractionResult`` because that DTO is per-message; this result
+    is only meaningful relative to a specific candidate incident.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    relationship: StoryRelationship
+    relationship_evidence: str | None = None
+    needs_review: bool = False
+    review_reason: str | None = None
+    candidate_incident_id: UUID | None = None
+    matched_keywords: tuple[str, ...] = ()
+
+
 class VillageRole(str, Enum):
     origin = "origin"
     target = "target"
@@ -41,7 +72,10 @@ class VillageRoleEntry(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     village: str
-    role: VillageRole
+    role: VillageRole = VillageRole.target
+    deaths: int | None = Field(default=None, ge=0)
+    injuries: int | None = Field(default=None, ge=0)
+    evidence_span: str | None = None
 
 
 class CasualtyTransition(BaseModel):
@@ -74,6 +108,17 @@ class CasualtyCountEvidence(BaseModel):
 
     field: str
     evidence_span: str
+
+
+class ExtractionSubEvent(BaseModel):
+    """One distinct action inside a bulletin, with locally scoped casualties."""
+
+    model_config = ConfigDict(frozen=True)
+
+    action_description: str | None = None
+    casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
+    evidence_span: str | None = None
+    casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
 
 
 class ExtractionVehicleDetails(BaseModel):
@@ -109,6 +154,7 @@ class ExtractionResult(BaseModel):
     village: list[str] | None = None
     village_roles: list[VillageRoleEntry] = Field(default_factory=list)
     action_description: str | None = None
+    sub_events: list[ExtractionSubEvent] = Field(default_factory=list)
 
     @field_validator("village", mode="before")
     @classmethod
@@ -126,6 +172,10 @@ class ExtractionResult(BaseModel):
     casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
     casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
     casualty_transitions: list[CasualtyTransition] = Field(default_factory=list)
+    casualty_scope: CasualtyScope = CasualtyScope.unspecified
+    casualty_scope_evidence: str | None = None
+    casualty_scope_needs_review: bool = False
+    casualty_scope_review_reason: str | None = None
     # Tier 1 stores presence-gate keys here; category detail fills `categories` in Tier 2.
     presence_category_keys: list[ExtractionCategoryKey] = Field(default_factory=list)
     # 1 = fast path (general fields only); 2 = full category detail complete.
@@ -150,6 +200,8 @@ class ExtractionResult(BaseModel):
             normalized["casualty_transitions"] = []
         if normalized.get("casualty_evidence") is None:
             normalized["casualty_evidence"] = []
+        if normalized.get("sub_events") is None:
+            normalized["sub_events"] = []
         return normalized
 
 

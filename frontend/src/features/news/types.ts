@@ -35,6 +35,8 @@ export type Incident = {
   version: number;
   locked_by_user_id: string | null;
   edit_lock_expires_at: string | null;
+  village_id?: number | null;
+  story_group_id?: string | null;
 };
 
 export type IncidentListResponse = {
@@ -50,6 +52,7 @@ export type IncidentListResponse = {
 export type IncidentStreamEvent = Incident & {
   village_id: number | null;
   condition_id: number | null;
+  story_group_id?: string | null;
 };
 
 export type IncidentFilters = {
@@ -110,6 +113,34 @@ export type IncidentVillageDetails = {
 
 export type IncidentCategorySection = Record<string, number | string>;
 
+export type BulletinCasualtyGroup = {
+  casualty_scope: "per_village_exact" | "bulletin_aggregate" | "unspecified";
+  total_deaths: number | null;
+  total_injuries: number | null;
+  breakdown_status: "pending" | "resolved" | "expired" | "n_a";
+  window_expires_at: string | null;
+  resolved_at: string | null;
+  resolved_by_raw_message_id: number | null;
+};
+
+export type TollRevision = {
+  updated_at: string;
+  old_deaths: number | null;
+  old_injuries: number | null;
+  new_deaths: number | null;
+  new_injuries: number | null;
+};
+
+export type RelatedIncident = {
+  id: string;
+  village: string | null;
+  condition: string | null;
+  raw_message_id: number | null;
+  relation: "same_bulletin_other_village" | "same_location_sub_event";
+  total_deaths: number | null;
+  total_injuries: number | null;
+};
+
 export type IncidentDetail = Incident & {
   village_details: IncidentVillageDetails | null;
   note: string | null;
@@ -122,7 +153,17 @@ export type IncidentDetail = Incident & {
   total_injuries: number | null;
   deaths: number | null;
   injuries: number | null;
+  village_review_required?: boolean;
+  any_village_low_confidence?: boolean;
+  resolved_by_geo_context?: boolean;
+  geo_context_anchor_village_id?: number | null;
+  geo_context_anchor_village_name?: string | null;
+  alternate_candidate_village_id?: number | null;
+  alternate_candidate_village_name?: string | null;
   casualty_demographics: CasualtyDemographics;
+  bulletin_group?: BulletinCasualtyGroup | null;
+  toll_revisions?: TollRevision[];
+  related_incidents?: RelatedIncident[];
   lebanese_army: IncidentCategorySection | null;
   unifil: IncidentCategorySection | null;
   municipality: IncidentCategorySection | null;

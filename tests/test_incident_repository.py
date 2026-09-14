@@ -9,6 +9,16 @@ import app.sources.models  # noqa: F401
 from app.news.dtos import IncidentListItemDTO, IncidentListParams
 from app.news.models import Incident, MessageStatus
 from app.news.repositories.incident_repository import IncidentRepository
+from app.news.services.materialization.verification_signals import (
+    LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+)
+
+
+def _compiled_filters(filters: list[object]) -> str:
+    return " ".join(
+        str(filter_.compile(compile_kwargs={"literal_binds": True}))
+        for filter_ in filters
+    ).lower()
 
 
 class _ScalarResult:
@@ -332,17 +342,45 @@ def test_incident_list_item_accepts_excel_import_without_raw_message() -> None:
     assert item.raw_status is None
 
 
-def test_list_filters_needs_verification_uses_column_not_match_result_json() -> None:
+def test_incident_list_item_accepts_story_group_and_village_id() -> None:
+    group_id = uuid4()
+    item = IncidentListItemDTO.model_validate(
+        {
+            "id": uuid4(),
+            "raw_message_id": 42,
+            "raw_status": "materialized",
+            "village": "Kfar Roummane",
+            "condition": "Bombs",
+            "event_date": date(2026, 9, 7),
+            "khabar": "غارة على منزل",
+            "source": "Telegram",
+            "source_reference": "channel",
+            "matched": True,
+            "duplicate_flag": "none",
+            "details_pending": False,
+            "created_at": datetime(2026, 9, 7, 11, 33, tzinfo=timezone.utc),
+            "village_id": 851,
+            "story_group_id": group_id,
+        }
+    )
+
+    assert item.village_id == 851
+    assert item.story_group_id == group_id
+
+
+def test_list_filters_needs_verification_uses_user_facing_review_reasons() -> None:
     filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="needs_verification")
     )
-    compiled = " ".join(str(f) for f in filters).lower()
+    compiled = _compiled_filters(filters)
     assert "incidents.verification_status" in compiled
+    assert "incidents.duplicate_flag" in compiled
+    assert "low-confidence village match requires manual review" in compiled
     assert "any_village_low_confidence" not in compiled
     assert "match_result" not in compiled
 
 
-def test_list_filters_hide_rejected_incidents_by_default() -> None:
+def test_list_filters_hide_rejected_and_low_confidence_village_review_by_default() -> None:
     default_filters = IncidentRepository._list_filters(IncidentListParams())
     rejected_filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="rejected")
@@ -351,9 +389,34 @@ def test_list_filters_hide_rejected_incidents_by_default() -> None:
     assert "incidents.verification_status != " in " ".join(
         str(filter_) for filter_ in default_filters
     ).lower()
+    assert (
+        "low-confidence village match requires manual review"
+        in _compiled_filters(default_filters)
+    )
     assert "incidents.verification_status = " in " ".join(
         str(filter_) for filter_ in rejected_filters
     ).lower()
+
+
+def test_user_visible_needs_verification_includes_low_confidence_village_reason() -> None:
+    incident = Incident()
+    incident.verification_status = "needs_verification"
+    incident.duplicate_flag = False
+    incident.verification_reason = LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+
+    assert IncidentRepository._is_user_visible_needs_verification(incident)
+    assert IncidentRepository._should_keep_needs_verification_after_duplicate_clear(
+        incident.verification_reason
+    )
+
+
+def test_user_visible_needs_verification_hides_stale_unreasoned_nv() -> None:
+    incident = Incident()
+    incident.verification_status = "needs_verification"
+    incident.duplicate_flag = False
+    incident.verification_reason = None
+
+    assert not IncidentRepository._is_user_visible_needs_verification(incident)
 
 
 def test_list_filters_matched_alias_excludes_needs_verification_column() -> None:

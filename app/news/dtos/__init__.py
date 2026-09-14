@@ -8,6 +8,7 @@ from app.news.dtos.air_violation_dto import (
 )
 from app.news.dtos.condition_dto import ConditionOptionDTO
 from app.news.dtos.incident_dto import (
+    BulletinCasualtyGroupDTO,
     CasualtyDemographicsDTO,
     DuplicateCandidateIncidentDTO,
     IncidentDuplicateCandidateDTO,
@@ -22,9 +23,16 @@ from app.news.dtos.incident_dto import (
     IncidentListResponse,
     IncidentUpdateDTO,
     IncidentVerificationDTO,
+    RelatedIncidentDTO,
+    TollRevisionDTO,
 )
 from app.news.dtos.import_dto import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
-from app.news.dtos.match_result_dto import MatchResultDTO, MatchResultStatus, VillageMatchResult
+from app.news.dtos.match_result_dto import (
+    MatchResultDTO,
+    MatchResultStatus,
+    SubEventMatchResult,
+    VillageMatchResult,
+)
 from app.news.dtos.village_dto import VillageOptionDTO
 
 __all__ = [
@@ -35,6 +43,7 @@ __all__ = [
     "AirViolationSummaryDTO",
     "AirViolationUpdateDTO",
     "ConditionOptionDTO",
+    "BulletinCasualtyGroupDTO",
     "CasualtyDemographicsDTO",
     "DuplicateCandidateIncidentDTO",
     "IncidentDuplicateCandidateDTO",
@@ -49,10 +58,13 @@ __all__ = [
     "IncidentDetailsPatchDTO",
     "IncidentUpdateDTO",
     "IncidentVerificationDTO",
+    "RelatedIncidentDTO",
+    "TollRevisionDTO",
     "WorkbookImportRowErrorDTO",
     "WorkbookImportSummaryDTO",
     "MatchResultDTO",
     "MatchResultStatus",
+    "SubEventMatchResult",
     "VillageOptionDTO",
     "VillageMatchResult",
 ]

@@ -28,6 +28,7 @@ from app.news.services.pipeline.pipeline_sweep_stages import (
     sweep_embedding_generation,
     sweep_materialization,
     sweep_relevance_filter,
+    sweep_reconcile_orphaned_dedup_originals,
 )
 from app.news.services.pipeline.pipeline_stage_run_service import record_stage_run
 
@@ -235,6 +236,18 @@ async def run_full_pipeline_sweep(
                     elapsed_seconds=elapsed_seconds,
                     partial_failure=True,
                 )
+
+            dedup_reconcile_db = SessionLocal()
+            try:
+                await _run_isolated_stage(
+                    stage_name="dedup_original_reconciliation",
+                    runner=lambda: sweep_reconcile_orphaned_dedup_originals(
+                        dedup_reconcile_db, max_rows=_stage_max_rows(max_rows)
+                    ),
+                    record=_record_stage,
+                )
+            finally:
+                dedup_reconcile_db.close()
 
             await _run_isolated_stage(
                 stage_name="pre_extraction_dedup",

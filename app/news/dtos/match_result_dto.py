@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.llm.dtos import VillageRole
 
@@ -20,6 +20,27 @@ class VillageMatchResult(BaseModel):
     village_review_required: bool
     raw_village_text: str | None
     village_role: VillageRole = VillageRole.target
+    deaths: int | None = None
+    injuries: int | None = None
+    evidence_span: str | None = None
+    resolved_by_geo_context: bool = False
+    geo_context_anchor_village_id: int | None = None
+    original_top_candidate_id: int | None = None
+    alternate_candidate_village_id: int | None = None
+
+
+class SubEventMatchResult(BaseModel):
+    """Condition match for one extracted sub-event inside a bulletin."""
+
+    model_config = ConfigDict(frozen=True)
+
+    index: int
+    action_description: str | None
+    evidence_span: str | None
+    matched_condition_id: int | None
+    condition_confidence: float | None
+    condition_match_status: MatchResultStatus
+    condition_review_required: bool
 
 
 class MatchResultDTO(BaseModel):
@@ -38,3 +59,4 @@ class MatchResultDTO(BaseModel):
     condition_match_status: MatchResultStatus
     condition_review_required: bool
     raw_condition_text: str | None
+    sub_event_matches: list[SubEventMatchResult] = Field(default_factory=list)

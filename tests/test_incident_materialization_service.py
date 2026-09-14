@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -11,7 +12,9 @@ from sqlalchemy.exc import IntegrityError
 import app.accounts.models  # noqa: F401
 import app.logs.models  # noqa: F401
 import app.sources.models  # noqa: F401
-from app.news.models import Incident, IncidentDetail, MessageStatus
+from app.news.models import Incident, IncidentDetail, IncidentUpdate, MessageStatus
+from app.news.dtos import BulletinCasualtyGroupDTO
+from app.news.models import BulletinBreakdownStatus
 from app.news.services.dedup.fast_path_dedup import FastPathDedupOutcome
 from app.news.services.dedup.fast_path_eligibility import (
     ERROR_AIR_VIOLATION,
@@ -23,6 +26,9 @@ from app.news.services.materialization.incident_materialization_service import (
     IncidentMaterializationService,
     _initial_verification_status,
     _verification_reason,
+)
+from app.news.services.materialization.verification_signals import (
+    LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
 )
 
 
@@ -72,7 +78,7 @@ class _SessionStub:
         return self.scalar_result
 
     def execute(self, _statement, _params=None):
-        return None
+        return SimpleNamespace(all=lambda: [])
 
 
 @pytest.mark.parametrize("signal", ["duplicate_flag", "insufficient_score"])
@@ -87,7 +93,6 @@ def test_initial_verification_status_flags_duplicate_signals(signal: str) -> Non
     "match_kwargs",
     [
         {},
-        {"village_status": "matched_low_confidence"},
         {"village_status": "unmatched", "village_id": None},
         {"condition_status": "matched_low_confidence"},
         {"condition_status": "unmatched", "condition_id": None},
@@ -99,6 +104,16 @@ def test_initial_verification_status_auto_processes_non_duplicate_matches(
     assert (
         _initial_verification_status(_match_result(**match_kwargs))
         == "auto_processed"
+    )
+
+
+def test_initial_verification_status_flags_low_confidence_village_match() -> None:
+    assert (
+        _initial_verification_status(
+            _match_result(village_status="matched_low_confidence"),
+            low_confidence_village_match=True,
+        )
+        == "needs_verification"
     )
 
 
@@ -131,6 +146,16 @@ def test_verification_reason_ignores_non_duplicate_match_signals() -> None:
     result["village_matches"][0]["village_confidence"] = 0.35
 
     assert _verification_reason(result) is None
+
+
+def test_verification_reason_flags_low_confidence_village_match() -> None:
+    assert (
+        _verification_reason(
+            _match_result(village_status="matched_low_confidence"),
+            low_confidence_village_match=True,
+        )
+        == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +299,21 @@ def test_eligible_representative_inserts_incident_and_detail() -> None:
     assert representative.status == MessageStatus.materialized
 
 
+def test_low_confidence_village_match_materializes_needing_review() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    match_result = _match_result(village_status="matched_low_confidence")
+
+    result = service.materialize(_representative(match_result=match_result))
+
+    assert len(result) == 1
+    incident = next(value for value in db.committed if isinstance(value, Incident))
+    assert incident.verification_status == "needs_verification"
+    assert incident.verification_reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+    assert incident.duplicate_flag is False
+    assert service.stats.inserted == 1
+
+
 def test_casualty_fields_map_from_top_level_extraction_result() -> None:
     db = _SessionStub()
     service = IncidentMaterializationService(db)  # type: ignore[arg-type]
@@ -301,6 +341,121 @@ def test_casualty_fields_map_from_top_level_extraction_result() -> None:
     assert incident.exact_hash == hashlib.sha256(
         "خبر عاجل|976|5|2026-08-17".encode("utf-8")
     ).hexdigest()
+
+
+def test_multi_village_materialization_uses_each_villages_root_casualties() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    match_result = _two_village_match_result()
+    match_result["village_matches"][0].update({"deaths": 1, "injuries": 15})
+    match_result["village_matches"][1].update({"deaths": 2, "injuries": None})
+    representative = _representative(match_result=match_result)
+    representative.extraction_result["casualties"].update(
+        {
+            "deaths": 3,
+            "injuries": 23,
+            "total_deaths": 3,
+            "total_injuries": 23,
+        }
+    )
+
+    result = service.materialize(representative)
+
+    assert len(result) == 2
+    incidents = {
+        incident.village_id: incident
+        for incident in db.committed
+        if isinstance(incident, Incident)
+    }
+    assert (incidents[976].deaths, incidents[976].injuries) == (1, 15)
+    assert (incidents[977].deaths, incidents[977].injuries) == (2, None)
+    assert (incidents[976].total_deaths, incidents[976].total_injuries) == (1, 15)
+    assert (incidents[977].total_deaths, incidents[977].total_injuries) == (2, None)
+    details = [
+        detail for detail in db.committed if isinstance(detail, IncidentDetail)
+    ]
+    assert all(
+        (
+            detail.male_d,
+            detail.male_i,
+            detail.female_d,
+            detail.female_i,
+            detail.children_d,
+            detail.children_i,
+        )
+        == (None, None, None, None, None, None)
+        for detail in details
+    )
+
+
+def test_origin_plus_single_target_keeps_root_casualty_fallback() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    match_result = _two_village_match_result()
+    match_result["village_matches"][0]["village_role"] = "target"
+    match_result["village_matches"][1]["village_role"] = "origin"
+
+    result = service.materialize(_representative(match_result=match_result))
+
+    assert len(result) == 1
+    incident = result[0]
+    assert incident.village_id == 976
+    assert (incident.deaths, incident.injuries) == (3, 7)
+    assert (incident.total_deaths, incident.total_injuries) == (3, 7)
+
+
+def test_multi_target_category_casualties_are_suppressed_and_flagged() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    representative = _representative(match_result=_two_village_match_result())
+    representative.extraction_result["categories"] = {
+        "lebanese_army": {
+            "did": "D",
+            "casualties": {
+                "male_deaths": 2,
+                "male_injuries": 3,
+            },
+        }
+    }
+
+    result = service.materialize(representative)
+
+    details = [
+        detail for detail in db.committed if isinstance(detail, IncidentDetail)
+    ]
+    assert len(result) == 2
+    assert all(detail.lam_d is None and detail.lam_i is None for detail in details)
+    assert all(
+        incident.verification_status == "needs_verification"
+        and "manual per-village confirmation" in incident.verification_reason
+        for incident in result
+    )
+
+
+def test_scope_downgrade_flags_incident_and_records_provenance() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    representative = _representative()
+    representative.extraction_result.update(
+        {
+            "casualty_scope": "unspecified",
+            "casualty_scope_needs_review": True,
+            "casualty_scope_review_reason": (
+                "Unsupported casualty_scope=per_village_exact: "
+                "evidence matched 0 target village(s)"
+            ),
+        }
+    )
+
+    result = service.materialize(representative)
+
+    assert result[0].verification_status == "needs_verification"
+    assert result[0].verification_reason.startswith("Unsupported casualty_scope")
+    update = next(
+        value for value in db.committed if isinstance(value, IncidentUpdate)
+    )
+    assert update.new_values["casualty_scope"] == "unspecified"
+    assert update.new_values["casualty_scope_source_raw_message_id"] == 42
 
 
 def test_materialization_strips_emoji_from_khabar_and_hash() -> None:
@@ -343,6 +498,114 @@ def test_fast_path_strips_emoji_from_khabar_and_hash() -> None:
     ).hexdigest()
     assert incident.khabar_embedding == [0.1, 0.2, 0.3]
     assert representative.status == MessageStatus.materialized
+
+
+def test_fast_path_keeps_bulletin_aggregate_out_of_village_totals() -> None:
+    db = _SessionStub()
+    bulletin_groups = SimpleNamespace(create_for_message=MagicMock())
+    service = IncidentMaterializationService(
+        db,  # type: ignore[arg-type]
+        bulletin_groups=bulletin_groups,  # type: ignore[arg-type]
+    )
+    representative = _representative(match_result=_two_village_match_result())
+    representative.extraction_result.update(
+        {
+            "casualty_scope": "bulletin_aggregate",
+            "casualty_scope_evidence": (
+                "حصيلة الغارات على النبطية وكفررمان بلغت 4 شهداء و20 جريحا"
+            ),
+        }
+    )
+    representative.extraction_result["casualties"].update(
+        {
+            "deaths": None,
+            "injuries": None,
+            "total_deaths": 4,
+            "total_injuries": 20,
+        }
+    )
+    fast_dedup = SimpleNamespace(
+        decide_for_village=lambda **_kwargs: SimpleNamespace(
+            outcome=FastPathDedupOutcome.materialize,
+            representative_raw_message_id=None,
+            canonical_incident_id=None,
+        )
+    )
+
+    result = service.process_fast_path(representative, fast_dedup)  # type: ignore[arg-type]
+
+    assert len(result) == 2
+    assert all(
+        (incident.deaths, incident.injuries) == (None, None)
+        and (incident.total_deaths, incident.total_injuries) == (None, None)
+        for incident in result
+    )
+    bulletin_groups.create_for_message.assert_called_once()
+    assert bulletin_groups.create_for_message.call_args.kwargs["total_deaths"] == 4
+    assert bulletin_groups.create_for_message.call_args.kwargs["total_injuries"] == 20
+
+
+def test_exact_multi_village_bulletin_is_visible_only_as_bulletin_toll() -> None:
+    bulletin_text = (
+        "4 شهداء و20 جريحا جراء الغارات على عربصاليم والنبطية "
+        "والنبطية الفوقا وكفررمان"
+    )
+    match_result = _two_village_match_result()
+    match_result["village_matches"].extend(
+        [
+            {
+                **match_result["village_matches"][0],
+                "raw_village_text": "عربصاليم",
+                "matched_village_id": 978,
+            },
+            {
+                **match_result["village_matches"][0],
+                "raw_village_text": "النبطية الفوقا",
+                "matched_village_id": 979,
+            },
+        ]
+    )
+    bulletin_groups = MagicMock()
+    db = _SessionStub()
+    service = IncidentMaterializationService(
+        db,  # type: ignore[arg-type]
+        bulletin_groups=bulletin_groups,
+    )
+    representative = _representative(match_result=match_result)
+    representative.raw_text = bulletin_text
+    representative.extraction_result.update(
+        {
+            "casualty_scope": "bulletin_aggregate",
+            "casualty_scope_evidence": bulletin_text,
+        }
+    )
+    representative.extraction_result["casualties"].update(
+        {
+            "deaths": None,
+            "injuries": None,
+            "total_deaths": 4,
+            "total_injuries": 20,
+        }
+    )
+
+    incidents = service.materialize(representative)
+
+    assert all(
+        (incident.deaths, incident.injuries) == (None, None)
+        for incident in incidents
+    )
+    group_values = bulletin_groups.create_for_message.call_args.kwargs
+    api_group = BulletinCasualtyGroupDTO.model_validate(
+        SimpleNamespace(
+            **group_values,
+            breakdown_status=BulletinBreakdownStatus.pending,
+            window_expires_at=datetime.now(timezone.utc),
+            resolved_at=None,
+            resolved_by_raw_message_id=None,
+        )
+    )
+    assert (api_group.total_deaths, api_group.total_injuries) == (4, 20)
+    assert api_group.casualty_scope == "bulletin_aggregate"
 
 
 @pytest.mark.parametrize("condition_id", [35, 36, 38])
@@ -755,6 +1018,56 @@ def test_fast_path_confident_duplicate_merges_without_re_score() -> None:
     assert len(duplicate_matches) == 1
     assert duplicate_matches[0]["status"].value == "confirmed_duplicate"
     assert duplicate_matches[0]["similarity_score"] == 0.91
+
+
+def test_fast_path_confident_merge_uses_only_village_local_casualties() -> None:
+    existing = SimpleNamespace(id=uuid4(), raw_message_id=999)
+    dedup = _DedupServiceStub(existing=existing, score=0.10)  # type: ignore[arg-type]
+    db = _SessionStub()
+    service = IncidentMaterializationService(
+        db,  # type: ignore[arg-type]
+        dedup_service=dedup,
+        bulletin_groups=MagicMock(),
+    )
+    representative = _representative(match_result=_two_village_match_result())
+    representative.extraction_result.update(
+        {
+            "casualty_scope": "bulletin_aggregate",
+            "casualty_scope_evidence": (
+                "حصيلة الغارات على النبطية وكفررمان بلغت 4 شهداء و20 جريحا"
+            ),
+        }
+    )
+    representative.extraction_result["casualties"].update(
+        {
+            "deaths": None,
+            "injuries": None,
+            "total_deaths": 4,
+            "total_injuries": 20,
+        }
+    )
+    fast_dedup = SimpleNamespace(
+        incidents=SimpleNamespace(create_fast_path_duplicate_match=MagicMock()),
+        decide_for_village=lambda **_kwargs: SimpleNamespace(
+            outcome=FastPathDedupOutcome.confident_duplicate,
+            representative_raw_message_id=999,
+            canonical_incident_id=existing.id,
+            canonical_incident=existing,
+            similarity_score=0.91,
+            similarity_method="text",
+        ),
+    )
+
+    service.process_fast_path(representative, fast_dedup)  # type: ignore[arg-type]
+
+    assert len(dedup.merge_calls) == 2
+    assert all(
+        call[1]["deaths"] is None
+        and call[1]["injuries"] is None
+        and call[1]["total_deaths"] is None
+        and call[1]["total_injuries"] is None
+        for call in dedup.merge_calls
+    )
 
 
 def test_terminalized_message_leaves_stage_timestamps_null() -> None:

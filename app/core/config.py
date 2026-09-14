@@ -108,11 +108,23 @@ class Settings(BaseSettings):
     # never used to bypass the 6h cutoff).
     dedup_fastpath_embedding_high: float = 0.86
     dedup_fastpath_embedding_possible: float = 0.78
+    # Same-village + same-condition wording-variant backstop inside the 30-minute
+    # event-identity window.
+    dedup_fastpath_event_token_overlap_min: float = 0.72
     fast_path_embedding_wait_minutes: int = 20
     # Cross-village backstop: when village_id differs, never auto-merge; only flag
     # possible_duplicate within ≤30min at this elevated text similarity (recon
     # true-positive Nabatiyeh pair scored 0.875; same-village high is 0.80).
     dedup_cross_village_text_min: float = 0.87
+    bulletin_reconciliation_window_hours: int = 60
+    bulletin_reconciliation_sweep_interval_seconds: int = 1800
+    bulletin_reconciliation_village_set_min_overlap: float = 1.0
+    # Story-continuation candidate search (Phase 1): same village from
+    # match_result, no condition_id gate, wide window, embedding rank.
+    # Shares village_ids_from_match_result with bulletin reconciliation.
+    story_candidate_window_hours: int = 72
+    story_candidate_embedding_threshold: float = 0.40
+    story_candidate_max_results: int = 10
     pg_application_name: str = "war-news"
     pipeline_role: str = "api"
     pipeline_worker_poll_seconds: float = 2.0
@@ -131,6 +143,10 @@ class Settings(BaseSettings):
     pipeline_cursor_stale_minutes: int = 30
     extraction_max_retries: int = 5
     matching_max_retries: int = 5
+    # ACS coordinates are UTM zone 36N metres. Geo context only disambiguates
+    # collision-like village candidates near another confident message village.
+    village_geo_context_max_distance_meters: int = 20000
+    village_geo_context_min_distance_advantage_meters: int = 5000
     redis_url: str = "redis://redis:6379/0"
     cache_enabled: bool = True
 

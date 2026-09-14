@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 
+LOW_CONFIDENCE_VILLAGE_REVIEW_REASON = (
+    "Low-confidence village match requires manual review."
+)
+
+
 def _verification_reason(
     match_result: dict | None,
     *,
@@ -8,8 +13,11 @@ def _verification_reason(
     duplicate_level: str | None = None,
     duplicate_similarity_score: float | None = None,
     insufficient_score: bool = False,
+    low_confidence_village_match: bool = False,
 ) -> str | None:
-    """Return a plain-language review reason — duplicate signals only."""
+    """Return a plain-language review reason for unresolved review signals."""
+    if low_confidence_village_match:
+        return LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
     if duplicate_flag:
         if duplicate_level is not None and duplicate_similarity_score is not None:
             return (
