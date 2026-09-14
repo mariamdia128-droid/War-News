@@ -1,0 +1,5 @@
+{"input": "استهدف دراجة نارية على طريق عام مرج حاروف - زبدين", "expected_output": {"village": ["حاروف", "زبدين"]}, "source": "synthetic", "bug_ref": "dash-route-village-split"}
+{"input": "دبابة متمركزة في البياض تقصف المنصوري", "expected_output": {"village_roles": [{"village": "البياض", "role": "origin"}, {"village": "المنصوري", "role": "target"}]}, "source": "synthetic", "bug_ref": "origin-target-roles"}
+{"input": "عشرات الجرحى والشهداء", "expected_output": {"casualties": {"deaths": null, "injuries": null}}, "source": "real_bug", "bug_ref": "vague-quantifier-null"}
+{"input": "4 شهداء و33 جريحا من بينهم 6 أطفال و4 سيدات", "expected_output": {"casualties": {"deaths": 4, "injuries": 33, "children_injuries": 6, "female_injuries": 4}}, "source": "synthetic", "bug_ref": "demographic-split-injuries"}
+{"input": "غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً، وفي غارة منفصلة استُهدفت سيارة فاستُشهد مسعف وأصيب 2", "expected_output": {"sub_events_count": 2}, "source": "synthetic", "bug_ref": "multi-sub-event"}

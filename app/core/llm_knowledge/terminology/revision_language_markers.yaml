@@ -1,0 +1,56 @@
+# Story revision and preliminary-toll language markers.
+# Source: app/news/services/incident_details/story_revision_backstop.py
+
+- term: "حصيلة أولية"
+  category: revision_language
+  meaning: preliminary_toll
+  normalized: "حصيله اوليه"
+
+- term: "حصيلة مؤقتة"
+  category: revision_language
+  meaning: temporary_toll
+  normalized: "حصيله مؤقته"
+
+- term: "تحديث الحصيلة"
+  category: revision_language
+  meaning: toll_update
+  normalized: "تحديث الحصيله"
+
+- term: "ارتفاع عدد"
+  category: revision_language
+  meaning: rising_toll
+
+- term: "ارتفع عدد"
+  category: revision_language
+  meaning: rising_toll
+
+- term: "المعلومات الأولية"
+  category: revision_language
+  meaning: preliminary_info
+  normalized: "المعلومات الاوليه"
+
+- term: "معلومات أولية"
+  category: revision_language
+  meaning: preliminary_info
+  normalized: "معلومات اوليه"
+
+- term: "تنعى"
+  category: named_victim_followup
+  meaning: obituary_announcement
+  normalized: "تنعي"
+
+- term: "الشهيدة"
+  category: named_victim_followup
+  meaning: named_female_martyr
+
+- term: "استشهاد أحد جريحي"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "فارق أحد الجرحى الحياة"
+  category: casualty_transition
+  meaning: injured_to_deceased
+
+- term: "توفى أحد الجرحى"
+  category: casualty_transition
+  meaning: injured_to_deceased

@@ -1,0 +1,51 @@
+# Emergency / civil-defense organization terms.
+# Source: app/llm/services/ollama_presence_gate_service.py CIVIL_DEFENSE_ORG_TERMS
+
+- term: "الدفاع المدني"
+  category: emergency_civil_defense
+  meaning: civil_defense
+  notes: "Positive presence when materially responding (انتشال/إنقاذ/إخلاء)."
+
+- term: "دفاع مدني"
+  category: emergency_civil_defense
+  meaning: civil_defense
+
+- term: "الصليب الأحمر"
+  category: emergency_civil_defense
+  meaning: red_cross
+
+- term: "الهلال الأحمر"
+  category: emergency_civil_defense
+  meaning: red_crescent
+
+- term: "الإسعاف"
+  category: emergency_civil_defense
+  meaning: ambulance_service
+
+- term: "إسعاف"
+  category: emergency_civil_defense
+  meaning: ambulance_service
+
+- term: "مسعف"
+  category: emergency_civil_defense
+  meaning: paramedic
+
+- term: "سيارة إسعاف"
+  category: emergency_civil_defense
+  meaning: ambulance_vehicle
+
+- term: "فرق الإنقاذ"
+  category: emergency_civil_defense
+  meaning: rescue_teams
+
+- term: "بلدية"
+  category: municipality
+  meaning: municipal_government
+
+- term: "مبنى البلدية"
+  category: municipality
+  meaning: municipal_building
+
+- term: "موظفي البلدية"
+  category: municipality
+  meaning: municipal_staff

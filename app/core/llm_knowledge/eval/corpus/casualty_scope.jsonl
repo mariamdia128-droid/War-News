@@ -1,0 +1,3 @@
+{"input": "المنصوري: شهيد و3 جرحى؛ مجدل زون: 4 جرحى", "expected_output": {"casualty_scope": "per_village_exact"}, "source": "synthetic", "bug_ref": "per-village-clauses"}
+{"input": "غارة على المنصوري ومجدل زون أدت إلى 5 شهداء و12 جريحاً", "expected_output": {"casualty_scope": "bulletin_aggregate"}, "source": "synthetic", "bug_ref": "shared-toll-multi-village"}
+{"input": "قصف على عيتا الشعب", "expected_output": {"casualty_scope": "unspecified"}, "source": "synthetic", "bug_ref": "no-casualties"}

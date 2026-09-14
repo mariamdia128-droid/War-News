@@ -1,0 +1,90 @@
+# Exact/substring-match casualty gender and status terms.
+# Migrated from app/news/services/incident_details/casualty_gender_evidence.py (Phase 2 seed).
+
+- term: "شهيد"
+  category: male_death_singular
+  meaning: male_death
+  notes: "Standalone token; allows optional و/ال prefix in matcher."
+
+- term: "شهيدان"
+  category: male_death_dual
+  meaning: male_death
+  normalized: "2"
+
+- term: "شهيدين"
+  category: male_death_dual
+  meaning: male_death
+  normalized: "2"
+
+- term: "شهيدة"
+  category: female_death_singular
+  meaning: female_death
+
+- term: "شهيدتان"
+  category: female_death_dual
+  meaning: female_death
+  normalized: "2"
+
+- term: "شهيدتين"
+  category: female_death_dual
+  meaning: female_death
+  normalized: "2"
+
+- term: "جريح"
+  category: male_injury_singular
+  meaning: male_injury
+
+- term: "مصاب"
+  category: male_injury_singular
+  meaning: male_injury
+
+- term: "جريحة"
+  category: female_injury_singular
+  meaning: female_injury
+
+- term: "مصابة"
+  category: female_injury_singular
+  meaning: female_injury
+
+- term: "شهداء"
+  category: male_death_plural
+  meaning: male_death
+  notes: "Masculine plural may represent mixed group; not used to cover full total when count>2."
+
+- term: "شهيدات"
+  category: female_death_plural
+  meaning: female_death
+
+- term: "جرحى"
+  category: male_injury_plural
+  meaning: male_injury
+
+- term: "جريحات"
+  category: female_injury_plural
+  meaning: female_injury
+
+- term: "مسعف"
+  category: male_role_noun
+  meaning: male_occupation_death
+  notes: "With شهيد/استشهاد prefix → male_deaths increment."
+
+- term: "مسعفه"
+  category: female_role_noun
+  meaning: female_occupation_death
+
+- term: "موظف"
+  category: male_role_noun
+  meaning: male_occupation_death
+
+- term: "موظفه"
+  category: female_role_noun
+  meaning: female_occupation_death
+
+- term: "قتيل"
+  category: death_count_word
+  meaning: death
+  notes: "Used by casualty_count_backstop for explicit count 1."
+
+- term: "قتيلة"
+  category: death_count_word
+  meaning: death

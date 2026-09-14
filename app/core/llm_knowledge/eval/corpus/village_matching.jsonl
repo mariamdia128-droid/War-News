@@ -1,0 +1,3 @@
+{"input": "النبطية", "expected_output": {"resolved_parent_acs": 71111, "note": "city-seat alias not fuzzy collision"}, "source": "real_bug", "bug_ref": "nabatieh-et-tahta-alias"}
+{"input": "حي المسلخ", "expected_output": {"resolved_parent_acs": 71111, "note": "not Masqa المتن"}, "source": "real_bug", "bug_ref": "maslakh-neighborhood"}
+{"input": "القنطرة", "expected_output": {"resolved_parent_acs": 73276, "note": "Marjayoun not Akkar"}, "source": "real_bug", "bug_ref": "qantara-disambiguation"}

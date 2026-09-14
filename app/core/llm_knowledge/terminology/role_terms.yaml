@@ -1,0 +1,59 @@
+# Location markers, targeting verbs, and vehicle terms used in presence gate / extraction.
+# Source: ollama_presence_gate_service.py
+
+- term: "بلدة"
+  category: village_location_marker
+  meaning: village
+
+- term: "مدينة"
+  category: village_location_marker
+  meaning: city
+
+- term: "دوحة"
+  category: village_location_marker
+  meaning: neighborhood_farm
+
+- term: "حرش"
+  category: village_location_marker
+  meaning: grove
+
+- term: "وادي"
+  category: village_location_marker
+  meaning: valley
+
+- term: "أطراف"
+  category: village_location_marker
+  meaning: outskirts
+
+- term: "استهدف"
+  category: targeting_verb
+  meaning: targeted
+
+- term: "قصف"
+  category: targeting_verb
+  meaning: shelled
+
+- term: "غارة"
+  category: targeting_verb
+  meaning: airstrike
+
+- term: "سيارة"
+  category: vehicle_term
+  meaning: car
+
+- term: "دراج"
+  category: vehicle_term
+  meaning: motorcycle_stem
+
+- term: "موتور"
+  category: vehicle_term
+  meaning: motorcycle
+
+- term: "دبابة"
+  category: vehicle_term
+  meaning: tank
+
+- term: "مرج "
+  category: route_area_prefix
+  meaning: marj_route
+  notes: "Used with dash-route village splitting."

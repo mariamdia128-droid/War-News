@@ -1,0 +1,62 @@
+tier1_extraction:
+  rules:
+    core:
+      - rules/tier1_core.md
+    situational:
+      - trigger: is_multi_village_candidate
+        load: rules/tier1_multi_village.md
+  fewshot:
+    source: fewshot/village_collision_examples.jsonl
+    k: 3
+  terminology:
+    - terminology/role_terms.yaml
+    - terminology/revision_language_markers.yaml
+
+casualty_scope:
+  rules:
+    core:
+      - rules/casualty_merge.md
+  fewshot:
+    source: fewshot/scope_examples.jsonl
+    k: 5
+  terminology:
+    - terminology/casualty_gender.yaml
+
+casualty_transitions:
+  rules:
+    core:
+      - rules/casualty_merge.md
+  fewshot:
+    source: fewshot/scope_examples.jsonl
+    k: 3
+  terminology:
+    - terminology/revision_language_markers.yaml
+
+village_matching:
+  rules:
+    core:
+      - rules/village_matching.md
+  fewshot:
+    source: fewshot/village_collision_examples.jsonl
+    k: 3
+  terminology:
+    - terminology/role_terms.yaml
+
+presence_gate:
+  rules:
+    core:
+      - rules/tier1_core.md
+  terminology:
+    - terminology/org_types.yaml
+    - terminology/role_terms.yaml
+
+story_revision:
+  rules:
+    core:
+      - rules/casualty_merge.md
+  terminology:
+    - terminology/revision_language_markers.yaml
+
+relevance_filter:
+  rules:
+    core: []
