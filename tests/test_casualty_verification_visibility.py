@@ -16,7 +16,7 @@ def test_casualty_review_reasons_remain_user_visible() -> None:
     )
 
 
-def test_low_confidence_village_review_reason_remains_user_visible() -> None:
-    assert IncidentRepository._should_keep_needs_verification_after_duplicate_clear(
+def test_low_confidence_village_review_reason_is_not_user_visible_verification() -> None:
+    assert not IncidentRepository._should_keep_needs_verification_after_duplicate_clear(
         LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
     )

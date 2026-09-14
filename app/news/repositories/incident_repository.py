@@ -1844,20 +1844,10 @@ class IncidentRepository(IncidentRepositoryInterface):
 
     @staticmethod
     def _needs_verification_column() -> object:
-        """User-facing verification means an unresolved review reason.
-
-        Low-confidence village matches are included only when the new,
-        explicit reason is present. Historical low-confidence matching rows
-        without that reason stay out of this user-facing bucket.
-        """
+        """User-facing verification is only unresolved duplicate review."""
         return and_(
             Incident.verification_status == "needs_verification",
-            or_(
-                Incident.duplicate_flag.is_(True),
-                Incident.verification_reason.like("Category casualties%"),
-                Incident.verification_reason.like("Unsupported casualty_scope%"),
-                Incident.verification_reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
-            ),
+            Incident.duplicate_flag.is_(True),
         )
 
     @staticmethod
@@ -1874,22 +1864,15 @@ class IncidentRepository(IncidentRepositoryInterface):
         """True when stored NV should surface to list/detail clients."""
         return bool(
             incident.verification_status == "needs_verification"
-            and (
-                incident.duplicate_flag
-                or cls._is_casualty_review_reason(incident.verification_reason)
-                or incident.verification_reason
-                == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
-            )
+            and incident.duplicate_flag
         )
 
     @classmethod
     def _should_keep_needs_verification_after_duplicate_clear(
         cls, reason: str | None
     ) -> bool:
-        """Keep independent review signals when a duplicate flag is cleared."""
-        return cls._is_casualty_review_reason(
-            reason
-        ) or reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+        """Duplicate verification disappears when the duplicate flag is cleared."""
+        return False
 
     @classmethod
     def _list_filters(cls, params: IncidentListParams) -> list[object]:

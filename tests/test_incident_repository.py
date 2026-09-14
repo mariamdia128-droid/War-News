@@ -368,14 +368,16 @@ def test_incident_list_item_accepts_story_group_and_village_id() -> None:
     assert item.story_group_id == group_id
 
 
-def test_list_filters_needs_verification_uses_user_facing_review_reasons() -> None:
+def test_list_filters_needs_verification_uses_duplicate_review_only() -> None:
     filters = IncidentRepository._list_filters(
         IncidentListParams(verification_status="needs_verification")
     )
     compiled = _compiled_filters(filters)
     assert "incidents.verification_status" in compiled
     assert "incidents.duplicate_flag" in compiled
-    assert "low-confidence village match requires manual review" in compiled
+    assert "low-confidence village match requires manual review" not in compiled
+    assert "category casualties" not in compiled
+    assert "unsupported casualty_scope" not in compiled
     assert "any_village_low_confidence" not in compiled
     assert "match_result" not in compiled
 
@@ -395,16 +397,23 @@ def test_list_filters_hide_rejected_but_keep_needs_verification_by_default() -> 
     ).lower()
 
 
-def test_user_visible_needs_verification_includes_low_confidence_village_reason() -> None:
+def test_user_visible_needs_verification_requires_duplicate_flag() -> None:
+    incident = Incident()
+    incident.verification_status = "needs_verification"
+    incident.duplicate_flag = True
+    incident.verification_reason = None
+
+    assert IncidentRepository._is_user_visible_needs_verification(incident)
+
+
+def test_user_visible_needs_verification_excludes_low_confidence_village_reason() -> None:
     incident = Incident()
     incident.verification_status = "needs_verification"
     incident.duplicate_flag = False
     incident.verification_reason = LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
 
-    assert IncidentRepository._is_user_visible_needs_verification(incident)
-    assert IncidentRepository._should_keep_needs_verification_after_duplicate_clear(
-        incident.verification_reason
-    )
+    assert not IncidentRepository._is_user_visible_needs_verification(incident)
+    assert not IncidentRepository._should_keep_needs_verification_after_duplicate_clear(incident.verification_reason)
 
 
 def test_user_visible_needs_verification_hides_stale_unreasoned_nv() -> None:
