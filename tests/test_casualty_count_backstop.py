@@ -100,6 +100,55 @@ def test_arabic_indic_digit_counts_are_preserved() -> None:
     assert len(kept) == 2
 
 
+def test_explicit_arabic_singular_and_dual_counts_are_preserved() -> None:
+    text = "الرمادية: شهيد وجريح، كفرمان: شهيدان"
+    result, kept = apply_casualty_count_backstop(
+        text,
+        ExtractionCasualties(deaths=2, injuries=1),
+        [
+            CasualtyCountEvidence(field="deaths", evidence_span="شهيدان"),
+            CasualtyCountEvidence(field="injuries", evidence_span="جريح"),
+        ],
+    )
+
+    assert result.deaths == 2
+    assert result.injuries == 1
+    assert {item.field for item in kept} == {"deaths", "injuries"}
+
+
+def test_explicit_arabic_accusative_singular_is_preserved() -> None:
+    text = "سجلت البلدة شهيدا وجريحا"
+    result, kept = apply_casualty_count_backstop(
+        text,
+        ExtractionCasualties(deaths=1, injuries=1),
+        [
+            CasualtyCountEvidence(field="deaths", evidence_span="شهيدا"),
+            CasualtyCountEvidence(field="injuries", evidence_span="جريحا"),
+        ],
+    )
+
+    assert result.deaths == 1
+    assert result.injuries == 1
+    assert {item.field for item in kept} == {"deaths", "injuries"}
+
+
+def test_casualty_digit_must_appear_inside_grounded_evidence_span() -> None:
+    text = "البلدة الأولى: 4 جرحى، البلدة الثانية: عشرات الجرحى"
+    result, kept = apply_casualty_count_backstop(
+        text,
+        ExtractionCasualties(injuries=4),
+        [
+            CasualtyCountEvidence(
+                field="injuries",
+                evidence_span="البلدة الثانية: عشرات الجرحى",
+            )
+        ],
+    )
+
+    assert result.injuries is None
+    assert kept == []
+
+
 def test_missing_evidence_span_nulls_count_and_logs_warning(caplog) -> None:
     text = "4 قتلى و10 جرحى في غارة على البلدة"
 
@@ -142,3 +191,28 @@ def test_evidence_present_but_digit_absent_is_nulled(caplog) -> None:
         "digit_not_in_source" in record.message and "raw_message_id=4121" in record.message
         for record in caplog.records
     )
+
+
+def test_dozens_of_injured_and_martyrs_never_becomes_ten() -> None:
+    text = "عشرات الجرحى والشهداء جراء الغارة على البلدة"
+    evidence = [
+        CasualtyCountEvidence(
+            field=field,
+            evidence_span="عشرات الجرحى والشهداء",
+        )
+        for field in ("deaths", "injuries", "total_deaths", "total_injuries")
+    ]
+
+    result, kept = apply_casualty_count_backstop(
+        text,
+        ExtractionCasualties(
+            deaths=10,
+            injuries=10,
+            total_deaths=10,
+            total_injuries=10,
+        ),
+        evidence,
+    )
+
+    assert result == ExtractionCasualties()
+    assert kept == []

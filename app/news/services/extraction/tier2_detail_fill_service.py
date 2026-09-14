@@ -7,13 +7,28 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.llm.dtos import ExtractionCategory, ExtractionCategoryKey, ExtractionResult
+from app.llm.dtos import CasualtyScope, ExtractionCategory, ExtractionCategoryKey, ExtractionResult
 from app.llm.services.ollama_extraction_service import OllamaExtractionService
-from app.news.models import Incident, IncidentDetail, MessageStatus, RawMessage
+from app.news.models import (
+    Incident,
+    IncidentDetail,
+    IncidentUpdate,
+    MessageStatus,
+    RawMessage,
+    UpdateAction,
+)
 from app.news.repositories.emergency_organization_repository import (
     EmergencyOrganizationRepository,
 )
-from app.news.services.incident_details.category_mapper import compute_rollups, map_categories
+from app.news.repositories.bulletin_casualty_group_repository import (
+    BulletinCasualtyGroupRepository,
+)
+from app.news.models.bulletin_casualty_group import CasualtyScope as StoredCasualtyScope
+from app.news.services.incident_details.category_mapper import (
+    compute_rollups,
+    map_categories,
+    suppress_category_casualties,
+)
 from app.news.services.incident_details.casualty_demographic_consistency import reconcile_root_demographics
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.clustering.embedding_service import EmbeddingService
@@ -34,11 +49,13 @@ class Tier2DetailFillService:
         embedding_service: EmbeddingService | None = None,
         dedup_service: DedupMatchingService | None = None,
         emergency_org_matcher: EmergencyOrganizationMatchingService | None = None,
+        bulletin_groups: BulletinCasualtyGroupRepository | None = None,
     ) -> None:
         self.db = db
         self.classifier = classifier
         self.embedding_service = embedding_service or EmbeddingService()
         self.dedup_service = dedup_service
+        self.bulletin_groups = bulletin_groups or BulletinCasualtyGroupRepository(db)
         self.emergency_org_matcher = (
             emergency_org_matcher
             or EmergencyOrganizationMatchingService(
@@ -137,10 +154,34 @@ class Tier2DetailFillService:
             extraction.categories,
             emergency_org_matcher=self.emergency_org_matcher,
         )
+        target_village_ids = self._target_village_ids(raw_message.match_result)
+        is_multi_village = len(target_village_ids) > 1
+        category_casualties_suppressed = False
+        if is_multi_village:
+            mapped_fields, category_casualties_suppressed = (
+                suppress_category_casualties(mapped_fields)
+            )
+            category_casualties_suppressed = (
+                category_casualties_suppressed
+                or self._has_root_demographic_casualties(extraction)
+            )
         total_deaths, total_injuries = compute_rollups(
             mapped_fields,
             extraction.casualties,
         )
+        is_multi_village_aggregate = (
+            extraction.casualty_scope == CasualtyScope.bulletin_aggregate
+            and is_multi_village
+        )
+        if is_multi_village_aggregate:
+            self.bulletin_groups.create_for_message(
+                raw_message_id=raw_message_id,
+                village_ids=target_village_ids,
+                casualty_scope=StoredCasualtyScope.bulletin_aggregate,
+                total_deaths=extraction.casualties.total_deaths,
+                total_injuries=extraction.casualties.total_injuries,
+                created_at=raw_message.message_datetime,
+            )
 
         embedding = raw_message.content_embedding
 
@@ -157,16 +198,23 @@ class Tier2DetailFillService:
                 self.db.flush()
 
             root = extraction.casualties
+            root_demographics = {
+                "male_d": root.male_deaths,
+                "male_i": root.male_injuries,
+                "female_d": root.female_deaths,
+                "female_i": root.female_injuries,
+                "children_d": root.children_deaths,
+                "children_i": root.children_injuries,
+            }
+            if is_multi_village:
+                root_demographics = {
+                    field: None for field in root_demographics
+                }
             merge_incident_detail_fields(
                 detail,
                 {
                     **mapped_fields,
-                    "male_d": root.male_deaths,
-                    "male_i": root.male_injuries,
-                    "female_d": root.female_deaths,
-                    "female_i": root.female_injuries,
-                    "children_d": root.children_deaths,
-                    "children_i": root.children_injuries,
+                    **root_demographics,
                 },
             )
             # Reconciliation is allowed to clear a contradictory positive
@@ -183,13 +231,29 @@ class Tier2DetailFillService:
                 after = getattr(root, extraction_field)
                 if before != after:
                     setattr(detail, detail_field, after)
-            if incident.deaths in (None, 0) and root.deaths is not None:
+            if (
+                not is_multi_village_aggregate
+                and incident.deaths in (None, 0)
+                and root.deaths is not None
+            ):
                 incident.deaths = root.deaths
-            if incident.injuries in (None, 0) and root.injuries is not None:
+            if (
+                not is_multi_village_aggregate
+                and incident.injuries in (None, 0)
+                and root.injuries is not None
+            ):
                 incident.injuries = root.injuries
-            if incident.total_deaths in (None, 0) and total_deaths is not None:
+            if (
+                not is_multi_village_aggregate
+                and incident.total_deaths in (None, 0)
+                and total_deaths is not None
+            ):
                 incident.total_deaths = total_deaths
-            if incident.total_injuries in (None, 0) and total_injuries is not None:
+            if (
+                not is_multi_village_aggregate
+                and incident.total_injuries in (None, 0)
+                and total_injuries is not None
+            ):
                 incident.total_injuries = total_injuries
             self._fill_missing_matches(
                 incident,
@@ -197,6 +261,20 @@ class Tier2DetailFillService:
             )
             incident.khabar_embedding = embedding
             incident.details_pending = False
+            if category_casualties_suppressed:
+                incident.verification_status = "needs_verification"
+                incident.verification_reason = (
+                    "Category casualties require manual per-village confirmation "
+                    "for a multi-target bulletin"
+                )
+            if extraction.casualty_scope_needs_review:
+                incident.verification_status = "needs_verification"
+                incident.verification_reason = extraction.casualty_scope_review_reason
+                self._record_scope_downgrade(
+                    incident,
+                    raw_message_id=raw_message_id,
+                    reason=extraction.casualty_scope_review_reason,
+                )
             self._apply_dedup_backstop(
                 incident,
                 embedding,
@@ -216,7 +294,8 @@ class Tier2DetailFillService:
         # at least one details_pending incident actually needed filling.
         raw_message.tier2_completed_at = datetime.now(timezone.utc)
         raw_message.materialized_at = datetime.now(timezone.utc)
-        raw_message.status = MessageStatus.materialized
+        if getattr(raw_message, "status", None) != MessageStatus.duplicate:
+            raw_message.status = MessageStatus.materialized
         raw_message.error_message = None
         self.db.add(raw_message)
         self.db.commit()
@@ -227,6 +306,75 @@ class Tier2DetailFillService:
             len(extraction.categories),
         )
         return updated
+
+    @staticmethod
+    def _target_village_ids(match_result: dict | None) -> list[int]:
+        if not match_result:
+            return []
+        matches = match_result.get("village_matches")
+        if not isinstance(matches, list):
+            village_id = match_result.get("matched_village_id")
+            return [village_id] if isinstance(village_id, int) else []
+        return sorted(
+            {
+                village_id
+                for item in matches
+                if isinstance(item, dict)
+                and item.get("village_role", "target") == "target"
+                and isinstance((village_id := item.get("matched_village_id")), int)
+                and not isinstance(village_id, bool)
+            }
+        )
+
+    @staticmethod
+    def _has_root_demographic_casualties(extraction: ExtractionResult) -> bool:
+        root = extraction.casualties
+        return any(
+            value is not None
+            for value in (
+                root.male_deaths,
+                root.male_injuries,
+                root.female_deaths,
+                root.female_injuries,
+                root.children_deaths,
+                root.children_injuries,
+            )
+        )
+
+    def _record_scope_downgrade(
+        self,
+        incident: Incident,
+        *,
+        raw_message_id: int,
+        reason: str | None,
+    ) -> None:
+        if not reason:
+            return
+        already_recorded = self.db.scalar(
+            select(IncidentUpdate.id).where(
+                IncidentUpdate.incident_id == incident.id,
+                IncidentUpdate.action == UpdateAction.pipeline_merge,
+                IncidentUpdate.new_values[
+                    "casualty_scope_source_raw_message_id"
+                ].astext
+                == str(raw_message_id),
+            )
+        )
+        if already_recorded is not None:
+            return
+        self.db.add(
+            IncidentUpdate(
+                incident_id=incident.id,
+                action=UpdateAction.pipeline_merge,
+                old_values={"casualty_scope": "unsupported_model_claim"},
+                new_values={
+                    "casualty_scope": CasualtyScope.unspecified.value,
+                    "casualty_scope_source_raw_message_id": raw_message_id,
+                    "downgrade_reason": reason,
+                },
+                performed_by=None,
+            )
+        )
 
     @staticmethod
     def _fill_missing_matches(
@@ -277,30 +425,33 @@ class Tier2DetailFillService:
             return
 
         if score >= settings.dedup_high_threshold:
-            self.dedup_service.merge_into_incident(
-                existing=existing,
-                new_candidate_data={
-                    "deaths": incident.deaths,
-                    "injuries": incident.injuries,
-                    "total_deaths": incident.total_deaths,
-                    "total_injuries": incident.total_injuries,
-                    "khabar": incident.khabar,
-                    "mapped_fields": mapped_fields,
-                    "casualty_transitions": casualty_transitions,
-                },
-                raw_message_id=raw_message_id,
+            candidate_data = {
+                "deaths": incident.deaths,
+                "injuries": incident.injuries,
+                "total_deaths": incident.total_deaths,
+                "total_injuries": incident.total_injuries,
+                "khabar": incident.khabar,
+                "mapped_fields": mapped_fields,
+                "casualty_transitions": casualty_transitions,
+            }
+            canonicalize = getattr(
+                self.dedup_service, "canonicalize_existing_incident", None
             )
-            # Keep both rows (preserve-duplicate policy) but always pair the
-            # reviewer-facing flag with a pending soft match — same bookkeeping
-            # as slow-path mid-score via record_possible_duplicate.
-            incident.duplicate_flag = True
-            self.dedup_service.record_possible_duplicate(
-                incident=incident,
-                matched_incident=existing,
-                similarity_score=score,
-            )
+            if canonicalize is not None:
+                canonicalize(
+                    canonical=existing,
+                    duplicate=incident,
+                    new_candidate_data=candidate_data,
+                    similarity_score=score,
+                )
+            else:
+                self.dedup_service.merge_into_incident(
+                    existing=existing,
+                    new_candidate_data=candidate_data,
+                    raw_message_id=raw_message_id,
+                )
             logger.info(
-                "tier2 dedup linked incident_id=%s to incident_id=%s score=%.3f",
+                "tier2 dedup canonicalized incident_id=%s into incident_id=%s score=%.3f",
                 incident.id,
                 existing.id,
                 score,
@@ -309,6 +460,8 @@ class Tier2DetailFillService:
 
         if score >= settings.dedup_low_threshold:
             incident.duplicate_flag = True
+            incident.verification_status = "needs_verification"
+            incident.verification_reason = "Possible duplicate detected during detail extraction"
             self.dedup_service.record_possible_duplicate(
                 incident=incident,
                 matched_incident=existing,

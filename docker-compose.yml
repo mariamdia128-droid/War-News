@@ -52,7 +52,8 @@ services:
       - .:/app
     ports:
       - "8000:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude scripts/*
+    # Bound graceful shutdown so an open SSE connection cannot stall dev reloads.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude scripts/* --timeout-graceful-shutdown 3
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
@@ -76,7 +77,9 @@ services:
       PIPELINE_ROLE: worker
     volumes:
       - .:/app
-    command: python -m app.core.scripts.run_module_with_reload app.core.scripts.run_pipeline_worker
+    # Temporary: disable reload — host bind-mount races were crash-looping the
+    # worker on SyntaxError conflict-marker ghosts and blocking Sep 9–10 drains.
+    command: python -m app.core.scripts.run_pipeline_worker
     restart: unless-stopped
     networks:
       - appnet
@@ -117,6 +120,26 @@ services:
     volumes:
       - .:/app
     command: sh -c "while true; do python -m scripts.backlog_relevance_sweep; sleep 1800; done"
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  bulletin-reconciliation-worker:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PG_APPLICATION_NAME: war-news-bulletin-reconciliation
+      PIPELINE_ROLE: bulletin-reconciliation-worker
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - .:/app
+    command: sh -c "while true; do python -m scripts.bulletin_reconciliation_sweep; sleep ${BULLETIN_RECONCILIATION_SWEEP_INTERVAL_SECONDS:-1800}; done"
     restart: unless-stopped
     networks:
       - appnet

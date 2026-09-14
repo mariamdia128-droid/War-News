@@ -5,6 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from typing import Any
 
@@ -14,14 +15,38 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.text_sanitizer import strip_emoji_and_pictographs
-from app.llm.dtos import ExtractionResult
-from app.llm.dtos import VillageRole
+from app.llm.dtos import (
+    CasualtyScope,
+    ExtractionCasualties,
+    ExtractionResult,
+    ExtractionSubEvent,
+    StoryRelationship,
+    VillageRole,
+)
 from app.news.interfaces import DedupMatchingInterface
-from app.news.models import Incident, IncidentDetail, MatchStatus, MessageStatus, RawMessage
+from app.news.models import (
+    Incident,
+    IncidentDetail,
+    IncidentUpdate,
+    MatchStatus,
+    MessageStatus,
+    RawMessage,
+    UpdateAction,
+)
+from app.news.repositories.incident_repository import IncidentRepository
 from app.news.repositories.emergency_organization_repository import (
     EmergencyOrganizationRepository,
 )
-from app.news.services.incident_details.category_mapper import compute_rollups, map_categories
+from app.news.models.bulletin_casualty_group import CasualtyScope as StoredCasualtyScope
+from app.news.repositories.bulletin_casualty_group_repository import (
+    BulletinCasualtyGroupRepository,
+)
+from app.news.services.clustering.raw_message_embedding_service import strip_boilerplate
+from app.news.services.incident_details.category_mapper import (
+    compute_rollups,
+    map_categories,
+    suppress_category_casualties,
+)
 from app.news.services.matching.emergency_organization_matching_service import (
     EmergencyOrganizationMatchingService,
 )
@@ -30,6 +55,7 @@ from app.news.services.dedup.fast_path_dedup import (
     FastPathDedupOutcome,
     FastPathDedupService,
 )
+from app.news.services.dedup.story_continuation_router import StoryContinuationRouter
 from app.news.services.pipeline.pipeline_advisory_lock import acquire_fast_path_village_lock
 from app.news.services.dedup.fast_path_eligibility import (
     ELIGIBLE_MATCH_STATUSES,
@@ -47,17 +73,20 @@ def _initial_verification_status(
     *,
     duplicate_flag: bool = False,
     insufficient_score: bool = False,
+    low_confidence_village_match: bool = False,
 ) -> str:
-    """Return the initial review state — duplicate signals only.
+    """Return the initial review state for materialized incidents.
 
-    Verification is reserved for possible-duplicate cases. Relevance
-    uncertainty, casualty-transition ambiguity, and low-confidence
-    village/condition matches no longer force manual review; they
-    materialize as auto_processed. (`match_result` is kept as a parameter
-    for call-site compatibility even though it's unused here — do not
-    remove it without also updating both call sites.)
+    Relevance uncertainty, casualty-transition ambiguity, and
+    low-confidence condition matches do not force manual review here. A
+    low-confidence village match does, because the displayed village name is
+    otherwise indistinguishable from a full-confidence match.
     """
-    return "needs_verification" if (duplicate_flag or insufficient_score) else "auto_processed"
+    return (
+        "needs_verification"
+        if (duplicate_flag or insufficient_score or low_confidence_village_match)
+        else "auto_processed"
+    )
 
 
 def _relevance_review_details(
@@ -75,6 +104,17 @@ def _relevance_needs_review(representative: RawMessage) -> bool:
 
 logger = logging.getLogger(__name__)
 BEIRUT_TIMEZONE = ZoneInfo("Asia/Beirut")
+
+
+@dataclass(frozen=True)
+class _FastPathUnit:
+    village_match: dict[str, Any]
+    condition_id: int
+    condition_status: Any
+    casualties: ExtractionCasualties | None
+    hash_suffix: str | None
+    route_text: str | None
+    story_group_id: UUID | None
 
 
 def _incident_event_datetime(value: datetime) -> datetime:
@@ -112,6 +152,7 @@ def _new_incident_payload(incident: Incident) -> str:
         "raw_message_id": incident.raw_message_id,
         "raw_status": raw_message.status.value if raw_message is not None else None,
         "village_id": incident.village_id,
+        "story_group_id": str(incident.story_group_id) if incident.story_group_id else None,
         "condition_id": incident.condition_id,
         "village": (
             village.ref_name_en or village.cad_name if village is not None else None
@@ -184,14 +225,20 @@ class IncidentMaterializationService:
         db: Session,
         dedup_service: DedupMatchingInterface | None = None,
         emergency_org_matcher: EmergencyOrganizationMatchingService | None = None,
+        bulletin_groups: BulletinCasualtyGroupRepository | None = None,
+        story_router: StoryContinuationRouter | None = None,
     ) -> None:
         self.db = db
         self.dedup_service = dedup_service
+        self.bulletin_groups = bulletin_groups or BulletinCasualtyGroupRepository(db)
         self.emergency_org_matcher = (
             emergency_org_matcher
             or EmergencyOrganizationMatchingService(
                 EmergencyOrganizationRepository(db)
             )
+        )
+        self.story_router = story_router or StoryContinuationRouter(
+            IncidentRepository(db)
         )
         self.stats = MaterializationStats()
         self.fast_stats = FastMaterializationStats()
@@ -236,13 +283,35 @@ class IncidentMaterializationService:
 
         village_matches: list[dict[str, Any]] = match_result.get("village_matches", [])
         origin_villages = self._origin_village_names(village_matches)
+        target_matches = [
+            village_match
+            for village_match in village_matches
+            if self._materializes_village_match(village_match)
+        ]
+        is_multi_village = len(target_matches) > 1
+        self._ensure_bulletin_group(
+            representative,
+            extraction,
+            target_matches=target_matches,
+        )
 
         created: list[Incident] = []
         confident_duplicate_villages = 0
         materializable_villages = 0
         representative_raw_message_id: int | None = None
+        units = self._fast_path_units(
+            match_result=match_result,
+            extraction=extraction,
+            village_matches=village_matches,
+            root_condition_id=condition_id,
+            root_condition_status=condition_status,
+            representative_text=representative.raw_text,
+        )
 
-        for village_match in village_matches:
+        for unit in units:
+            village_match = unit.village_match
+            condition_id = unit.condition_id
+            condition_status = unit.condition_status
             if not self._materializes_village_match(village_match):
                 logger.info(
                     "raw_message_id=%s village suppressed from materialization: role=%r text=%r",
@@ -253,6 +322,16 @@ class IncidentMaterializationService:
                 continue
             village_status = village_match.get("village_match_status")
             village_id = self._optional_int(village_match.get("matched_village_id"))
+            if unit.casualties is not None:
+                village_casualties = unit.casualties
+            else:
+                village_casualties = self._root_casualties_for_village(
+                    village_match,
+                    extraction.casualties,
+                    is_multi_village=is_multi_village,
+                )
+            village_deaths = village_casualties.deaths
+            village_injuries = village_casualties.injuries
             holds_village_lock = (
                 village_id is not None
                 and village_status in MATERIALIZE_MATCH_STATUSES
@@ -267,7 +346,7 @@ class IncidentMaterializationService:
                 village_id=village_id,
                 condition_id=condition_id,
                 message_datetime=event_datetime,
-                candidate_text=representative.raw_text,
+                candidate_text=strip_boilerplate(representative.raw_text or ""),
                 candidate_embedding=representative.content_embedding,
                 exclude_raw_message_id=representative.id,
             )
@@ -285,17 +364,91 @@ class IncidentMaterializationService:
 
             materializable_villages += 1
 
+            story_route = None
+            if decision.outcome != FastPathDedupOutcome.confident_duplicate:
+                story_route = self.story_router.route_for_village(
+                    match_result=match_result,
+                    message_datetime=event_datetime,
+                    candidate_text=unit.route_text or representative.raw_text,
+                    candidate_embedding=representative.content_embedding,
+                    exclude_raw_message_id=representative.id,
+                    village_id=village_id,
+                )
+
+            if (
+                story_route is not None
+                and story_route.relationship == StoryRelationship.duplicate
+            ):
+                confident_duplicate_villages += 1
+                representative_raw_message_id = story_route.candidate.raw_message_id
+                self._merge_into_canonical(
+                    fast_dedup=fast_dedup,
+                    canonical_incident=story_route.candidate,
+                    representative=representative,
+                    extraction=extraction,
+                    village_casualties=village_casualties,
+                    village_deaths=village_deaths,
+                    village_injuries=village_injuries,
+                    origin_villages=origin_villages,
+                    is_multi_village=is_multi_village,
+                    similarity_score=1.0,
+                    similarity_method="story",
+                )
+                if holds_village_lock:
+                    self.db.commit()
+                continue
+
+            if (
+                story_route is not None
+                and story_route.relationship == StoryRelationship.revision
+            ):
+                confident_duplicate_villages += 1
+                representative_raw_message_id = story_route.candidate.raw_message_id
+                self.story_router.incidents.apply_story_revision(
+                    existing=story_route.candidate,
+                    new_candidate_data=self._story_revision_payload(
+                        representative=representative,
+                        extraction=extraction,
+                        village_casualties=village_casualties,
+                        village_deaths=village_deaths,
+                        village_injuries=village_injuries,
+                        is_multi_village=is_multi_village,
+                    ),
+                    raw_message_id=representative.id,
+                )
+                self.db.commit()
+                logger.info(
+                    "raw_message_id=%s village_id=%s story revision applied to "
+                    "incident_id=%s",
+                    representative.id,
+                    village_id,
+                    story_route.candidate.id,
+                )
+                if holds_village_lock:
+                    self.db.commit()
+                continue
+
             if decision.outcome == FastPathDedupOutcome.possible_duplicate:
                 # Flag for human review: materialize the row and link it to the
                 # matched active incident with a pending duplicate_matches entry.
                 incident = self._insert_fast_incident(
                     representative=representative,
-                    extraction=extraction,
+                    casualties=village_casualties,
                     village_id=village_id,
                     condition_id=condition_id,
                     event_datetime=event_datetime,
                     origin_villages=origin_villages,
+                    deaths=village_deaths,
+                    injuries=village_injuries,
                     duplicate_flag=True,
+                    scope_review_reason=extraction.casualty_scope_review_reason
+                    if extraction.casualty_scope_needs_review
+                    else None,
+                    low_confidence_village_match=(
+                        village_status == "matched_low_confidence"
+                    ),
+                    hash_suffix=unit.hash_suffix,
+                    story_group_id=unit.story_group_id,
                 )
                 if incident is not None and decision.matched_incident is not None:
                     fast_dedup.incidents.create_duplicate_match(
@@ -320,6 +473,7 @@ class IncidentMaterializationService:
                 continue
 
             if decision.outcome == FastPathDedupOutcome.confident_duplicate:
+                confident_duplicate_villages += 1
                 # DuplicateComparisonService is the sole verdict authority on the
                 # fast path — do not re-score with DedupMatchingService /
                 # dedup_time_window_days (that override reintroduced Mansouri-class
@@ -337,18 +491,19 @@ class IncidentMaterializationService:
                         extraction.categories,
                         emergency_org_matcher=self.emergency_org_matcher,
                     )
-                    casualties = extraction.casualties
+                    if is_multi_village:
+                        mapped_fields, _ = suppress_category_casualties(mapped_fields)
                     total_deaths, total_injuries = compute_rollups(
                         mapped_fields,
-                        casualties,
+                        village_casualties,
                     )
                     score = decision.similarity_score or 0.0
                     try:
                         self.dedup_service.merge_into_incident(
                             existing=canonical_incident,
                             new_candidate_data={
-                                "deaths": casualties.deaths,
-                                "injuries": casualties.injuries,
+                                "deaths": village_deaths,
+                                "injuries": village_injuries,
                                 "total_deaths": total_deaths,
                                 "total_injuries": total_injuries,
                                 "khabar": representative.raw_text or "",
@@ -367,9 +522,7 @@ class IncidentMaterializationService:
                             status=MatchStatus.confirmed_duplicate,
                             similarity_score=score,
                         )
-                        self._mark_materialized(representative, fast_path=True)
                         self.db.commit()
-                        created.append(canonical_incident)
                         logger.info(
                             "raw_message_id=%s village_id=%s fast_path merged into "
                             "incident_id=%s score=%.3f method=%s",
@@ -386,7 +539,6 @@ class IncidentMaterializationService:
                         self.db.commit()
                     continue
 
-                confident_duplicate_villages += 1
                 self.fast_stats.skipped_confident_duplicate += 1
                 try:
                     if canonical_incident is not None:
@@ -415,23 +567,46 @@ class IncidentMaterializationService:
 
             incident = self._insert_fast_incident(
                 representative=representative,
-                extraction=extraction,
+                casualties=village_casualties,
                 village_id=village_id,
                 condition_id=condition_id,
                 event_datetime=event_datetime,
                 origin_villages=origin_villages,
+                deaths=village_deaths,
+                injuries=village_injuries,
+                scope_review_reason=extraction.casualty_scope_review_reason
+                if extraction.casualty_scope_needs_review
+                else None,
+                low_confidence_village_match=(
+                    village_status == "matched_low_confidence"
+                ),
+                hash_suffix=unit.hash_suffix,
+                story_group_id=unit.story_group_id,
             )
             if incident is not None:
+                if (
+                    story_route is not None
+                    and story_route.relationship
+                    == StoryRelationship.distinct_sub_event
+                ):
+                    self.story_router.incidents.link_story_group(
+                        incident,
+                        story_route.candidate,
+                    )
+                    self.db.commit()
                 created.append(incident)
 
         if (
             materializable_villages > 0
             and confident_duplicate_villages == materializable_villages
-            and not created
             and representative_raw_message_id is not None
         ):
             representative.status = MessageStatus.duplicate
             representative.duplicate_of_id = representative_raw_message_id
+            now = datetime.now(timezone.utc)
+            representative.fast_path_completed_at = now
+            representative.materialized_at = now
+            representative.error_message = None
             self.db.commit()
             self.fast_stats.marked_message_duplicate += 1
             logger.info(
@@ -456,6 +631,114 @@ class IncidentMaterializationService:
             )
 
         return created
+
+    def _merge_into_canonical(
+        self,
+        *,
+        fast_dedup: FastPathDedupService,
+        canonical_incident: Incident,
+        representative: RawMessage,
+        extraction: ExtractionResult,
+        village_casualties: ExtractionCasualties,
+        village_deaths: int | None,
+        village_injuries: int | None,
+        origin_villages: list[str],
+        is_multi_village: bool,
+        similarity_score: float,
+        similarity_method: str,
+    ) -> None:
+        mapped_fields = map_categories(
+            extraction.categories,
+            emergency_org_matcher=self.emergency_org_matcher,
+        )
+        if is_multi_village:
+            mapped_fields, _ = suppress_category_casualties(mapped_fields)
+        total_deaths, total_injuries = compute_rollups(
+            mapped_fields,
+            village_casualties,
+        )
+        payload = {
+            "deaths": village_deaths,
+            "injuries": village_injuries,
+            "total_deaths": total_deaths,
+            "total_injuries": total_injuries,
+            "khabar": representative.raw_text or "",
+            "origin_villages": origin_villages,
+            "mapped_fields": mapped_fields,
+            "casualty_transitions": [
+                item.model_dump(mode="json")
+                for item in extraction.casualty_transitions
+            ],
+        }
+        incidents = getattr(fast_dedup, "incidents", None) or self.story_router.incidents
+        try:
+            if self.dedup_service is not None:
+                self.dedup_service.merge_into_incident(
+                    existing=canonical_incident,
+                    new_candidate_data=payload,
+                    raw_message_id=representative.id,
+                )
+            else:
+                incidents.merge_existing(
+                    existing=canonical_incident,
+                    new_candidate_data=payload,
+                    raw_message_id=representative.id,
+                )
+            create_match = getattr(incidents, "create_fast_path_duplicate_match", None)
+            if create_match is not None:
+                create_match(
+                    canonical_incident=canonical_incident,
+                    raw_message_id=representative.id,
+                    status=MatchStatus.confirmed_duplicate,
+                    similarity_score=similarity_score,
+                )
+            self.db.commit()
+            logger.info(
+                "raw_message_id=%s story/fast-path merged into incident_id=%s "
+                "score=%.3f method=%s",
+                representative.id,
+                canonical_incident.id,
+                similarity_score,
+                similarity_method,
+            )
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _story_revision_payload(
+        self,
+        *,
+        representative: RawMessage,
+        extraction: ExtractionResult,
+        village_casualties: ExtractionCasualties,
+        village_deaths: int | None,
+        village_injuries: int | None,
+        is_multi_village: bool,
+    ) -> dict[str, Any]:
+        mapped_fields = map_categories(
+            extraction.categories,
+            emergency_org_matcher=self.emergency_org_matcher,
+        )
+        if is_multi_village:
+            mapped_fields, _ = suppress_category_casualties(mapped_fields)
+        total_deaths, total_injuries = compute_rollups(
+            mapped_fields,
+            village_casualties,
+        )
+        return {
+            "deaths": village_deaths,
+            "injuries": village_injuries,
+            "total_deaths": total_deaths,
+            "total_injuries": total_injuries,
+            "khabar": representative.raw_text or "",
+            "mapped_fields": mapped_fields,
+            "male_d": village_casualties.male_deaths,
+            "male_i": village_casualties.male_injuries,
+            "female_d": village_casualties.female_deaths,
+            "female_i": village_casualties.female_injuries,
+            "children_d": village_casualties.children_deaths,
+            "children_i": village_casualties.children_injuries,
+        }
 
     def _mark_unmaterializable(self, representative: RawMessage, reason: str) -> None:
         """Persist a terminal status in its own transaction.
@@ -485,26 +768,34 @@ class IncidentMaterializationService:
         self,
         *,
         representative: RawMessage,
-        extraction: ExtractionResult,
+        casualties: ExtractionCasualties,
         village_id: int | None,
         condition_id: int,
         event_datetime: datetime,
         origin_villages: list[str],
+        deaths: int | None,
+        injuries: int | None,
         duplicate_flag: bool = False,
+        scope_review_reason: str | None = None,
+        low_confidence_village_match: bool = False,
+        hash_suffix: str | None = None,
+        story_group_id: UUID | None = None,
     ) -> Incident | None:
         if village_id is None:
             self.fast_stats.skipped_ineligible += 1
             return None
 
-        casualties = extraction.casualties
         total_deaths, total_injuries = compute_rollups({}, casualties)
-        sanitized_khabar = strip_emoji_and_pictographs(representative.raw_text or "")
+        sanitized_khabar = strip_boilerplate(
+            strip_emoji_and_pictographs(representative.raw_text or "")
+        )
 
         exact_hash = self._build_exact_hash(
             khabar=sanitized_khabar,
             village_id=village_id,
             condition_id=condition_id,
             event_date=event_datetime.date().isoformat(),
+            hash_suffix=hash_suffix,
         )
 
         verification_status = _initial_verification_status(
@@ -513,6 +804,22 @@ class IncidentMaterializationService:
             # An insufficient-score duplicate is always created with the
             # duplicate flag, before its audit record is persisted.
             insufficient_score=duplicate_flag,
+            low_confidence_village_match=low_confidence_village_match,
+        )
+        if scope_review_reason:
+            verification_status = "needs_verification"
+        verification_reason = (
+            scope_review_reason
+            or (
+                _verification_reason(
+                    representative.match_result,
+                    duplicate_flag=duplicate_flag,
+                    insufficient_score=duplicate_flag,
+                    low_confidence_village_match=low_confidence_village_match,
+                )
+                if verification_status == "needs_verification"
+                else None
+            )
         )
 
         incident = Incident(
@@ -523,23 +830,18 @@ class IncidentMaterializationService:
             event_date=event_datetime.date(),
             event_time=event_datetime.time(),
             khabar=sanitized_khabar,
-            khabar_embedding=None,
+            khabar_embedding=representative.content_embedding,
             note=self._origin_village_note(origin_villages),
             total_deaths=total_deaths,
             total_injuries=total_injuries,
-            deaths=casualties.deaths,
-            injuries=casualties.injuries,
+            deaths=deaths,
+            injuries=injuries,
             exact_hash=exact_hash,
             duplicate_flag=duplicate_flag,
             details_pending=True,
             verification_status=verification_status,
-            verification_reason=_verification_reason(
-                representative.match_result,
-                duplicate_flag=duplicate_flag,
-                insufficient_score=duplicate_flag,
-            )
-            if verification_status == "needs_verification"
-            else None,
+            verification_reason=verification_reason,
+            story_group_id=story_group_id,
             created_by=None,
         )
 
@@ -556,6 +858,11 @@ class IncidentMaterializationService:
                     children_d=casualties.children_deaths,
                     children_i=casualties.children_injuries,
                 )
+            )
+            self._record_scope_downgrade(
+                incident,
+                raw_message_id=representative.id,
+                reason=scope_review_reason,
             )
             self._mark_materialized(representative, fast_path=True)
             _notify_new_incident(self.db, incident)
@@ -627,11 +934,29 @@ class IncidentMaterializationService:
             extraction.categories,
             emergency_org_matcher=self.emergency_org_matcher,
         )
-        total_deaths, total_injuries = compute_rollups(mapped_fields, casualties)
         created: list[Incident] = []
+        materializable_villages = 0
+        merged_villages = 0
+        canonical_raw_message_id: int | None = None
 
         village_matches: list[dict[str, Any]] = match_result.get("village_matches", [])
         origin_villages = self._origin_village_names(village_matches)
+        target_matches = [
+            village_match
+            for village_match in village_matches
+            if self._materializes_village_match(village_match)
+        ]
+        is_multi_village = len(target_matches) > 1
+        category_casualties_suppressed = False
+        if is_multi_village:
+            mapped_fields, category_casualties_suppressed = (
+                suppress_category_casualties(mapped_fields)
+            )
+        self._ensure_bulletin_group(
+            representative,
+            extraction,
+            target_matches=target_matches,
+        )
         if not village_matches:
             self.stats.skipped_ineligible += 1
             self._mark_unmaterializable(representative, ERROR_NO_VILLAGE)
@@ -653,6 +978,17 @@ class IncidentMaterializationService:
                 continue
             village_status = village_match.get("village_match_status")
             village_id = self._optional_int(village_match.get("matched_village_id"))
+            village_casualties = self._root_casualties_for_village(
+                village_match,
+                casualties,
+                is_multi_village=is_multi_village,
+            )
+            village_deaths = village_casualties.deaths
+            village_injuries = village_casualties.injuries
+            total_deaths, total_injuries = compute_rollups(
+                mapped_fields,
+                village_casualties,
+            )
 
             if village_status not in ELIGIBLE_MATCH_STATUSES:
                 logger.info(
@@ -670,9 +1006,10 @@ class IncidentMaterializationService:
                 )
                 self.stats.skipped_ineligible += 1
                 continue
+            materializable_villages += 1
 
-            sanitized_khabar = strip_emoji_and_pictographs(
-                representative.raw_text or ""
+            sanitized_khabar = strip_boilerplate(
+                strip_emoji_and_pictographs(representative.raw_text or "")
             )
             exact_hash = self._build_exact_hash(
                 khabar=sanitized_khabar,
@@ -699,13 +1036,32 @@ class IncidentMaterializationService:
                 )
                 if existing is not None and score >= settings.dedup_high_threshold:
                     try:
+                        existing_raw_id = getattr(existing, "raw_message_id", None)
+                        if existing_raw_id is not None:
+                            canonical_raw_message_id = existing_raw_id
                         existing.duplicate_level = "high"
                         existing.duplicate_similarity_score = score
+                        if category_casualties_suppressed:
+                            existing.verification_status = "needs_verification"
+                            existing.verification_reason = (
+                                "Category casualties require manual per-village "
+                                "confirmation for a multi-target bulletin"
+                            )
+                        if extraction.casualty_scope_needs_review:
+                            existing.verification_status = "needs_verification"
+                            existing.verification_reason = (
+                                extraction.casualty_scope_review_reason
+                            )
+                            self._record_scope_downgrade(
+                                existing,
+                                raw_message_id=representative.id,
+                                reason=extraction.casualty_scope_review_reason,
+                            )
                         self.dedup_service.merge_into_incident(
                             existing=existing,
                             new_candidate_data={
-                                "deaths": casualties.deaths,
-                                "injuries": casualties.injuries,
+                                "deaths": village_deaths,
+                                "injuries": village_injuries,
                                 "total_deaths": total_deaths,
                                 "total_injuries": total_injuries,
                                 "khabar": representative.raw_text or "",
@@ -718,8 +1074,13 @@ class IncidentMaterializationService:
                             },
                             raw_message_id=representative.id,
                         )
-                        self._mark_materialized(representative, fast_path=False)
                         self.db.commit()
+                        merged_villages += 1
+                        created.append(existing)
+                        if existing_raw_id is None:
+                            self._mark_materialized(
+                                representative, fast_path=False
+                            )
                         self.stats.merged_into_existing += 1
                         logger.info(
                             "raw_message_id=%s village_id=%s merged into "
@@ -729,7 +1090,6 @@ class IncidentMaterializationService:
                             existing.id,
                             score,
                         )
-                        created.append(existing)
                         continue
                     except Exception:
                         self.db.rollback()
@@ -757,6 +1117,29 @@ class IncidentMaterializationService:
             verification_status = _initial_verification_status(
                 representative.match_result,
                 duplicate_flag=duplicate_flag,
+                low_confidence_village_match=(
+                    village_status == "matched_low_confidence"
+                ),
+            )
+            if category_casualties_suppressed or extraction.casualty_scope_needs_review:
+                verification_status = "needs_verification"
+            verification_reason = (
+                extraction.casualty_scope_review_reason
+                if extraction.casualty_scope_needs_review
+                else "Category casualties require manual per-village confirmation "
+                "for a multi-target bulletin"
+                if category_casualties_suppressed
+                else _verification_reason(
+                    representative.match_result,
+                    duplicate_flag=duplicate_flag,
+                    duplicate_level=duplicate_level,
+                    duplicate_similarity_score=duplicate_score,
+                    low_confidence_village_match=(
+                        village_status == "matched_low_confidence"
+                    ),
+                )
+                if verification_status == "needs_verification"
+                else None
             )
 
             incident = Incident(
@@ -771,21 +1154,14 @@ class IncidentMaterializationService:
                 note=self._origin_village_note(origin_villages),
                 total_deaths=total_deaths,
                 total_injuries=total_injuries,
-                deaths=casualties.deaths,
-                injuries=casualties.injuries,
+                deaths=village_deaths,
+                injuries=village_injuries,
                 exact_hash=exact_hash,
                 duplicate_flag=duplicate_flag,
                 duplicate_level=duplicate_level,
                 duplicate_similarity_score=duplicate_score,
                 verification_status=verification_status,
-                verification_reason=_verification_reason(
-                    representative.match_result,
-                    duplicate_flag=duplicate_flag,
-                    duplicate_level=duplicate_level,
-                    duplicate_similarity_score=duplicate_score,
-                )
-                if verification_status == "needs_verification"
-                else None,
+                verification_reason=verification_reason,
                 created_by=None,
             )
 
@@ -805,14 +1181,21 @@ class IncidentMaterializationService:
                 self.db.add(
                     IncidentDetail(
                         incident_id=incident.id,
-                        male_d=casualties.male_deaths,
-                        male_i=casualties.male_injuries,
-                        female_d=casualties.female_deaths,
-                        female_i=casualties.female_injuries,
-                        children_d=casualties.children_deaths,
-                        children_i=casualties.children_injuries,
+                        male_d=village_casualties.male_deaths,
+                        male_i=village_casualties.male_injuries,
+                        female_d=village_casualties.female_deaths,
+                        female_i=village_casualties.female_injuries,
+                        children_d=village_casualties.children_deaths,
+                        children_i=village_casualties.children_injuries,
                         **mapped_fields,
                     )
+                )
+                self._record_scope_downgrade(
+                    incident,
+                    raw_message_id=representative.id,
+                    reason=extraction.casualty_scope_review_reason
+                    if extraction.casualty_scope_needs_review
+                    else None,
                 )
                 self._mark_materialized(representative, fast_path=False)
                 _notify_new_incident(self.db, incident)
@@ -831,6 +1214,11 @@ class IncidentMaterializationService:
                     )
                 )
                 existing_id = existing.id if existing is not None else None
+                if existing is not None:
+                    merged_villages += 1
+                    existing_raw_id = getattr(existing, "raw_message_id", None)
+                    if existing_raw_id is not None:
+                        canonical_raw_message_id = existing_raw_id
                 self.stats.skipped_duplicate_hash += 1
                 logger.info(
                     "incident already exists for this hash, skipping "
@@ -842,6 +1230,17 @@ class IncidentMaterializationService:
             except Exception:
                 self.db.rollback()
                 raise
+
+        if (
+            materializable_villages > 0
+            and merged_villages == materializable_villages
+            and canonical_raw_message_id is not None
+        ):
+            representative.status = MessageStatus.duplicate
+            representative.duplicate_of_id = canonical_raw_message_id
+            representative.error_message = None
+            representative.materialized_at = datetime.now(timezone.utc)
+            self.db.commit()
 
         return created
 
@@ -882,6 +1281,167 @@ class IncidentMaterializationService:
             return None
         return value
 
+    def _fast_path_units(
+        self,
+        *,
+        match_result: dict[str, Any],
+        extraction: ExtractionResult,
+        village_matches: list[dict[str, Any]],
+        root_condition_id: int,
+        root_condition_status: Any,
+        representative_text: str | None,
+    ) -> list[_FastPathUnit]:
+        """One unit per village, or village×sub-event when a bulletin splits."""
+        paired: list[tuple[int, ExtractionSubEvent, dict[str, Any], int]] = []
+        sub_matches = match_result.get("sub_event_matches") or []
+        by_index: dict[int, dict[str, Any]] = {}
+        for item in sub_matches:
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            if isinstance(index, int) and not isinstance(index, bool):
+                by_index[index] = item
+        for index, sub_event in enumerate(extraction.sub_events):
+            match = by_index.get(index)
+            if match is None and index < len(sub_matches):
+                fallback = sub_matches[index]
+                if isinstance(fallback, dict):
+                    match = fallback
+            condition_id = self._optional_int(
+                (match or {}).get("matched_condition_id")
+            )
+            if condition_id is None:
+                continue
+            paired.append((index, sub_event, match or {}, condition_id))
+
+        splitting = len(paired) >= 2
+        shared_group = uuid4() if splitting else None
+        units: list[_FastPathUnit] = []
+        for village_match in village_matches:
+            if not splitting:
+                units.append(
+                    _FastPathUnit(
+                        village_match=village_match,
+                        condition_id=root_condition_id,
+                        condition_status=root_condition_status,
+                        casualties=None,
+                        hash_suffix=None,
+                        route_text=representative_text,
+                        story_group_id=None,
+                    )
+                )
+                continue
+            for index, sub_event, match, sub_condition_id in paired:
+                suffix = (sub_event.evidence_span or f"sub-{index}").strip()[:80]
+                units.append(
+                    _FastPathUnit(
+                        village_match=village_match,
+                        condition_id=sub_condition_id,
+                        condition_status=match.get(
+                            "condition_match_status",
+                            root_condition_status,
+                        ),
+                        casualties=sub_event.casualties,
+                        hash_suffix=suffix,
+                        route_text=sub_event.evidence_span or representative_text,
+                        story_group_id=shared_group,
+                    )
+                )
+        return units
+
+    @staticmethod
+    def _root_casualties_for_village(
+        village_match: dict[str, Any],
+        casualties: ExtractionCasualties,
+        *,
+        is_multi_village: bool,
+    ) -> ExtractionCasualties:
+        deaths = IncidentMaterializationService._optional_int(
+            village_match.get("deaths")
+        )
+        injuries = IncidentMaterializationService._optional_int(
+            village_match.get("injuries")
+        )
+        if is_multi_village:
+            # Null is meaningful here: it means this village had no explicit
+            # local count. Falling back to the bulletin total would recreate
+            # the multi-village casualty misattribution bug.
+            return ExtractionCasualties(deaths=deaths, injuries=injuries)
+        return casualties.model_copy(
+            update={
+                "deaths": deaths if deaths is not None else casualties.deaths,
+                "injuries": (
+                    injuries if injuries is not None else casualties.injuries
+                ),
+            }
+        )
+
+    def _ensure_bulletin_group(
+        self,
+        representative: RawMessage,
+        extraction: ExtractionResult,
+        *,
+        target_matches: list[dict[str, Any]],
+    ) -> None:
+        if (
+            extraction.casualty_scope != CasualtyScope.bulletin_aggregate
+            or len(target_matches) <= 1
+        ):
+            return
+        village_ids = sorted(
+            {
+                village_id
+                for item in target_matches
+                if isinstance((village_id := item.get("matched_village_id")), int)
+                and not isinstance(village_id, bool)
+            }
+        )
+        if len(village_ids) <= 1:
+            return
+        self.bulletin_groups.create_for_message(
+            raw_message_id=representative.id,
+            village_ids=village_ids,
+            casualty_scope=StoredCasualtyScope.bulletin_aggregate,
+            total_deaths=extraction.casualties.total_deaths,
+            total_injuries=extraction.casualties.total_injuries,
+            created_at=representative.message_datetime,
+        )
+
+    def _record_scope_downgrade(
+        self,
+        incident: Incident,
+        *,
+        raw_message_id: int,
+        reason: str | None,
+    ) -> None:
+        if not reason:
+            return
+        already_recorded = self.db.scalar(
+            select(IncidentUpdate.id).where(
+                IncidentUpdate.incident_id == incident.id,
+                IncidentUpdate.action == UpdateAction.pipeline_merge,
+                IncidentUpdate.new_values[
+                    "casualty_scope_source_raw_message_id"
+                ].astext
+                == str(raw_message_id),
+            )
+        )
+        if already_recorded is not None:
+            return
+        self.db.add(
+            IncidentUpdate(
+                incident_id=incident.id,
+                action=UpdateAction.pipeline_merge,
+                old_values={"casualty_scope": "unsupported_model_claim"},
+                new_values={
+                    "casualty_scope": CasualtyScope.unspecified.value,
+                    "casualty_scope_source_raw_message_id": raw_message_id,
+                    "downgrade_reason": reason,
+                },
+                performed_by=None,
+            )
+        )
+
     @staticmethod
     def _materializes_village_match(village_match: dict[str, Any]) -> bool:
         return village_match.get("village_role", VillageRole.target.value) == VillageRole.target.value
@@ -915,9 +1475,12 @@ class IncidentMaterializationService:
         village_id: int,
         condition_id: int,
         event_date: str,
+        hash_suffix: str | None = None,
     ) -> str:
         normalized = " ".join(khabar.split())
         key = f"{normalized}|{village_id}|{condition_id}|{event_date}"
+        if hash_suffix:
+            key = f"{key}|{hash_suffix}"
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     @staticmethod

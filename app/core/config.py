@@ -62,12 +62,10 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
     super_admin_seed_password: str = "password"
-    # First-pass values derived from a single confirmed duplicate pair
-    # (248 min gap, 0.7675 cosine similarity — 2026-08-18).
-    # Revisit after 2–3 weeks of live backlog data to validate against a
-    # full similarity/time-gap distribution before treating as permanent.
-    cluster_time_window_minutes: int = 300
-    cluster_similarity_threshold: float = 0.75
+    # Source-neutral canonical incident rule: the same village, action and
+    # semantic event may collapse only inside a strict 30-minute window.
+    cluster_time_window_minutes: int = 30
+    cluster_similarity_threshold: float = 0.78
     cluster_require_condition_match: bool = True
     # Hard cap on clustering candidate rows per pass (memory/CPU safety).
     clustering_max_rows_per_pass: int = 100
@@ -91,16 +89,14 @@ class Settings(BaseSettings):
     # with dedup_fastpath_lookup_window_days as the outer candidate query bound.
     # Kept only for any remaining callers that still read the flat window.
     dedup_time_window_days: int = 3
-    dedup_high_threshold: float = 0.80
+    dedup_high_threshold: float = 0.78
     dedup_low_threshold: float = 0.50
     # --- Fast-path incident-level duplicate comparison (DuplicateComparisonService) ---
-    # Outer lookup bound: how far back the fast-path query pulls candidate active
-    # incidents. The verdict itself is decided by the time-gap / similarity tiers
-    # below, NOT by this window (kept wide so the 6h service cutoff always has
-    # candidates to evaluate).
+    # Outer lookup bound for candidate retrieval. The verdict below enforces the
+    # strict 30-minute event-identity window.
     dedup_fastpath_lookup_window_days: int = 7
-    # Time-gap tier boundaries (seconds): near = "≤ 2 minutes", mid = "≤ 30 minutes",
-    # far = "≤ 6 hours". Beyond `far` the verdict is always `distinct`.
+    # `gap_mid` is the canonical cutoff. The other values remain in the config
+    # shape for compatibility with explicit test/service configuration.
     dedup_fastpath_gap_near_seconds: int = 120
     dedup_fastpath_gap_mid_seconds: int = 1800
     dedup_fastpath_gap_far_seconds: int = 21600
@@ -112,11 +108,23 @@ class Settings(BaseSettings):
     # never used to bypass the 6h cutoff).
     dedup_fastpath_embedding_high: float = 0.86
     dedup_fastpath_embedding_possible: float = 0.78
+    # Same-village + same-condition wording-variant backstop inside the 30-minute
+    # event-identity window.
+    dedup_fastpath_event_token_overlap_min: float = 0.72
     fast_path_embedding_wait_minutes: int = 20
     # Cross-village backstop: when village_id differs, never auto-merge; only flag
     # possible_duplicate within ≤30min at this elevated text similarity (recon
     # true-positive Nabatiyeh pair scored 0.875; same-village high is 0.80).
     dedup_cross_village_text_min: float = 0.87
+    bulletin_reconciliation_window_hours: int = 60
+    bulletin_reconciliation_sweep_interval_seconds: int = 1800
+    bulletin_reconciliation_village_set_min_overlap: float = 1.0
+    # Story-continuation candidate search (Phase 1): same village from
+    # match_result, no condition_id gate, wide window, embedding rank.
+    # Shares village_ids_from_match_result with bulletin reconciliation.
+    story_candidate_window_hours: int = 72
+    story_candidate_embedding_threshold: float = 0.40
+    story_candidate_max_results: int = 10
     pg_application_name: str = "war-news"
     pipeline_role: str = "api"
     pipeline_worker_poll_seconds: float = 2.0
@@ -135,6 +143,10 @@ class Settings(BaseSettings):
     pipeline_cursor_stale_minutes: int = 30
     extraction_max_retries: int = 5
     matching_max_retries: int = 5
+    # ACS coordinates are UTM zone 36N metres. Geo context only disambiguates
+    # collision-like village candidates near another confident message village.
+    village_geo_context_max_distance_meters: int = 20000
+    village_geo_context_min_distance_advantage_meters: int = 5000
     redis_url: str = "redis://redis:6379/0"
     cache_enabled: bool = True
 

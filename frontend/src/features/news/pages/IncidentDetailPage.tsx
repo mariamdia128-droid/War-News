@@ -3,15 +3,17 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { Button, ConfirmDialog, Dialog, EmptyState, Input, Label } from "../../../components/ui";
-import { formatDate, formatRelativeTime } from "../../../lib/formatters";
+import { formatDate, formatDateTime, formatRelativeTime, formatTimeGap } from "../../../lib/formatters";
 import { roleBaseFromPath } from "../../../lib/rolePath";
 import { useAuthStore } from "../../../stores/authStore";
 import { useIncidentDuplicateCandidateQuery, useIncidentQuery } from "../hooks";
 import { acquireIncidentEditLock, deleteIncident, releaseIncidentEditLock, resolveIncidentDuplicate, updateIncident, updateIncidentDetails } from "../api";
 import { IncidentCategorySectionFields } from "../components/IncidentCategorySectionFields";
 import { IncidentCategorySectionEditForm } from "../components/IncidentCategorySectionEditForm";
-import { incidentCategorySections } from "../incidentCategorySections";
+import { VillageMatchNotice } from "../components/VillageMatchNotice";
+import { fieldGroupForSection, incidentCategorySections } from "../incidentCategorySections";
 import type { IncidentCategorySectionKey } from "../incidentCategorySections";
+import { reportedCount } from "../incidentSchema";
 import type {
   CasualtyDemographics,
   IncidentDuplicateDecision,
@@ -20,6 +22,39 @@ import type {
 
 const sourceVariant = (source: IncidentSource | null) =>
   source === "Telegram" ? "accent" : source === "API" ? "neutral" : "warning";
+
+const readableReport = (text: string) =>
+  text
+    .replace(
+      /\b(?:(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/giu,
+      "",
+    )
+    .replace(/\bLink\s*\d*\b/giu, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+
+const normalizeArabicForSearch = (text: string) =>
+  text
+    .normalize("NFKD")
+    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, "")
+    .replace(/[إأآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const villageSpecificReport = (text: string, arabicVillage: string | null | undefined) => {
+  const report = readableReport(text);
+  const village = normalizeArabicForSearch(arabicVillage ?? "");
+  if (village.length < 3) return report;
+
+  const matchingLines = report
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => normalizeArabicForSearch(line).includes(village));
+
+  return matchingLines.length > 0 ? matchingLines.join("\n") : report;
+};
 
 const casualtyFields: Array<{
   key: keyof CasualtyDemographics;
@@ -32,8 +67,6 @@ const casualtyFields: Array<{
   { key: "children_d", label: "Children deaths" },
   { key: "children_i", label: "Children injuries" },
 ];
-
-const emptyCategories = incidentCategorySections;
 
 const BackLink = ({ to }: { to: string }) => (
   <Link className="font-semibold text-accent hover:text-accent-hover" to={to}>
@@ -119,6 +152,16 @@ export const IncidentDetailPage = () => {
     );
   }
 
+  const duplicateScore =
+    duplicateCandidate?.similarity_score ?? incident.duplicate_similarity_score;
+  const duplicateLevel = incident.duplicate_level ?? duplicateCandidate?.level;
+  const duplicateConfidence =
+    duplicateLevel === "high"
+      ? "High confidence"
+      : duplicateLevel === "medium"
+        ? "Medium confidence"
+        : "Possible match";
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -184,7 +227,10 @@ export const IncidentDetailPage = () => {
               <StatusBadge label="Needs verification" variant="warning" />
             ) : null}
             {incident.duplicate_flag === "possible" ? (
-              <StatusBadge label="Possible duplicate" variant="warning" />
+              <StatusBadge
+                label={`Possible duplicate${duplicateScore == null ? "" : ` — ${Math.round(duplicateScore * 100)}%`}`}
+                variant="warning"
+              />
             ) : null}
           </div>
         </div>
@@ -234,11 +280,16 @@ export const IncidentDetailPage = () => {
               <h2 className="mt-1 text-h4 font-semibold text-text-primary">Possible duplicate</h2>
               <p className="mt-2 text-small text-text-muted">
                 {duplicateCandidate
-                  ? `${Math.round(duplicateCandidate.similarity_score * 100)}% similarity (Medium confidence)`
+                  ? `${Math.round(duplicateCandidate.similarity_score * 100)}% similarity (${duplicateConfidence})`
                   : isDuplicateCandidateLoading
                     ? "Loading the suggested match..."
                     : "The suggested matching record could not be loaded."}
               </p>
+              {duplicateCandidate ? (
+                <p className="mt-1 text-caption text-text-muted">
+                  {formatTimeGap(incident, duplicateCandidate.candidate)}
+                </p>
+              ) : null}
             </div>
             {duplicateCandidate ? (
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -273,20 +324,56 @@ export const IncidentDetailPage = () => {
           </div>
 
           {duplicateCandidate ? (
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <>
+              <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["Similarity", `${Math.round(duplicateCandidate.similarity_score * 100)}%`],
+                  ["Confidence", duplicateConfidence],
+                  ["Match status", duplicateCandidate.status === "pending" ? "Pending review" : duplicateCandidate.status],
+                  ["Event time gap", formatTimeGap(incident, duplicateCandidate.candidate)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-md border border-warning/20 bg-surface-raised p-3">
+                    <dt className="text-caption font-semibold uppercase text-text-muted">{label}</dt>
+                    <dd className="mt-1 text-small font-medium text-text-primary">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="mt-4 text-caption text-text-muted">
+                Match #{duplicateCandidate.match_id}
+              </div>
+              <div className="mt-3 grid gap-4 lg:grid-cols-2">
               {[
                 { title: "Current incident", value: incident },
                 { title: "Suggested main incident", value: duplicateCandidate.candidate },
               ].map(({ title, value }) => (
                 <article key={title} className="rounded-lg border border-border bg-surface-raised p-4">
                   <p className="text-caption font-semibold uppercase text-text-muted">{title}</p>
-                  <p className="mt-2 font-semibold text-text-primary">{value.village || "Unknown village"}</p>
-                  <p className="text-small text-text-muted">{value.condition || "No condition"} · {formatDate(value.event_date)}</p>
-                  <p className="mt-3 whitespace-pre-wrap text-small text-text-primary">{value.khabar}</p>
+                  {title === "Suggested main incident" ? (
+                    <Link
+                      className="mt-2 block font-semibold text-accent hover:text-accent-hover"
+                      to={`${roleBase}/incidents/${value.id}`}
+                    >
+                      {value.village || "Unknown village"}
+                    </Link>
+                  ) : (
+                    <p className="mt-2 font-semibold text-text-primary">{value.village || "Unknown village"}</p>
+                  )}
+                  <p className="text-small text-text-muted">
+                    {value.condition || "No condition"} · {formatDate(value.event_date)}
+                    {value.event_time ? ` at ${value.event_time.slice(0, 5)}` : ""}
+                  </p>
+                  <p
+                    className="mt-3 whitespace-pre-wrap text-right text-small leading-7 text-text-primary"
+                    dir="rtl"
+                    lang="ar"
+                  >
+                    {readableReport(value.khabar)}
+                  </p>
                   <p className="mt-3 text-caption text-text-muted">Source: {value.source_name || value.source_reference || value.source || "Unknown"}</p>
                 </article>
               ))}
-            </div>
+              </div>
+            </>
           ) : null}
         </section>
       ) : null}
@@ -306,6 +393,14 @@ export const IncidentDetailPage = () => {
           </Button>
         </div>
         {isVillageDetailsOpen ? (
+        <>
+        <VillageMatchNotice
+          village_review_required={incident.village_review_required}
+          any_village_low_confidence={incident.any_village_low_confidence}
+          resolved_by_geo_context={incident.resolved_by_geo_context}
+          geo_context_anchor_village_name={incident.geo_context_anchor_village_name}
+          alternate_candidate_village_name={incident.alternate_candidate_village_name}
+        />
         <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <dt className="text-caption font-semibold uppercase text-text-muted">
@@ -381,13 +476,21 @@ export const IncidentDetailPage = () => {
             </dd>
           </div>
         </dl>
+        </>
         ) : null}
       </section>
 
       <section className="rounded-lg border border-border bg-surface-raised p-5">
         <h2 className="text-h4 font-semibold text-text-primary">Report</h2>
-        <p className="mt-3 whitespace-pre-wrap text-body text-text-primary">
-          {incident.khabar}
+        <p
+          className="mt-3 whitespace-pre-wrap text-right text-body leading-8 text-text-primary"
+          dir="rtl"
+          lang="ar"
+        >
+          {villageSpecificReport(
+            incident.khabar,
+            villageDetails?.ref_name_ar,
+          )}
         </p>
         <div className="mt-5 border-t border-border pt-5">
           <h3 className="text-small font-semibold text-text-primary">Note</h3>
@@ -401,6 +504,18 @@ export const IncidentDetailPage = () => {
         <h2 className="text-h4 font-semibold text-text-primary">
           Casualty demographics
         </h2>
+        {(incident.toll_revisions ?? []).length > 0 ? (
+          <div className="mt-3 space-y-1">
+            {(incident.toll_revisions ?? []).map((revision) => (
+              <p
+                key={revision.updated_at}
+                className="text-caption text-text-muted"
+              >
+                {`Toll updated ${formatDateTime(revision.updated_at)} — was ${revision.old_deaths ?? "—"}/${revision.old_injuries ?? "—"}, now ${revision.new_deaths ?? "—"}/${revision.new_injuries ?? "—"}`}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {casualtyFields.map(({ key, label }) => (
             <div
@@ -432,6 +547,82 @@ export const IncidentDetailPage = () => {
           ))}
         </dl>
       </section>
+
+      {(incident.related_incidents ?? []).length > 0 ? (
+        <section className="rounded-lg border border-border bg-surface-raised p-5">
+          <h2 className="text-h4 font-semibold text-text-primary">Related incidents</h2>
+          <ul className="mt-3 space-y-2">
+            {(incident.related_incidents ?? []).map((related) => (
+              <li key={related.id}>
+                <Link
+                  className="text-small font-semibold text-accent hover:text-accent-hover"
+                  to={`${roleBase}/incidents/${related.id}`}
+                >
+                  {related.relation === "same_bulletin_other_village"
+                    ? `Related: same bulletin, different village${related.village ? ` (${related.village})` : ""}`
+                    : `Related: ${related.condition || "related action"}, same location`}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {incident.bulletin_group ? (
+        <section className="rounded-lg border border-accent bg-surface-raised p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-h4 font-semibold text-text-primary">
+                Bulletin-wide toll
+              </h2>
+              <p className="mt-1 text-small text-text-muted">
+                Shared across the villages named in the source bulletin; these are
+                not this village&apos;s reported figures.
+              </p>
+            </div>
+            {incident.bulletin_group.breakdown_status === "pending" ? (
+              <StatusBadge
+                label={`Auto-updates until ${formatRelativeTime(
+                  incident.bulletin_group.window_expires_at,
+                )}`}
+                variant="warning"
+              />
+            ) : incident.bulletin_group.breakdown_status === "resolved" ? (
+              <StatusBadge label="Resolved from follow-up report" variant="success" />
+            ) : incident.bulletin_group.breakdown_status === "expired" ? (
+              <StatusBadge
+                label="Reconciliation window closed — update manually if new figures are reported"
+                variant="warning"
+              />
+            ) : (
+              <StatusBadge label="No reconciliation needed" variant="neutral" />
+            )}
+          </div>
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-md bg-surface-muted p-3">
+              <dt className="text-caption text-text-muted">Bulletin deaths</dt>
+              <dd className="mt-1 font-semibold text-text-primary">
+                {incident.bulletin_group.total_deaths ?? "No data"}
+              </dd>
+            </div>
+            <div className="rounded-md bg-surface-muted p-3">
+              <dt className="text-caption text-text-muted">Bulletin injuries</dt>
+              <dd className="mt-1 font-semibold text-text-primary">
+                {incident.bulletin_group.total_injuries ?? "No data"}
+              </dd>
+            </div>
+          </dl>
+          {incident.bulletin_group.breakdown_status === "resolved" ? (
+            <p className="mt-3 text-small text-text-muted">
+              Per-village figures now reflect the follow-up
+              {incident.bulletin_group.resolved_by_raw_message_id
+                ? ` (raw message #${incident.bulletin_group.resolved_by_raw_message_id})`
+                : ""}
+              .
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-border bg-surface-raised p-5">
         <h2 className="text-h4 font-semibold text-text-primary">
@@ -482,66 +673,82 @@ export const IncidentDetailPage = () => {
         <h2 className="text-h4 font-semibold text-text-primary">
           Incident categories
         </h2>
-        {emptyCategories.map(({ key, label }) => (
-          <details
-            key={key}
-            className="rounded-lg border border-border bg-surface-raised"
-            open={editingSection === key ? true : undefined}
-          >
-            <summary className="cursor-pointer px-5 py-4 text-small font-semibold text-text-primary">
-              <span className="flex items-center justify-between gap-3">
-                <span>{label}</span>
-                {editingSection !== key ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="shrink-0"
-                    disabled={isLockedByAnother}
-                    onClick={async (event) => {
-                      event.preventDefault();
-                      if (!incidentId) return;
-                      setActionError("");
-                      try {
-                        await acquireIncidentEditLock(incidentId);
-                        await refetch();
-                        setEditingSection(key);
-                      } catch (error) {
-                        setActionError(isAxiosError(error) && error.response?.status === 409
-                          ? "This incident is currently being edited by another administrator."
-                          : "Could not open this section for editing.");
-                        await refetch();
+        {incidentCategorySections.map(({ key, label }) => {
+          const details = incident[key];
+          const group = fieldGroupForSection(key);
+          const filledFieldCount = details && group ? reportedCount(details, group) : 0;
+
+          return (
+            <details
+              key={key}
+              className="rounded-lg border border-border bg-surface-raised"
+              open={editingSection === key ? true : undefined}
+            >
+              <summary className="cursor-pointer px-5 py-4 text-small font-semibold text-text-primary">
+                <span className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span>{label}</span>
+                    <StatusBadge
+                      label={
+                        filledFieldCount === 0
+                          ? "No data"
+                          : `${filledFieldCount} ${filledFieldCount === 1 ? "field" : "fields"} filled`
                       }
-                    }}
-                  >
-                    {isLockedByAnother ? "Being edited" : "Edit"}
-                  </Button>
-                ) : null}
-              </span>
-            </summary>
-            {editingSection === key ? (
-              <IncidentCategorySectionEditForm
-                sectionKey={key}
-                details={incident[key]}
-                onCancel={async () => {
-                  if (incidentId) await releaseIncidentEditLock(incidentId);
-                  setEditingSection(null);
-                  await refetch();
-                }}
-                onSave={async (fields) => {
-                  if (!incidentId) return;
-                  await updateIncidentDetails(incidentId, fields, incident.version);
-                  await refetch();
-                  setEditingSection(null);
-                }}
-              />
-            ) : (
-              <IncidentCategorySectionFields
-                sectionKey={key}
-                details={incident[key]}
-              />
-            )}
-          </details>
-        ))}
+                      variant={filledFieldCount > 0 ? "success" : "neutral"}
+                    />
+                  </span>
+                  {editingSection !== key ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="shrink-0"
+                      disabled={isLockedByAnother}
+                      onClick={async (event) => {
+                        event.preventDefault();
+                        if (!incidentId) return;
+                        setActionError("");
+                        try {
+                          await acquireIncidentEditLock(incidentId);
+                          await refetch();
+                          setEditingSection(key);
+                        } catch (error) {
+                          setActionError(isAxiosError(error) && error.response?.status === 409
+                            ? "This incident is currently being edited by another administrator."
+                            : "Could not open this section for editing.");
+                          await refetch();
+                        }
+                      }}
+                    >
+                      {isLockedByAnother ? "Being edited" : "Edit"}
+                    </Button>
+                  ) : null}
+                </span>
+              </summary>
+              {editingSection === key ? (
+                <IncidentCategorySectionEditForm
+                  sectionKey={key}
+                  details={details}
+                  onCancel={async () => {
+                    if (incidentId) await releaseIncidentEditLock(incidentId);
+                    setEditingSection(null);
+                    await refetch();
+                  }}
+                  onSave={async (fields) => {
+                    if (!incidentId) return;
+                    await updateIncidentDetails(incidentId, fields, incident.version);
+                    await refetch();
+                    setEditingSection(null);
+                  }}
+                />
+              ) : (
+                <IncidentCategorySectionFields
+                  sectionKey={key}
+                  details={details}
+                />
+              )}
+            </details>
+          );
+        })}
       </section>
 
 

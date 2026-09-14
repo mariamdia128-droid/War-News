@@ -34,24 +34,22 @@ HOUR = 3600
 @pytest.mark.parametrize(
     ("gap", "text", "expected"),
     [
-        # ≤ 2 minutes
+        # Same semantic event inside the canonical 30-minute window.
         (30, 0.85, "high_confidence_duplicate"),
         (120, 0.80, "high_confidence_duplicate"),
-        (90, 0.50, "possible_duplicate"),
-        (90, 0.38, "possible_duplicate"),
+        (90, 0.65, "high_confidence_duplicate"),
+        (90, 0.50, "distinct"),
         (90, 0.37, "distinct"),
-        # ≤ 30 minutes
         (10 * MIN, 0.81, "high_confidence_duplicate"),
-        (10 * MIN, 0.70, "possible_duplicate"),
-        (10 * MIN, 0.65, "possible_duplicate"),
+        (10 * MIN, 0.70, "high_confidence_duplicate"),
+        (10 * MIN, 0.65, "high_confidence_duplicate"),
         (10 * MIN, 0.64, "distinct"),
-        (10 * MIN, 0.40, "distinct"),  # 0.38 floor is only for the ≤2min tier
-        # ≤ 6 hours: strong text is only ever "possible" at this distance
-        (3 * HOUR, 0.95, "possible_duplicate"),
+        (30 * MIN, 0.95, "high_confidence_duplicate"),
+        # Outside 30 minutes is always distinct.
+        (30 * MIN + 1, 0.99, "distinct"),
+        (3 * HOUR, 0.95, "distinct"),
         (3 * HOUR, 0.79, "distinct"),
-        (6 * HOUR, 0.80, "possible_duplicate"),
-        # > 6 hours: always distinct
-        (6 * HOUR + 1, 0.99, "distinct"),
+        (6 * HOUR, 0.80, "distinct"),
         (90 * HOUR, 0.99, "distinct"),
     ],
 )
@@ -70,10 +68,10 @@ def test_text_only_verdicts(
     ("gap", "embedding", "expected"),
     [
         (30, 0.90, "high_confidence_duplicate"),
-        (30, 0.80, "possible_duplicate"),
+        (30, 0.80, "high_confidence_duplicate"),
         (30, 0.77, "distinct"),
         (10 * MIN, 0.86, "high_confidence_duplicate"),
-        (10 * MIN, 0.78, "possible_duplicate"),
+        (10 * MIN, 0.78, "high_confidence_duplicate"),
         (10 * MIN, 0.70, "distinct"),
         # Beyond ≤30min, embedding cannot create a verdict...
         (3 * HOUR, 0.99, "distinct"),
@@ -91,11 +89,11 @@ def test_embedding_substitution(
 
 
 def test_strongest_signal_wins(service: DuplicateComparisonService) -> None:
-    # Text says distinct, embedding says possible -> possible, method=embedding.
+    # Text says distinct, embedding identifies the canonical event.
     result = service.compare(
         time_gap_seconds=60, text_similarity=0.10, embedding_similarity=0.80
     )
-    assert result.verdict == "possible_duplicate"
+    assert result.verdict == "high_confidence_duplicate"
     assert result.similarity_method == "embedding"
 
     # Text says high-confidence, embedding weak -> high-confidence, method=text.
@@ -168,6 +166,32 @@ def test_config_from_settings_matches_approved_defaults() -> None:
     assert cfg.embedding_possible == 0.78
     assert cfg.embedding_high == 0.86
     assert cfg.cross_village_text_min == 0.87
+    assert cfg.event_token_overlap_min == 0.72
+
+
+def test_token_overlap_catches_same_event_wording_variant(
+    service: DuplicateComparisonService,
+) -> None:
+    result = service.compare(
+        time_gap_seconds=3 * MIN,
+        text_similarity=0.40,
+        embedding_similarity=None,
+        token_similarity=0.75,
+    )
+    assert result.verdict == "high_confidence_duplicate"
+    assert result.similarity_method == "token"
+
+
+def test_token_overlap_does_not_bypass_time_window(
+    service: DuplicateComparisonService,
+) -> None:
+    result = service.compare(
+        time_gap_seconds=31 * MIN,
+        text_similarity=0.40,
+        embedding_similarity=None,
+        token_similarity=0.95,
+    )
+    assert result.verdict == "distinct"
 
 
 @pytest.mark.parametrize(

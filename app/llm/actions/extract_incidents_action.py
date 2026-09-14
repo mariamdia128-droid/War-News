@@ -12,6 +12,9 @@ from app.llm.services.transient_llm_errors import (
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.models import MessageStatus
+from app.news.services.incident_details.casualty_gender_evidence import (
+    apply_casualty_gender_backstops,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,10 @@ class ExtractIncidentsAction:
                 result = self.classifier.extract_tier1(
                     post_text=message.raw_text or "",
                     raw_message_id=message.id,
+                )
+                result = apply_casualty_gender_backstops(
+                    message.raw_text or "",
+                    result,
                 )
                 self.raw_messages.save_extraction_result(
                     message=message,
@@ -94,6 +101,10 @@ class ExtractIncidentsAction:
             result = self.classifier.extract_tier1(
                 post_text=message.raw_text or "",
                 raw_message_id=message.id,
+            )
+            result = apply_casualty_gender_backstops(
+                message.raw_text or "",
+                result,
             )
             self.raw_messages.save_extraction_result(
                 message=message,

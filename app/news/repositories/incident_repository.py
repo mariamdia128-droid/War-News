@@ -5,7 +5,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     and_,
@@ -37,9 +37,12 @@ from app.news.dtos import (
     IncidentListParams,
     IncidentListResponse,
     IncidentUpdateDTO,
+    RelatedIncidentDTO,
+    TollRevisionDTO,
 )
 from app.news.interfaces import IncidentRepositoryInterface
 from app.news.models import (
+    BulletinCasualtyGroup,
     Condition,
     DuplicateMatch,
     Incident,
@@ -68,7 +71,18 @@ from app.news.services.incident_details.casualty_transition_backstop import (
     detect_casualty_transition_backstop,
 )
 from app.news.services.incident_details.incident_detail_merge import merge_incident_detail_fields
+from app.news.services.dedup.text_similarity import event_token_similarity
+from app.news.services.materialization.verification_signals import (
+    LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+)
 from app.sources.models import Source, SourceType
+
+
+def _optional_count(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
 
 
 @dataclass(frozen=True)
@@ -81,6 +95,18 @@ class FastDedupCandidate:
     time_gap_seconds: float
     text_similarity: float | None
     embedding_similarity: float | None
+    token_similarity: float | None = None
+
+
+@dataclass(frozen=True)
+class StoryCandidate:
+    """Prior incident in the story-continuation window (no condition gate)."""
+
+    incident: Incident
+    time_gap_seconds: float
+    embedding_similarity: float | None
+    text_similarity: float | None = None
+    token_similarity: float | None = None
 
 
 class IncidentRepository(IncidentRepositoryInterface):
@@ -89,7 +115,7 @@ class IncidentRepository(IncidentRepositoryInterface):
 
     def list_all(self, params: IncidentListParams) -> IncidentListResponse:
         filters = self._list_filters(params)
-        needs_verification = Incident.verification_status == "needs_verification"
+        needs_verification = self._needs_verification_column()
         event_datetime = func.coalesce(
             RawMessage.message_datetime,
             RawMessage.received_at,
@@ -137,10 +163,20 @@ class IncidentRepository(IncidentRepositoryInterface):
                     (needs_verification, False),
                     else_=True,
                 ).label("matched"),
-                func.coalesce(
-                    Incident.verification_status, "auto_processed"
+                case(
+                    (needs_verification, "needs_verification"),
+                    (
+                        Incident.verification_status == "needs_verification",
+                        "auto_processed",
+                    ),
+                    else_=func.coalesce(
+                        Incident.verification_status, "auto_processed"
+                    ),
                 ).label("verification_status"),
-                Incident.verification_reason,
+                case(
+                    (needs_verification, Incident.verification_reason),
+                    else_=None,
+                ).label("verification_reason"),
                 Incident.verified_by_user_id,
                 Incident.verified_at,
                 case(
@@ -156,6 +192,8 @@ class IncidentRepository(IncidentRepositoryInterface):
                 func.coalesce(Incident.version, 1).label("version"),
                 Incident.locked_by_user_id,
                 Incident.edit_lock_expires_at,
+                Incident.village_id,
+                Incident.story_group_id,
             )
             .select_from(Incident)
             .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
@@ -210,7 +248,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         summary = self.db.execute(
             select(
                 func.count(Incident.id)
-                .filter(Incident.verification_status == "needs_verification")
+                .filter(self._needs_verification_column())
                 .label("needs_verification_count"),
                 func.count(Incident.id)
                 .filter(
@@ -223,12 +261,10 @@ class IncidentRepository(IncidentRepositoryInterface):
             )
             .select_from(Incident)
             .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
-            .where(
-                Incident.is_deleted.is_(False),
-                RawMessage.id.is_not(None),
-                RawMessage.status == MessageStatus.materialized,
-                ~RawMessage.raw_payload.op("?")("ocr_text"),
-            )
+            .outerjoin(Village, Village.id == Incident.village_id)
+            .outerjoin(Condition, Condition.id == Incident.condition_id)
+            .outerjoin(Source, Source.id == Incident.source_id)
+            .where(*filters)
         ).one()
 
         return IncidentListResponse(
@@ -273,21 +309,26 @@ class IncidentRepository(IncidentRepositoryInterface):
                 ).label("source"),
                 self._source_reference_expression().label("source_reference"),
                 RawMessage.source_name.label("source_name"),
-                case(
-                    (Incident.verification_status == "needs_verification", False),
-                    else_=True,
-                ).label("matched"),
+                RawMessage.match_result.label("match_result"),
+                case((self._needs_verification_column(), False), else_=True).label(
+                    "matched"
+                ),
                 case(
                     (Incident.duplicate_flag.is_(True), "possible"),
                     else_="none",
                 ).label("duplicate_flag"),
                 IncidentDetail,
+                BulletinCasualtyGroup,
             )
             .outerjoin(Village, Village.id == Incident.village_id)
             .outerjoin(Condition, Condition.id == Incident.condition_id)
             .outerjoin(Source, Source.id == Incident.source_id)
             .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
             .outerjoin(IncidentDetail, IncidentDetail.incident_id == Incident.id)
+            .outerjoin(
+                BulletinCasualtyGroup,
+                BulletinCasualtyGroup.raw_message_id == Incident.raw_message_id,
+            )
             .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
@@ -298,7 +339,49 @@ class IncidentRepository(IncidentRepositoryInterface):
 
         incident = row.Incident
         detail = row.IncidentDetail
+        bulletin_group = row.BulletinCasualtyGroup
         village = row.Village
+        match_result = row.match_result if isinstance(row.match_result, dict) else {}
+        village_matches = match_result.get("village_matches")
+        if not isinstance(village_matches, list):
+            village_matches = [match_result] if match_result else []
+        village_match = next(
+            (
+                entry
+                for entry in village_matches
+                if isinstance(entry, dict)
+                and entry.get("matched_village_id") == incident.village_id
+            ),
+            {},
+        )
+
+        def match_village_id(key: str) -> int | None:
+            value = village_match.get(key)
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+        anchor_village_id = match_village_id("geo_context_anchor_village_id")
+        alternate_village_id = match_village_id("alternate_candidate_village_id")
+        related_village_ids = {
+            value
+            for value in (anchor_village_id, alternate_village_id)
+            if value is not None
+        }
+        related_village_names = (
+            dict(
+                self.db.execute(
+                    select(
+                        Village.id,
+                        func.coalesce(
+                            Village.ref_name_en,
+                            Village.cad_name,
+                            Village.acs_name,
+                        ),
+                    ).where(Village.id.in_(related_village_ids))
+                ).all()
+            )
+            if related_village_ids
+            else {}
+        )
         values = {
             "id": incident.id,
             "village": row.village,
@@ -342,11 +425,38 @@ class IncidentRepository(IncidentRepositoryInterface):
             "locked_by_user_id": incident.locked_by_user_id,
             "edit_lock_expires_at": incident.edit_lock_expires_at,
             "matched": row.matched,
-            "verification_status": incident.verification_status,
-            "verification_reason": incident.verification_reason,
+            "verification_status": (
+                incident.verification_status
+                if incident.verification_status != "needs_verification"
+                or self._is_user_visible_needs_verification(incident)
+                else "auto_processed"
+            ),
+            "verification_reason": (
+                incident.verification_reason
+                if incident.verification_status != "needs_verification"
+                or self._is_user_visible_needs_verification(incident)
+                else None
+            ),
             "duplicate_flag": row.duplicate_flag,
             "duplicate_level": incident.duplicate_level,
             "duplicate_similarity_score": incident.duplicate_similarity_score,
+            "village_review_required": bool(
+                village_match.get("village_review_required", False)
+            ),
+            "any_village_low_confidence": bool(
+                match_result.get("any_village_low_confidence", False)
+            ),
+            "resolved_by_geo_context": bool(
+                village_match.get("resolved_by_geo_context", False)
+            ),
+            "geo_context_anchor_village_id": anchor_village_id,
+            "geo_context_anchor_village_name": related_village_names.get(
+                anchor_village_id
+            ),
+            "alternate_candidate_village_id": alternate_village_id,
+            "alternate_candidate_village_name": related_village_names.get(
+                alternate_village_id
+            ),
             "casualty_demographics": CasualtyDemographicsDTO(
                 male_d=detail.male_d if detail is not None else None,
                 male_i=detail.male_i if detail is not None else None,
@@ -355,9 +465,102 @@ class IncidentRepository(IncidentRepositoryInterface):
                 children_d=detail.children_d if detail is not None else None,
                 children_i=detail.children_i if detail is not None else None,
             ),
+            "bulletin_group": bulletin_group,
+            "toll_revisions": self._toll_revisions_for(incident.id),
+            "related_incidents": self._related_incidents_for(incident),
             **serialize_incident_category_sections(detail),
         }
         return IncidentDetailDTO.model_validate(values)
+
+    def _toll_revisions_for(self, incident_id: UUID) -> list[TollRevisionDTO]:
+        updates = self.db.scalars(
+            select(IncidentUpdate)
+            .where(
+                IncidentUpdate.incident_id == incident_id,
+                IncidentUpdate.action == UpdateAction.pipeline_merge,
+            )
+            .order_by(IncidentUpdate.created_at.asc())
+        ).all()
+        revisions: list[TollRevisionDTO] = []
+        for update in updates:
+            new_values = update.new_values or {}
+            if not new_values.get("story_revision"):
+                continue
+            old_values = update.old_values or {}
+            revisions.append(
+                TollRevisionDTO(
+                    updated_at=update.created_at,
+                    old_deaths=_optional_count(
+                        old_values.get("total_deaths"), old_values.get("deaths")
+                    ),
+                    old_injuries=_optional_count(
+                        old_values.get("total_injuries"), old_values.get("injuries")
+                    ),
+                    new_deaths=_optional_count(
+                        new_values.get("total_deaths"), new_values.get("deaths")
+                    ),
+                    new_injuries=_optional_count(
+                        new_values.get("total_injuries"), new_values.get("injuries")
+                    ),
+                )
+            )
+        return revisions
+
+    def _related_incidents_for(self, incident: Incident) -> list[RelatedIncidentDTO]:
+        clauses: list[Any] = []
+        if incident.story_group_id is not None:
+            clauses.append(Incident.story_group_id == incident.story_group_id)
+        if incident.raw_message_id is not None:
+            clauses.append(Incident.raw_message_id == incident.raw_message_id)
+        if not clauses:
+            return []
+        rows = self.db.execute(
+            select(
+                Incident,
+                Condition.action_en.label("condition"),
+                func.coalesce(Village.ref_name_en, Village.cad_name).label("village"),
+            )
+            .outerjoin(Condition, Condition.id == Incident.condition_id)
+            .outerjoin(Village, Village.id == Incident.village_id)
+            .where(
+                Incident.id != incident.id,
+                Incident.is_deleted.is_(False),
+                or_(*clauses),
+            )
+            .order_by(Incident.event_time.asc(), Incident.created_at.asc())
+        ).all()
+        related: list[RelatedIncidentDTO] = []
+        seen: set[UUID] = set()
+        for row in rows:
+            sibling: Incident = row.Incident
+            if sibling.id in seen:
+                continue
+            seen.add(sibling.id)
+            same_bulletin = (
+                incident.raw_message_id is not None
+                and sibling.raw_message_id == incident.raw_message_id
+            )
+            same_village = (
+                incident.village_id is not None
+                and sibling.village_id == incident.village_id
+            )
+            relation = (
+                "same_bulletin_other_village"
+                if same_bulletin and not same_village
+                else "same_location_sub_event"
+            )
+            related.append(
+                RelatedIncidentDTO(
+                    id=sibling.id,
+                    village=row.village,
+                    condition=row.condition,
+                    raw_message_id=sibling.raw_message_id,
+                    relation=relation,
+                    total_deaths=sibling.total_deaths,
+                    total_injuries=sibling.total_injuries,
+                )
+            )
+        return related
 
     def create_manual(self, payload: IncidentCreateDTO, created_by: UUID) -> IncidentDetailDTO:
         village_name = payload.village.strip()
@@ -567,6 +770,25 @@ class IncidentRepository(IncidentRepositoryInterface):
         incident.verification_reason = reason
         incident.verified_by_user_id = user_id
         incident.verified_at = datetime.now(timezone.utc)
+        if status == "rejected" and incident.raw_message_id is not None:
+            raw_message = self.db.scalar(
+                select(RawMessage)
+                .where(RawMessage.id == incident.raw_message_id)
+                .with_for_update()
+            )
+            if raw_message is not None:
+                filter_result = dict(raw_message.filter_result or {})
+                filter_result.update(
+                    {
+                        "verdict": "reject",
+                        "reasoning": reason,
+                        "review_source": "human",
+                        "reviewed_by_user_id": str(user_id),
+                    }
+                )
+                raw_message.filter_result = filter_result
+                raw_message.status = MessageStatus.rejected
+                raw_message.error_message = reason
         self.db.add(IncidentUpdate(
             incident_id=incident.id,
             action=UpdateAction.status_change,
@@ -649,6 +871,14 @@ class IncidentRepository(IncidentRepositoryInterface):
         canonical_id = match.matched_incident_id
         if decision == MatchStatus.false_positive.value:
             incident.duplicate_flag = False
+            if (
+                incident.verification_status == "needs_verification"
+                and not self._should_keep_needs_verification_after_duplicate_clear(
+                    incident.verification_reason
+                )
+            ):
+                incident.verification_status = "auto_processed"
+                incident.verification_reason = None
             match.status = MatchStatus.false_positive
         elif decision == MatchStatus.confirmed_duplicate.value:
             canonical = self.db.scalar(
@@ -660,6 +890,11 @@ class IncidentRepository(IncidentRepositoryInterface):
             if canonical is None:
                 self.db.rollback()
                 raise StaleDataError("The suggested main incident is no longer available.")
+            if incident.village_id != canonical.village_id:
+                self.db.rollback()
+                raise ValueError(
+                    "Incidents from different villages cannot be confirmed as duplicates."
+                )
 
             old_values = self._snapshot_merge_fields(canonical)
             for field in ("deaths", "injuries", "total_deaths", "total_injuries"):
@@ -702,6 +937,15 @@ class IncidentRepository(IncidentRepositoryInterface):
             incident.is_deleted = True
             incident.duplicate_flag = False
             match.status = MatchStatus.confirmed_duplicate
+            self.db.flush()
+            if (
+                incident.raw_message_id is not None
+                and canonical.raw_message_id is not None
+            ):
+                self.mark_raw_duplicate_if_fully_subsumed(
+                    raw_message_id=incident.raw_message_id,
+                    canonical_raw_message_id=canonical.raw_message_id,
+                )
         else:
             self.db.rollback()
             raise ValueError("Unsupported duplicate resolution decision.")
@@ -824,14 +1068,19 @@ class IncidentRepository(IncidentRepositoryInterface):
         incident: Incident,
         matched_incident: Incident,
         similarity_score: float,
+        status: MatchStatus = MatchStatus.pending,
     ) -> None:
+        if incident.village_id != matched_incident.village_id:
+            raise ValueError(
+                "Duplicate matches require the same canonical village."
+            )
         self.db.add(
             DuplicateMatch(
                 incident_id=incident.id,
                 matched_incident_id=matched_incident.id,
                 match_type=MatchType.soft,
                 similarity_score=similarity_score,
-                status=MatchStatus.pending,
+                status=status,
             )
         )
         self.db.flush()
@@ -888,14 +1137,42 @@ class IncidentRepository(IncidentRepositoryInterface):
             select(IncidentDetail).where(IncidentDetail.incident_id == existing.id)
         )
         old_values = self._snapshot_merge_audit(existing, detail)
-        parsed_transitions = parse_casualty_transitions(
-            new_candidate_data.get("casualty_transitions")
-        )
-        backstop = detect_casualty_transition_backstop(
+        source_text = (
             getattr(raw_message, "raw_text", None)
             if raw_message is not None
             else new_candidate_data.get("khabar")
         )
+        parsed_transitions = parse_casualty_transitions(
+            new_candidate_data.get("casualty_transitions")
+        )
+        backstop = detect_casualty_transition_backstop(source_text)
+        transition_already_applied = False
+        if parsed_transitions:
+            transition_already_applied = (
+                self.db.scalar(
+                    select(IncidentUpdate.id).where(
+                        IncidentUpdate.incident_id == existing.id,
+                        IncidentUpdate.action == UpdateAction.pipeline_merge,
+                        IncidentUpdate.new_values[
+                            "merged_from"
+                        ]["raw_message_id"].astext
+                        == str(raw_message_id),
+                        IncidentUpdate.new_values.has_key(  # type: ignore[attr-defined]
+                            "deaths_transitioned_from_injuries"
+                        ),
+                    )
+                )
+                is not None
+            )
+        if source_text and not backstop.plausible:
+            # The model can confuse separate casualty groups (for example,
+            # "a martyr and two injured") with an injured-to-deceased update.
+            # Never mutate stored totals without explicit transition wording.
+            parsed_transitions = []
+        elif transition_already_applied:
+            # A raw message can reach the same canonical incident through more
+            # than one village match. Its transition must remain idempotent.
+            parsed_transitions = []
 
         transition_fields, transition_provenance, needs_review = (
             apply_casualty_transitions(
@@ -934,7 +1211,14 @@ class IncidentRepository(IncidentRepositoryInterface):
             # A successful automatic merge resolves its duplicate decision.
             # Keep the flag only for an explicit casualty-transition conflict.
             existing.duplicate_flag = False
-            existing.verification_reason = None
+            if (
+                existing.verification_status == "needs_verification"
+                and not self._should_keep_needs_verification_after_duplicate_clear(
+                    existing.verification_reason
+                )
+            ):
+                existing.verification_status = "auto_processed"
+                existing.verification_reason = None
         sync_transition_totals(existing, transition_fields)
 
         suppressed: dict[str, Any] = {}
@@ -1004,6 +1288,109 @@ class IncidentRepository(IncidentRepositoryInterface):
                 )
             )
         self.db.add(existing)
+
+    def apply_story_revision(
+        self,
+        existing: Incident,
+        new_candidate_data: dict[str, Any],
+        raw_message_id: int,
+    ) -> None:
+        """Update casualty fields supplied by a later report of the same event.
+
+        Unmentioned fields are left unchanged. The same source message cannot
+        apply its revision twice (mirrors transition-merge idempotency).
+        """
+        if self._story_revision_already_applied(existing.id, raw_message_id):
+            return
+
+        raw_message = self.db.get(RawMessage, raw_message_id)
+        source_label = self._merge_source_label(raw_message)
+        detail = self.db.scalar(
+            select(IncidentDetail).where(IncidentDetail.incident_id == existing.id)
+        )
+        old_values = self._snapshot_merge_audit(existing, detail)
+
+        for field in ("deaths", "injuries", "total_deaths", "total_injuries"):
+            incoming = new_candidate_data.get(field)
+            if isinstance(incoming, int) and not isinstance(incoming, bool):
+                setattr(existing, field, incoming)
+        if isinstance(new_candidate_data.get("martyrs"), str) and new_candidate_data["martyrs"].strip():
+            existing.martyrs = new_candidate_data["martyrs"].strip()
+
+        mapped_fields = new_candidate_data.get("mapped_fields") or {}
+        demographic_updates = {
+            key: new_candidate_data[key]
+            for key in (
+                "male_d",
+                "male_i",
+                "female_d",
+                "female_i",
+                "children_d",
+                "children_i",
+            )
+            if new_candidate_data.get(key) is not None
+        }
+        if mapped_fields or demographic_updates:
+            if detail is None:
+                detail = IncidentDetail(incident_id=existing.id)
+                self.db.add(detail)
+                self.db.flush()
+            if mapped_fields:
+                merge_incident_detail_fields(detail, mapped_fields)
+            for key, value in demographic_updates.items():
+                setattr(detail, key, value)
+            self.db.add(detail)
+
+        new_values = self._snapshot_merge_audit(existing, detail)
+        khabar = new_candidate_data.get("khabar")
+        new_values = {
+            **new_values,
+            "story_revision": True,
+            "story_relationship": "revision",
+            "merged_from": {
+                "raw_message_id": raw_message_id,
+                "channel": source_label,
+                "khabar": khabar if isinstance(khabar, str) else None,
+            },
+        }
+        self.db.add(
+            IncidentUpdate(
+                incident_id=existing.id,
+                action=UpdateAction.pipeline_merge,
+                old_values=old_values,
+                new_values=new_values,
+                performed_by=None,
+            )
+        )
+        self.db.add(existing)
+
+    def _story_revision_already_applied(
+        self,
+        incident_id: UUID,
+        raw_message_id: int,
+    ) -> bool:
+        return (
+            self.db.scalar(
+                select(IncidentUpdate.id).where(
+                    IncidentUpdate.incident_id == incident_id,
+                    IncidentUpdate.action == UpdateAction.pipeline_merge,
+                    IncidentUpdate.new_values["merged_from"]["raw_message_id"].astext
+                    == str(raw_message_id),
+                    IncidentUpdate.new_values.has_key(  # type: ignore[attr-defined]
+                        "story_revision"
+                    ),
+                )
+            )
+            is not None
+        )
+
+    def link_story_group(self, left: Incident, right: Incident) -> UUID:
+        group_id = left.story_group_id or right.story_group_id or uuid4()
+        left.story_group_id = group_id
+        right.story_group_id = group_id
+        self.db.add(left)
+        self.db.add(right)
+        return group_id
 
     def find_active_incident_for_raw_message_village(
         self,
@@ -1105,11 +1492,120 @@ class IncidentRepository(IncidentRepositoryInterface):
                     time_gap_seconds=gap_seconds,
                     text_similarity=text_similarity,
                     embedding_similarity=embedding_similarity,
+                    token_similarity=event_token_similarity(
+                        incident.khabar,
+                        candidate_text,
+                    ),
                 )
             )
 
         candidates.sort(key=lambda c: c.time_gap_seconds)
         return candidates
+
+    def find_story_candidates(
+        self,
+        *,
+        village_ids: set[int],
+        message_datetime: datetime,
+        window_hours: int,
+        embedding_threshold: float,
+        max_results: int,
+        candidate_text: str | None = None,
+        candidate_embedding: list[float] | None = None,
+        exclude_raw_message_id: int | None = None,
+    ) -> list[StoryCandidate]:
+        """Same-village prior incidents inside a wide hour window.
+
+        Unlike :meth:`find_fast_dedup_candidates` this path does **not**
+        require ``condition_id`` equality. Condition match/mismatch is an
+        input to story-relationship classification, not a pre-filter.
+
+        Ranked by embedding similarity descending and capped at
+        ``max_results``. Rows below ``embedding_threshold`` or without an
+        embedding are dropped. Returns empty when no village ids or no
+        candidate embedding is supplied.
+        """
+        village_ids = {
+            village_id
+            for village_id in village_ids
+            if isinstance(village_id, int) and not isinstance(village_id, bool)
+        }
+        if not village_ids or candidate_embedding is None or max_results <= 0:
+            return []
+
+        naive_dt = message_datetime.replace(tzinfo=None)
+        lookup_days = max(1, (int(window_hours) + 23) // 24)
+        event_date = naive_dt.date()
+        start_date = event_date - timedelta(days=lookup_days)
+        end_date = event_date + timedelta(days=lookup_days)
+        max_gap_seconds = float(window_hours) * 3600.0
+
+        columns: list[Any] = [Incident]
+        want_text = bool(candidate_text and candidate_text.strip())
+        columns.append(
+            (
+                1.0
+                - Incident.khabar_embedding.cosine_distance(candidate_embedding)
+            ).label("embedding_similarity")
+        )
+        if want_text:
+            columns.append(
+                func.word_similarity(
+                    normalize_arabic_sql(Incident.khabar),
+                    normalize_arabic_sql(literal(candidate_text)),
+                ).label("text_similarity")
+            )
+
+        filters = [
+            Incident.village_id.in_(village_ids),
+            Incident.is_deleted.is_(False),
+            Incident.event_date >= start_date,
+            Incident.event_date <= end_date,
+            Incident.khabar_embedding.is_not(None),
+        ]
+        if exclude_raw_message_id is not None:
+            filters.append(Incident.raw_message_id != exclude_raw_message_id)
+
+        rows = self.db.execute(select(*columns).where(*filters)).all()
+
+        candidates: list[StoryCandidate] = []
+        for row in rows:
+            incident = row[0]
+            embedding_value = row[1]
+            if embedding_value is None:
+                continue
+            embedding_similarity = float(embedding_value)
+            if embedding_similarity < embedding_threshold:
+                continue
+            text_similarity: float | None = None
+            if want_text:
+                text_similarity = float(row[2] or 0.0)
+            incident_dt = datetime.combine(
+                incident.event_date, incident.event_time or time(0, 0)
+            )
+            gap_seconds = abs((incident_dt - naive_dt).total_seconds())
+            if gap_seconds > max_gap_seconds:
+                continue
+            candidates.append(
+                StoryCandidate(
+                    incident=incident,
+                    time_gap_seconds=gap_seconds,
+                    embedding_similarity=embedding_similarity,
+                    text_similarity=text_similarity,
+                    token_similarity=event_token_similarity(
+                        incident.khabar,
+                        candidate_text,
+                    ),
+                )
+            )
+
+        candidates.sort(
+            key=lambda c: (
+                -(c.embedding_similarity or 0.0),
+                c.time_gap_seconds,
+            )
+        )
+        return candidates[:max_results]
 
     def find_cross_village_dedup_candidates(
         self,
@@ -1189,6 +1685,10 @@ class IncidentRepository(IncidentRepositoryInterface):
                     time_gap_seconds=gap_seconds,
                     text_similarity=text_similarity,
                     embedding_similarity=embedding_similarity,
+                    token_similarity=event_token_similarity(
+                        incident.khabar,
+                        candidate_text,
+                    ),
                 )
             )
 
@@ -1217,21 +1717,26 @@ class IncidentRepository(IncidentRepositoryInterface):
                     representative_raw_message_id,
                     incident.village_id,
                 )
-            # Duplicate incident records are preserved (not soft-deleted) per
-            # "Show imported incidents and preserve duplicate records"; still
-            # repoint any pending review link onto the active canonical.
             self.redirect_pending_duplicate_matches(
                 retired_incident=incident,
                 canonical_incident=representative_incident,
             )
+            incident.is_deleted = True
+            incident.duplicate_flag = False
             self.db.add(incident)
             if representative_incident is not None:
                 self.create_duplicate_match(
                     incident=incident,
                     matched_incident=representative_incident,
                     similarity_score=similarity_score or 0.0,
+                    status=MatchStatus.confirmed_duplicate,
                 )
         self.db.flush()
+        if representative_raw_message_id is not None:
+            self.mark_raw_duplicate_if_fully_subsumed(
+                raw_message_id=raw_message_id,
+                canonical_raw_message_id=representative_raw_message_id,
+            )
         return [incident.id for incident in incidents]
 
     def soft_delete_for_village_incident(
@@ -1261,15 +1766,75 @@ class IncidentRepository(IncidentRepositoryInterface):
                 retired_incident=incident,
                 canonical_incident=matched_incident,
             )
+            incident.is_deleted = True
+            incident.duplicate_flag = False
             self.db.add(incident)
             if matched_incident is not None:
                 self.create_duplicate_match(
                     incident=incident,
                     matched_incident=matched_incident,
                     similarity_score=similarity_score or 0.0,
+                    status=MatchStatus.confirmed_duplicate,
                 )
         self.db.flush()
+        if matched_incident is not None and matched_incident.raw_message_id is not None:
+            self.mark_raw_duplicate_if_fully_subsumed(
+                raw_message_id=raw_message_id,
+                canonical_raw_message_id=matched_incident.raw_message_id,
+            )
         return [incident.id for incident in incidents]
+
+    def mark_raw_duplicate_if_fully_subsumed(
+        self,
+        *,
+        raw_message_id: int,
+        canonical_raw_message_id: int,
+    ) -> bool:
+        """Link a raw to the canonical root once it has no active incidents.
+
+        A raw may describe several villages, so retiring one village incident
+        must not hide the entire source bulletin.
+        """
+        if raw_message_id == canonical_raw_message_id:
+            return False
+        if self.has_active_incidents_for_raw_message(raw_message_id):
+            return False
+
+        raw = self.db.get(RawMessage, raw_message_id)
+        canonical = self.db.get(RawMessage, canonical_raw_message_id)
+        if raw is None or canonical is None:
+            return False
+
+        visited = {raw_message_id}
+        while canonical.duplicate_of_id is not None:
+            if canonical.id in visited:
+                raise ValueError("Circular raw-message duplicate chain detected.")
+            visited.add(canonical.id)
+            parent = self.db.get(RawMessage, canonical.duplicate_of_id)
+            if parent is None:
+                break
+            canonical = parent
+
+        if raw.id == canonical.id:
+            return False
+        raw.status = MessageStatus.duplicate
+        raw.duplicate_of_id = canonical.id
+        raw.error_message = None
+        self.db.add(raw)
+        # Keep every duplicate link direct. Existing children may point at a
+        # row that has now itself been canonicalized.
+        children = list(
+            self.db.scalars(
+                select(RawMessage).where(
+                    RawMessage.duplicate_of_id == raw.id,
+                    RawMessage.id != canonical.id,
+                )
+            ).all()
+        )
+        for child in children:
+            child.duplicate_of_id = canonical.id
+            self.db.add(child)
+        return True
 
     def begin_nested(self) -> AbstractContextManager[object]:
         return self.db.begin_nested()
@@ -1279,13 +1844,35 @@ class IncidentRepository(IncidentRepositoryInterface):
 
     @staticmethod
     def _needs_verification_column() -> object:
-        """User-facing needs-verification predicate: stored column only.
+        """User-facing verification is only unresolved duplicate review."""
+        return and_(
+            Incident.verification_status == "needs_verification",
+            Incident.duplicate_flag.is_(True),
+        )
 
-        ``raw_messages.match_result`` low-confidence JSON is no longer used for
-        list filters, dashboard counts, or the ``matched`` DTO field. Inspect
-        ``match_result`` directly when debugging matching confidence.
-        """
-        return Incident.verification_status == "needs_verification"
+    @staticmethod
+    def _is_casualty_review_reason(reason: str | None) -> bool:
+        return bool(
+            reason
+            and reason.startswith(
+                ("Category casualties", "Unsupported casualty_scope")
+            )
+        )
+
+    @classmethod
+    def _is_user_visible_needs_verification(cls, incident: Incident) -> bool:
+        """True when stored NV should surface to list/detail clients."""
+        return bool(
+            incident.verification_status == "needs_verification"
+            and incident.duplicate_flag
+        )
+
+    @classmethod
+    def _should_keep_needs_verification_after_duplicate_clear(
+        cls, reason: str | None
+    ) -> bool:
+        """Duplicate verification disappears when the duplicate flag is cleared."""
+        return False
 
     @classmethod
     def _list_filters(cls, params: IncidentListParams) -> list[object]:
@@ -1295,6 +1882,8 @@ class IncidentRepository(IncidentRepositoryInterface):
             RawMessage.status == MessageStatus.materialized,
             ~RawMessage.raw_payload.op("?")("ocr_text"),
         ]
+        if params.verification_status is None:
+            filters.append(Incident.verification_status != "rejected")
         if params.village:
             village_pattern = f"%{params.village}%"
             filters.append(

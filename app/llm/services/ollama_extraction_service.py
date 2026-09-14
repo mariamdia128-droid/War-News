@@ -2,20 +2,25 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.core.config import settings
 from app.core.ollama_client import JsonObject, OllamaChatClient, OllamaChatMessage
+from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import (
     CasualtyCountEvidence,
+    CasualtyScope,
     CasualtyTransition,
     ExtractionCasualties,
     ExtractionCategory,
     ExtractionCategoryKey,
     ExtractionResult,
+    ExtractionSubEvent,
+    VillageRole,
     VillageRoleEntry,
 )
 from app.llm.interfaces import ExtractionClassifierInterface
@@ -30,7 +35,19 @@ from app.llm.services.ollama_relevance_classifier_service import is_valid_reason
 from app.news.services.incident_details.casualty_count_backstop import (
     apply_casualty_count_backstop,
 )
+from app.news.services.incident_details.casualty_scope_backstop import (
+    validate_casualty_scope,
+)
 logger = logging.getLogger(__name__)
+
+_DASH_ROUTE_RE = re.compile(
+    r"طريق(?:\s+عام)?\s+"
+    r"(?P<left>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
+    r"\s*[-–—]\s*"
+    r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
+    r"(?=$|[\n،؛.!؟])"
+)
+_ROUTE_AREA_PREFIXES = ("مرج ",)
 
 ALLOWED_EXTRACTION_CATEGORY_KEYS = frozenset(
     category.value for category in ExtractionCategoryKey
@@ -38,7 +55,7 @@ ALLOWED_EXTRACTION_CATEGORY_KEYS = frozenset(
 
 GENERAL_EXTRACTION_PROMPT = """أنت مساعد لاستخراج الحقول العامة فقط من خبر عربي واحد عن حادث أمني أو عسكري في لبنان.
 
-مهمتك الوحيدة: استخرج is_relevant و village و village_roles و action_description و casualties العامة فقط. لا تستخرج categories ولا تحكم على أي فئة في هذه المرحلة.
+مهمتك الوحيدة: استخرج is_relevant و village و village_roles و action_description و sub_events و casualties العامة فقط. لا تستخرج categories ولا تحكم على أي فئة في هذه المرحلة.
 
 قواعد الإخراج الصارمة:
 - أرجع كائن JSON واحداً صالحاً فقط.
@@ -52,8 +69,14 @@ GENERAL_EXTRACTION_PROMPT = """أنت مساعد لاستخراج الحقول �
 
 إذا كان النص ذا صلة:
 - village: مصفوفة من أسماء البلدات أو الأماكن المذكورة في الخبر. إذا ورد اسم مكان واحد أرجع مصفوفة بعنصر واحد. إذا وردت أسماء أماكن متعددة أرجعها جميعاً في المصفوفة. إذا لم يظهر أي اسم مكان في النص أرجع null. لا تُرجع سلسلة نصية واحدة بل دائماً مصفوفة أو null.
-- village_roles: مصفوفة اختيارية من كائنات بالشكل {"village":"اسم البلدة","role":"origin|target"} لتمييز دور كل بلدة عندما يفرق النص بين مكان انطلاق/تمركز جهة الهجوم ومكان الاستهداف الفعلي. استخدم role="origin" فقط لموضع المنصة أو الدبابة أو موقع الإطلاق أو نقطة التمركز. استخدم role="target" لمكان القصف/الضربة/الضرر الفعلي. إذا ذُكرت بلدة واحدة فقط أو لم يميز النص بين الأدوار، اجعل role="target". إذا لم تحتج هذا التفصيل أرجع [].
+- village_roles: مصفوفة من كائنات بالشكل {"village":"اسم البلدة","role":"origin|target","deaths":null,"injuries":null,"evidence_span":null}. استخدم role="origin" فقط لموضع المنصة أو الدبابة أو موقع الإطلاق أو نقطة التمركز، واستخدم role="target" لمكان القصف/الضربة/الضرر الفعلي.
+- إذا سُمّي طريق أو مسار أو نطاق باسمَي مكان موصولين بشرطة، فهما موقعان منفصلان لا اسم مركب واحد. استخرج الطرفين كلّاً في عنصر village وعنصر target مستقل، حتى لو كانت الصياغة تصف طريقاً لا قائمة. مثال: «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"] وعنصرا target منفصلان.
+- عند ذكر أكثر من بلدة أو موقع، استخرج في كل عنصر target أعداد deaths وinjuries الخاصة بتلك البلدة من جملتها أو عبارتها فقط، ولا تنسخ الحصيلة الإجمالية للنشرة إلى البلدات. يجب أن يكون evidence_span مقطعاً حرفياً قصيراً يربط اسم البلدة بأرقامها.
+- إذا ذُكرت بلدة target بلا عدد صريح خاص بها، اجعل deaths وinjuries وevidence_span لها null، لا 0 ولا حصيلة النشرة. طبّق على كل بلدة قاعدة الألفاظ المبهمة نفسها: عشرات، مئات، عدد من، بضعة وغيرها تعني null ولا تتحول إلى رقم.
+- عند ذكر بلدة واحدة فقط، اجعل أرقام عنصر village_roles مطابقة لأرقام casualties العامة إن وُجدت، مع evidence_span حرفي، أو اتركها null. كلاهما مقبول لأن مسار البلدة الواحدة يستخدم casualties العامة.
 - action_description: وصف نوع العمل أو الحادث من النص فقط.
+- sub_events: عندما يصف الخبر أكثر من عمل متميز (مثلاً ضربة على منزل وضربة على سيارة في النشرة نفسها) أرجع عنصراً مستقلاً لكل عمل مع أرقامه المحلية وevidence_span الحرفي. لا تدمج أرقام العملين في casualties العامة. إذا كان العمل واحداً أرجع [].
+- مثال إلزامي للعملين: «غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً، وفي غارة منفصلة استُهدفت سيارة فاستُشهد مسعف وأصيب 2» → sub_events=[{"action_description":"غارة على منزل","casualties":{"deaths":8,"injuries":11,"total_deaths":8,"total_injuries":11},"evidence_span":"غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً"},{"action_description":"استهداف سيارة","casualties":{"deaths":1,"injuries":2,"total_deaths":1,"total_injuries":2,"male_deaths":1},"evidence_span":"استُهدفت سيارة فاستُشهد مسعف وأصيب 2"}] وcasualties العامة null أو مجموع فقط إذا صرّح النص بمجموع منفصل.
 - casualties: أعداد الضحايا العامة غير المنسوبة إلى فئة محددة، فقط إذا ذُكرت حرفياً.
 - casualty_transitions: انتقالات حالة بين جرحى ووفيات في *متابعات* لنفس الحادث. استخدمها عندما يذكر النص أن جرحى سابقين توفوا أو «بقي X جرحى وتوفي Y» أو «توفى واحد من الجرحى» دون إعادة عدّ كل الجرحى. لا تستخدمها للأخبار الأولية ولا للإضافات البسيطة مثل «5 جرحى جدد».
 - قاعدة إلزامية: إذا قال النص صراحة إن مصاباً أو جريحاً سابقاً توفي، فأرجع دائماً [{"from_status":"injured","to_status":"deceased","count":1}] حتى لو ذكر النص أيضاً حصيلة جديدة أو عدداً متبقياً للجرحى.
@@ -68,9 +91,12 @@ GENERAL_EXTRACTION_PROMPT = """أنت مساعد لاستخراج الحقول �
 5) «أصيب 5 جرحى إضافيين» → casualty_transitions=[] (إضافة فقط، بدون انتقال).
 
 أمثلة على village_roles:
-1) «دبابة متمركزة في البياض تقصف المنصوري» → village=["البياض","المنصوري"] و village_roles=[{"village":"البياض","role":"origin"},{"village":"المنصوري","role":"target"}]
-2) «غارة على عيتا الشعب» → village=["عيتا الشعب"] و village_roles=[{"village":"عيتا الشعب","role":"target"}]
-3) «قصف استهدف المنصوري ومجدل زون» → village=["المنصوري","مجدل زون"] و village_roles=[{"village":"المنصوري","role":"target"},{"village":"مجدل زون","role":"target"}]
+1) «دبابة متمركزة في البياض تقصف المنصوري» → village=["البياض","المنصوري"] و village_roles=[{"village":"البياض","role":"origin","deaths":null,"injuries":null,"evidence_span":null},{"village":"المنصوري","role":"target","deaths":null,"injuries":null,"evidence_span":null}]
+2) «غارة على عيتا الشعب أدت إلى 2 جريحين» → village=["عيتا الشعب"] و village_roles=[{"village":"عيتا الشعب","role":"target","deaths":null,"injuries":2,"evidence_span":"عيتا الشعب أدت إلى 2 جريحين"}]
+3) «المنصوري: شهيد و3 جرحى؛ مجدل زون: 4 جرحى» → village=["المنصوري","مجدل زون"] و village_roles=[{"village":"المنصوري","role":"target","deaths":1,"injuries":3,"evidence_span":"المنصوري: شهيد و3 جرحى"},{"village":"مجدل زون","role":"target","deaths":null,"injuries":4,"evidence_span":"مجدل زون: 4 جرحى"}]
+- عند وجود مكان انطلاق ومكان استهداف، أضف عنصراً origin للأول وعنصراً target للثاني.
+- عند وجود مكان استهداف واحد، أضف عنصراً target له.
+- عند وجود عدة أماكن مستهدفة، أضف عنصراً target مستقلاً لكل مكان واربط به حصيلته الصريحة وحدها إن وجدت.
 
 قواعد الأعداد:
 - استخرج الرقم فقط عندما يكون مكتوباً بشكل مباشر في النص.
@@ -78,8 +104,12 @@ GENERAL_EXTRACTION_PROMPT = """أنت مساعد لاستخراج الحقول �
 - لا تحوّل الجمع إلى رقم.
 - لا تملأ أي رقم اعتماداً على معرفة خارجية أو افتراضات.
 - الألفاظ التالية تدل على عدد غير محدد ويجب ألا تُترجم إلى رقم: عشرات، عشرات الجرحى، عشرات الشهداء، مئات، المئات، عدد من، عدد كبير من، كثير من، العديد من، بضعة، بعض. عند ورود أي من هذه الألفاظ دون رقم صريح مرافق، اترك الحقل فارغاً (null) ولا تفترض رقماً تقريبياً.
+- مثال إلزامي: «عشرات الجرحى والشهداء» أو «عشرات جرحى وشهداء» لا تعني 10. اجعل deaths وinjuries وtotal_deaths وtotal_injuries كلها null ما لم يرد رقم صريح لكل حصيلة في النص.
 - لا تستنتج عدد الأطفال أو النساء أو أي تصنيف ديموغرافي فرعي من عبارات مثل "بينهم أطفال" أو "بينهم نساء" ما لم يُذكر رقم صريح لتلك الفئة تحديداً في النص. ذِكر وجود فئة دون رقم لا يعني تقدير عدد لها.
 - لكل حقل عدد غير null في casualties، أضف عنصراً في casualty_evidence بالشكل {"field":"اسم_الحقل","evidence_span":"المقطع الحرفي من النص الذي يحتوي الرقم الصريح"}. إذا لم يوجد مقطع رقمي صريح لا تملأ الحقل.
+- casualty_scope يصف علاقة أرقام الضحايا بالبلدات: استخدم per_village_exact عندما يرتبط رقم صريح ببلدة target واحدة في جملتها أو عبارتها؛ واستخدم bulletin_aggregate عندما تغطي حصيلة واحدة مشتركة بلدتين target أو أكثر بلا تفصيل رقمي لكل بلدة؛ واستخدم unspecified عند غياب الربط أو الأرقام أو الضحايا.
+- مع bulletin_aggregate ضع الحصيلة المشتركة في casualties.total_deaths وcasualties.total_injuries واترك casualties.deaths وcasualties.injuries فارغين. مع per_village_exact ضع أرقام كل بلدة في عنصرها ضمن village_roles، ولا تستخدم أرقام root إلا عند وجود بلدة target واحدة.
+- casualty_scope_evidence يجب أن يكون الجملة أو العبارة الحرفية الكاملة التي تبرر التصنيف، وأن تتضمن الرقم والسياق الذي يوضح هل يرتبط ببلدة واحدة أم بقائمة بلدات. لا تُرجع عبارة الرقم وحدها. استخدم null مع unspecified أو عند غياب عبارة حرفية كافية.
 
 Schema الإخراج الوحيد المسموح:
 {
@@ -87,6 +117,7 @@ Schema الإخراج الوحيد المسموح:
   "village": null,
   "village_roles": [],
   "action_description": null,
+  "sub_events": [],
   "casualties": {
     "total_deaths": null,
     "total_injuries": null,
@@ -100,6 +131,8 @@ Schema الإخراج الوحيد المسموح:
     "children_injuries": null
   },
   "casualty_evidence": [],
+  "casualty_scope": "unspecified",
+  "casualty_scope_evidence": null,
   "casualty_transitions": []
 }
 
@@ -124,11 +157,79 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
                         "type": "string",
                         "enum": ["origin", "target"],
                     },
+                    "deaths": {"type": ["integer", "null"], "minimum": 0},
+                    "injuries": {"type": ["integer", "null"], "minimum": 0},
+                    "evidence_span": {"type": ["string", "null"]},
                 },
-                "required": ["village", "role"],
+                "required": [
+                    "village",
+                    "role",
+                    "deaths",
+                    "injuries",
+                    "evidence_span",
+                ],
             },
         },
         "action_description": {"type": ["string", "null"]},
+        "sub_events": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "action_description": {"type": ["string", "null"]},
+                    "casualties": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "total_deaths": {"type": ["integer", "null"]},
+                            "total_injuries": {"type": ["integer", "null"]},
+                            "deaths": {"type": ["integer", "null"]},
+                            "injuries": {"type": ["integer", "null"]},
+                            "male_deaths": {"type": ["integer", "null"]},
+                            "male_injuries": {"type": ["integer", "null"]},
+                            "female_deaths": {"type": ["integer", "null"]},
+                            "female_injuries": {"type": ["integer", "null"]},
+                            "children_deaths": {"type": ["integer", "null"]},
+                            "children_injuries": {"type": ["integer", "null"]},
+                        },
+                    },
+                    "evidence_span": {"type": ["string", "null"]},
+                    "casualty_evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "field": {
+                                    "type": "string",
+                                    "enum": [
+                                        "total_deaths",
+                                        "total_injuries",
+                                        "deaths",
+                                        "injuries",
+                                        "male_deaths",
+                                        "male_injuries",
+                                        "female_deaths",
+                                        "female_injuries",
+                                        "children_deaths",
+                                        "children_injuries",
+                                    ],
+                                },
+                                "evidence_span": {"type": "string"},
+                            },
+                            "required": ["field", "evidence_span"],
+                        },
+                    },
+                },
+                "required": [
+                    "action_description",
+                    "casualties",
+                    "evidence_span",
+                    "casualty_evidence",
+                ],
+            },
+        },
         "casualties": {
             "type": "object",
             "additionalProperties": False,
@@ -190,15 +291,27 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
                 "required": ["field", "evidence_span"],
             },
         },
+        "casualty_scope": {
+            "type": "string",
+            "enum": [
+                "per_village_exact",
+                "bulletin_aggregate",
+                "unspecified",
+            ],
+        },
+        "casualty_scope_evidence": {"type": ["string", "null"]},
     },
     "required": [
         "is_relevant",
         "village",
         "village_roles",
         "action_description",
+        "sub_events",
         "casualties",
         "casualty_transitions",
         "casualty_evidence",
+        "casualty_scope",
+        "casualty_scope_evidence",
     ],
 }
 
@@ -220,9 +333,12 @@ COMBINED_TIER1_RESPONSE_SCHEMA: JsonObject = {
         "village": {"type": ["array", "null"], "items": {"type": "string"}},
         "village_roles": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["village_roles"],  # type: ignore[index]
         "action_description": {"type": ["string", "null"]},
+        "sub_events": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["sub_events"],  # type: ignore[index]
         "casualties": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualties"],  # type: ignore[index]
         "casualty_transitions": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_transitions"],  # type: ignore[index]
         "casualty_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_evidence"],  # type: ignore[index]
+        "casualty_scope": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_scope"],  # type: ignore[index]
+        "casualty_scope_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_scope_evidence"],  # type: ignore[index]
     },
     "required": [
         "categories_present",
@@ -231,9 +347,12 @@ COMBINED_TIER1_RESPONSE_SCHEMA: JsonObject = {
         "village",
         "village_roles",
         "action_description",
+        "sub_events",
         "casualties",
         "casualty_transitions",
         "casualty_evidence",
+        "casualty_scope",
+        "casualty_scope_evidence",
     ],
 }
 
@@ -246,9 +365,23 @@ class _RawExtractionResponse(BaseModel):
     village: list[str] | str | None = None
     village_roles: list[VillageRoleEntry] = Field(default_factory=list)
     action_description: str | None = None
+    sub_events: list[ExtractionSubEvent] = Field(default_factory=list)
     casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
     casualty_transitions: list[CasualtyTransition] = Field(default_factory=list)
     casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
+    casualty_scope: CasualtyScope = CasualtyScope.unspecified
+    casualty_scope_evidence: str | None = None
+
+    @field_validator(
+        "village_roles",
+        "sub_events",
+        "casualty_transitions",
+        "casualty_evidence",
+        mode="before",
+    )
+    @classmethod
+    def _empty_list_for_none(cls, value: object) -> object:
+        return [] if value is None else value
 
 
 class OllamaExtractionService(ExtractionClassifierInterface):
@@ -257,10 +390,12 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         client: OllamaChatClient,
         presence_gate: OllamaPresenceGateService | None = None,
         category_detail: OllamaCategoryDetailService | None = None,
+        casualty_scope_aliases: dict[str, tuple[str, ...]] | None = None,
     ) -> None:
         self.client = client
         self.presence_gate = presence_gate or OllamaPresenceGateService(client)
         self.category_detail = category_detail or OllamaCategoryDetailService(client)
+        self.casualty_scope_aliases = casualty_scope_aliases or {}
 
     def extract_tier1(
         self,
@@ -325,9 +460,12 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 "village",
                 "village_roles",
                 "action_description",
+                "sub_events",
                 "casualties",
                 "casualty_transitions",
                 "casualty_evidence",
+                "casualty_scope",
+                "casualty_scope_evidence",
             )
         }
         general_response = self._parse_general_response(
@@ -360,26 +498,47 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             categories,
             casualties,
         )
+        village_roles = self._validated_village_roles(
+            general_response.village_roles,
+            post_text=post_text,
+            raw_message_id=raw_message_id,
+        )
+        villages = self._validated_village_list(
+            general_response.village,
+            raw_message_id=raw_message_id,
+        )
+        villages, village_roles = self._apply_dash_route_village_backstop(
+            post_text,
+            villages,
+            village_roles,
+        )
+        scope, scope_evidence, scope_needs_review, scope_reason = (
+            self._validated_casualty_scope(
+                general_response,
+                village_roles=village_roles,
+                post_text=post_text,
+                raw_message_id=raw_message_id,
+            )
+        )
 
         return ExtractionResult(
             is_relevant=general_response.is_relevant,
-            village=self._validated_village_list(
-                general_response.village,
-                raw_message_id=raw_message_id,
-            ),
-            village_roles=self._validated_village_roles(
-                general_response.village_roles,
-                raw_message_id=raw_message_id,
-            ),
+            village=villages,
+            village_roles=village_roles,
             action_description=self._validated_text(
                 general_response.action_description,
                 field_name="action_description",
                 raw_message_id=raw_message_id,
             ),
+            sub_events=list(general_response.sub_events),
             categories=categories,
             casualties=casualties,
             casualty_evidence=casualty_evidence,
             casualty_transitions=list(general_response.casualty_transitions),
+            casualty_scope=scope,
+            casualty_scope_evidence=scope_evidence,
+            casualty_scope_needs_review=scope_needs_review,
+            casualty_scope_review_reason=scope_reason,
             presence_category_keys=list(categories_present),
             extraction_tier=1,
             model=self.client.model,
@@ -608,6 +767,19 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             categories,
             casualties,
         )
+        village_roles = self._validated_village_roles(
+            general_response.village_roles,
+            post_text=post_text,
+            raw_message_id=raw_message_id,
+        )
+        scope, scope_evidence, scope_needs_review, scope_reason = (
+            self._validated_casualty_scope(
+                general_response,
+                village_roles=village_roles,
+                post_text=post_text,
+                raw_message_id=raw_message_id,
+            )
+        )
 
         return ExtractionResult(
             is_relevant=general_response.is_relevant,
@@ -615,19 +787,21 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 general_response.village,
                 raw_message_id=raw_message_id,
             ),
-            village_roles=self._validated_village_roles(
-                general_response.village_roles,
-                raw_message_id=raw_message_id,
-            ),
+            village_roles=village_roles,
             action_description=self._validated_text(
                 general_response.action_description,
                 field_name="action_description",
                 raw_message_id=raw_message_id,
             ),
+            sub_events=list(general_response.sub_events),
             categories=categories,
             casualties=casualties,
             casualty_evidence=casualty_evidence,
             casualty_transitions=list(general_response.casualty_transitions),
+            casualty_scope=scope,
+            casualty_scope_evidence=scope_evidence,
+            casualty_scope_needs_review=scope_needs_review,
+            casualty_scope_review_reason=scope_reason,
             presence_category_keys=list(categories_present),
             extraction_tier=2,
             model=self.client.model,
@@ -706,6 +880,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                     raw_message_id=raw_message_id,
                 ),
                 casualties=raw_category.casualties,
+                vehicles=raw_category.vehicles,
             )
         return validated
 
@@ -777,12 +952,59 @@ class OllamaExtractionService(ExtractionClassifierInterface):
     def _validated_village_roles(
         self,
         village_roles: list[VillageRoleEntry],
+        post_text: str,
         raw_message_id: int | None,
     ) -> list[VillageRoleEntry]:
         validated: list[VillageRoleEntry] = []
         for entry in village_roles:
             if is_valid_reason_text(entry.village):
-                validated.append(entry)
+                evidence_span = self._validated_text(
+                    entry.evidence_span,
+                    field_name="village_roles.evidence_span",
+                    raw_message_id=raw_message_id,
+                )
+                if evidence_span is not None and evidence_span not in post_text:
+                    logger.warning(
+                        "Dropped non-source village casualty evidence for "
+                        "raw_message_id=%s village=%s",
+                        raw_message_id,
+                        entry.village,
+                    )
+                    evidence_span = None
+
+                evidence = (
+                    [
+                        CasualtyCountEvidence(
+                            field=field,
+                            evidence_span=evidence_span,
+                        )
+                        for field, value in (
+                            ("deaths", entry.deaths),
+                            ("injuries", entry.injuries),
+                        )
+                        if value is not None and evidence_span is not None
+                    ]
+                    if evidence_span is not None
+                    else []
+                )
+                village_casualties, _ = apply_casualty_count_backstop(
+                    evidence_span or "",
+                    ExtractionCasualties(
+                        deaths=entry.deaths,
+                        injuries=entry.injuries,
+                    ),
+                    evidence,
+                    raw_message_id=raw_message_id,
+                )
+                validated.append(
+                    entry.model_copy(
+                        update={
+                            "deaths": village_casualties.deaths,
+                            "injuries": village_casualties.injuries,
+                            "evidence_span": evidence_span,
+                        }
+                    )
+                )
             else:
                 logger.warning(
                     "Invalid village_roles.village text from model=%s for raw_message_id=%s",
@@ -796,6 +1018,66 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                     entry.model_dump(mode="json"),
                 )
         return validated
+
+    @staticmethod
+    def _apply_dash_route_village_backstop(
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Recover both endpoints when a model drops one dash-joined route place."""
+        match = _DASH_ROUTE_RE.search(post_text)
+        if match is None:
+            return villages, village_roles
+
+        left = match.group("left").strip()
+        for prefix in _ROUTE_AREA_PREFIXES:
+            if left.startswith(prefix):
+                left = left[len(prefix) :].strip()
+                break
+        right = match.group("right").strip()
+        if not left or not right:
+            return villages, village_roles
+
+        existing_names = list(villages or [])
+        existing_names.extend(entry.village for entry in village_roles)
+        existing_norms = {
+            normalize_arabic_text(name)
+            for name in existing_names
+            if normalize_arabic_text(name)
+        }
+        endpoint_norms = {
+            normalize_arabic_text(left),
+            normalize_arabic_text(right),
+        }
+        # Do not invent two locations from arbitrary dash punctuation. At least
+        # one endpoint must already have been recognized by the model.
+        if not existing_norms.intersection(endpoint_norms):
+            return villages, village_roles
+
+        merged_villages = list(villages or [])
+        merged_norms = {
+            normalize_arabic_text(name)
+            for name in merged_villages
+            if normalize_arabic_text(name)
+        }
+        merged_roles = list(village_roles)
+        role_norms = {
+            normalize_arabic_text(entry.village)
+            for entry in merged_roles
+            if normalize_arabic_text(entry.village)
+        }
+        for endpoint in (left, right):
+            normalized = normalize_arabic_text(endpoint)
+            if normalized not in merged_norms:
+                merged_villages.append(endpoint)
+                merged_norms.add(normalized)
+            if normalized not in role_norms:
+                merged_roles.append(
+                    VillageRoleEntry(village=endpoint, role=VillageRole.target)
+                )
+                role_norms.add(normalized)
+        return merged_villages, merged_roles
 
     def _validated_text(
         self,
@@ -822,3 +1104,55 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             value,
         )
         return None
+
+    def _validated_source_span(
+        self,
+        value: str | None,
+        *,
+        post_text: str,
+        field_name: str,
+        raw_message_id: int | None,
+    ) -> str | None:
+        span = self._validated_text(
+            value,
+            field_name=field_name,
+            raw_message_id=raw_message_id,
+        )
+        if span is None or span in post_text:
+            return span
+        logger.warning(
+            "Dropped non-source extraction span field=%s raw_message_id=%s",
+            field_name,
+            raw_message_id,
+        )
+        return None
+
+    def _validated_casualty_scope(
+        self,
+        response: _RawExtractionResponse,
+        *,
+        village_roles: list[VillageRoleEntry],
+        post_text: str,
+        raw_message_id: int | None,
+    ) -> tuple[CasualtyScope, str | None, bool, str | None]:
+        evidence = self._validated_source_span(
+            response.casualty_scope_evidence,
+            post_text=post_text,
+            field_name="casualty_scope_evidence",
+            raw_message_id=raw_message_id,
+        )
+        result = validate_casualty_scope(
+            casualty_scope=response.casualty_scope,
+            evidence=evidence,
+            village_roles=village_roles,
+            aliases_by_village=self.casualty_scope_aliases,
+        )
+        if result.plausible:
+            return response.casualty_scope, evidence, False, None
+
+        reason = (
+            f"Unsupported casualty_scope={response.casualty_scope.value}: "
+            f"evidence matched {result.village_count_in_evidence} target village(s)"
+        )
+        logger.warning("%s raw_message_id=%s", reason, raw_message_id)
+        return CasualtyScope.unspecified, evidence, True, reason

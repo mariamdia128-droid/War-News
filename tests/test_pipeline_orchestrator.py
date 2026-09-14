@@ -58,6 +58,11 @@ def _patch_stages(monkeypatch, *, fail_stage: str | None = None) -> list[str]:
     monkeypatch.setattr(orchestrator, "sweep_relevance_filter", relevance)
     monkeypatch.setattr(
         orchestrator,
+        "sweep_reconcile_orphaned_dedup_originals",
+        _sync("dedup_original_reconciliation"),
+    )
+    monkeypatch.setattr(
+        orchestrator,
         "sweep_pre_dedup_concurrent",
         lambda **kwargs: _async("pre_extraction_dedup", **kwargs),
     )
@@ -136,6 +141,7 @@ async def test_embedding_stage_runs_before_fast_path(monkeypatch) -> None:
     assert calls.index("embedding") < calls.index("tier1_extraction")
     assert calls == [
         "relevance_filter",
+        "dedup_original_reconciliation",
         "pre_extraction_dedup",
         "embedding",
         "tier1_extraction",
@@ -213,6 +219,7 @@ async def test_auth_abort_stops_remaining_stages(monkeypatch, caplog) -> None:
     assert result.partial_failure is True
     assert [stage.stage for stage in result.stages] == [
         "relevance_filter",
+        "dedup_original_reconciliation",
         "pre_extraction_dedup",
         "embedding",
         "tier1_extraction",

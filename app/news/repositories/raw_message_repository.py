@@ -9,7 +9,10 @@ from app.llm.dtos import (
     ExtractionResult,
     RelevanceClassificationResult,
 )
-from app.llm.services.transient_llm_errors import extraction_retry_cap_message
+from app.llm.services.transient_llm_errors import (
+    TRANSIENT_LLM_ERROR_MARKERS,
+    extraction_retry_cap_message,
+)
 from app.news.dtos import MatchResultDTO
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.models import (
@@ -18,6 +21,9 @@ from app.news.models import (
 )
 
 MATCHING_RETRY_CAP_PREFIX = "matching: exceeded max retries"
+TRANSIENT_LLM_ERROR_ILIKE_PATTERNS = tuple(
+    f"%{marker}%" for marker in TRANSIENT_LLM_ERROR_MARKERS
+)
 
 
 def matching_retry_cap_message(retry_count: int, exc: BaseException) -> str:
@@ -213,10 +219,10 @@ class RawMessageRepository(RawMessageRepositoryInterface):
                     RawMessage.extraction_result.is_(None),
                     RawMessage.error_message.is_not(None),
                     or_(
-                        RawMessage.error_message.ilike("%ReadTimeout%"),
-                        RawMessage.error_message.ilike("%ConnectTimeout%"),
-                        RawMessage.error_message.ilike("%TimeoutException%"),
-                        RawMessage.error_message.ilike("%timed out%"),
+                        *(
+                            RawMessage.error_message.ilike(pattern)
+                            for pattern in TRANSIENT_LLM_ERROR_ILIKE_PATTERNS
+                        )
                     ),
                 )
                 .order_by(RawMessage.id.asc())
