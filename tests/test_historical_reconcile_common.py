@@ -38,7 +38,7 @@ def test_run_batch_resumes_successful_items_without_double_processing(
     assert called == [1, 2, 3]
     assert (first.processed, first.succeeded, first.failed) == (2, 2, 0)
     assert second.skipped_completed == 2
-    assert second.processed == second.succeeded == 1
+    assert second.processed == second.succeeded == 3
     assert first_results == [{"value": 1}, {"value": 2}]
     assert second_results == [
         {"value": 1},

@@ -168,13 +168,14 @@ def run_batch(
     ordered_results: list[dict[str, Any]] = []
     for item in items:
         key = item_id(item)
+        summary.processed += 1
         previous = checkpoint.result_for(key)
         if previous is not None:
             summary.skipped_completed += 1
+            summary.succeeded += 1
             ordered_results.append(previous)
             continue
 
-        summary.processed += 1
         try:
             result = process(item)
             checkpoint.append_success(
