@@ -1,8 +1,8 @@
 from app.llm.dtos import ExtractionCasualties
 from app.news.services.incident_details.casualty_gender_evidence import (
-    _EXPLICIT_FORMS,
     apply_explicit_arabic_gender_evidence,
     apply_gendered_occupation_casualty_evidence,
+    infer_singular_death_count,
 )
 
 
@@ -16,6 +16,16 @@ def test_explicit_masculine_singular_fills_death_and_injury() -> None:
     assert result.male_injuries == 1
     assert result.female_deaths is None
     assert result.female_injuries is None
+
+
+def test_singular_martyr_infers_missing_root_death_count() -> None:
+    result = infer_singular_death_count(
+        "مراسل الجديد: شهيد في غارة استهدفت دراجة نارية في زبدين قضاء النبطية",
+        ExtractionCasualties(),
+    )
+
+    assert result.deaths == 1
+    assert result.total_deaths == 1
 
 
 def test_explicit_feminine_singular_fills_death_and_injury() -> None:
@@ -37,7 +47,6 @@ def test_definite_article_shahida_forms_match_and_fill_female() -> None:
         "استشهاد الشهيدة إسراء",
     )
     for text in cases:
-        assert _EXPLICIT_FORMS["female_deaths"][0][1].search(text), text
         result = apply_explicit_arabic_gender_evidence(
             text,
             ExtractionCasualties(deaths=1),
@@ -48,7 +57,6 @@ def test_definite_article_shahida_forms_match_and_fill_female() -> None:
 
 def test_definite_article_musaba_fills_female_injury() -> None:
     for text in ("مصابة", "المصابة"):
-        assert _EXPLICIT_FORMS["female_injuries"][1][1].search(text), text
         result = apply_explicit_arabic_gender_evidence(
             text,
             ExtractionCasualties(injuries=1),
@@ -77,6 +85,33 @@ def test_mixed_gender_words_do_not_override_model() -> None:
     original = ExtractionCasualties(deaths=1)
 
     assert apply_explicit_arabic_gender_evidence("شهيد وشهيدة", original) == original
+
+
+def test_mixed_singular_death_words_do_not_infer_a_total() -> None:
+    result = infer_singular_death_count(
+        "شهيد وشهيدة في الغارة",
+        ExtractionCasualties(),
+    )
+
+    assert result.deaths is None
+
+
+def test_honorific_martyr_reference_does_not_infer_current_death() -> None:
+    result = infer_singular_death_count(
+        "صفحة الإعلامي الشهيد علي شعيب: غارة على أطراف البلدة",
+        ExtractionCasualties(),
+    )
+
+    assert result.deaths is None
+
+
+def test_singular_killed_noun_infers_one_death() -> None:
+    result = infer_singular_death_count(
+        "قتيل جراء الغارة",
+        ExtractionCasualties(),
+    )
+
+    assert result.deaths == 1
 
 
 def test_counted_masculine_plural_does_not_guess_all_are_male() -> None:

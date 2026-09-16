@@ -272,14 +272,11 @@ def get_rejected_news(
         .order_by(Incident.verified_at.desc().nullslast())
         .limit(1)
     )
-    if (
-        message is None
-        or (
-            message.status not in {MessageStatus.rejected, MessageStatus.duplicate}
-            and manual_reason is None
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Raw message was not found.",
         )
-    ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rejected news was not found.")
     return _item(message, manual_reason)
 
 

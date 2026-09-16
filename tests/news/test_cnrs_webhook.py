@@ -17,6 +17,8 @@ from app.main import app
 from app.news.models import RawMessage
 from app.sources.repositories import SourceRepository
 
+TEST_MESSAGE_DATETIME = datetime.now(timezone.utc).replace(microsecond=0)
+
 
 class _WebhookSourceRepository:
     messages: list[RawMessage] = []
@@ -127,7 +129,7 @@ def _headers(secret: str = "test-webhook-secret") -> dict[str, str]:
 def _payload(external_message_id: str = "cnrs-1") -> dict[str, str]:
     return {
         "external_message_id": external_message_id,
-        "message_datetime": "2026-09-07T10:20:30+00:00",
+        "message_datetime": TEST_MESSAGE_DATETIME.isoformat(),
         "raw_text": "Post text",
         "source_platform": "telegram",
         "source_name": "test-channel",
@@ -190,7 +192,7 @@ def test_valid_secret_single_post_returns_202_and_writes_raw_message() -> None:
     assert message.external_message_id == "cnrs-1"
     assert message.raw_text == "Post text"
     assert message.raw_payload["extra_field"] == "preserved"
-    assert message.message_datetime == datetime(2026, 9, 7, 10, 20, 30, tzinfo=timezone.utc)
+    assert message.message_datetime == TEST_MESSAGE_DATETIME
 
 
 def test_stale_source_id_falls_back_to_active_cnrs_source() -> None:

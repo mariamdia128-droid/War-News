@@ -13,6 +13,7 @@ storage. Only the separate raw_messages.match_result column is added.
 from dataclasses import dataclass
 from collections.abc import Callable
 from math import hypot
+import re
 
 from app.core.config import settings
 from app.core.llm_knowledge.loader import load_terminology
@@ -42,6 +43,30 @@ LOW_CONFIDENCE_THRESHOLD = 0.35
 # ~0.29 margin. 0.05 catches exact/near ties without demoting clear winners.
 MATCH_TIE_MARGIN = 0.05
 DEFAULT_CANDIDATE_LIMIT = 5
+
+
+def _contains_token_sequence(haystack: list[str], needle: list[str]) -> bool:
+    if not haystack or not needle or len(needle) > len(haystack):
+        return False
+    return any(
+        haystack[index : index + len(needle)] == needle
+        for index in range(0, len(haystack) - len(needle) + 1)
+    )
+
+
+def _district_hint(text: str) -> str | None:
+    normalized = normalize_arabic_text(text or "")
+    match = re.search(r"(?:^|\s)قضاء\s+(.+)", normalized)
+    if match is None:
+        return None
+    return re.split(r"[()،,;:.\-–—]", match.group(1), maxsplit=1)[0].strip() or None
+
+
+def _strip_district_hint(text: str) -> str:
+    marker = " قضاء "
+    if marker not in text:
+        return text
+    return text.split(marker, 1)[0].strip() or text
 
 
 def _distinguishing_tokens(meaning: str) -> tuple[str, ...]:
@@ -108,10 +133,25 @@ class MatchingService(MatchingServiceInterface):
         )
 
     def match(self, extraction_result: ExtractionResult) -> MatchResultDTO:
-        village_mentions = self._village_mentions(extraction_result)
+        root_condition = self._match_mention(
+            extraction_result.action_description,
+            self.conditions.find_similar,
+        )
+        sub_event_matches = [
+            self._match_sub_event(index, sub_event)
+            for index, sub_event in enumerate(extraction_result.sub_events)
+        ]
+        village_mentions = self._event_village_mentions(
+            extraction_result,
+            sub_event_matches,
+            root_condition,
+        )
         candidate_resolutions = [
-            self._resolve_village_candidates(mention.village)
-            for mention in village_mentions
+            self._resolve_village_candidates(
+                mention.village,
+                qualifier_text=mention.qualifier_text,
+            )
+            for mention, _event_index, _event_size, _condition in village_mentions
         ]
         anchors = [
             resolution.candidates[0][0]
@@ -119,7 +159,7 @@ class MatchingService(MatchingServiceInterface):
             if self._is_anchor(resolution)
         ]
         village_matches: list[VillageMatchResult] = []
-        for village_mention, resolution in zip(
+        for (village_mention, event_index, event_size, condition), resolution in zip(
             village_mentions,
             candidate_resolutions,
             strict=True,
@@ -141,6 +181,17 @@ class MatchingService(MatchingServiceInterface):
                     deaths=village_mention.deaths,
                     injuries=village_mention.injuries,
                     evidence_span=village_mention.evidence_span,
+                    matched_condition_id=condition.matched_id,
+                    condition_confidence=condition.confidence,
+                    condition_match_status=condition.status,
+                    condition_review_required=condition.status != MatchResultStatus.matched,
+                    raw_condition_text=self._condition_text_for_event(
+                        extraction_result,
+                        event_index,
+                    ),
+                    event_index=event_index,
+                    event_location_count=event_size,
+                    qualifier_text=village_mention.qualifier_text,
                     resolved_by_geo_context=(
                         geo_resolution.resolved_by_geo_context
                     ),
@@ -161,21 +212,13 @@ class MatchingService(MatchingServiceInterface):
             for vm in village_matches
         )
 
-        condition = self._match_mention(
-            extraction_result.action_description,
-            self.conditions.find_similar,
-        )
-        sub_event_matches = [
-            self._match_sub_event(index, sub_event)
-            for index, sub_event in enumerate(extraction_result.sub_events)
-        ]
         return MatchResultDTO(
             village_matches=village_matches,
             any_village_low_confidence=any_village_low_confidence,
-            matched_condition_id=condition.matched_id,
-            condition_confidence=condition.confidence,
-            condition_match_status=condition.status,
-            condition_review_required=condition.status != MatchResultStatus.matched,
+            matched_condition_id=root_condition.matched_id,
+            condition_confidence=root_condition.confidence,
+            condition_match_status=root_condition.status,
+            condition_review_required=root_condition.status != MatchResultStatus.matched,
             raw_condition_text=extraction_result.action_description,
             sub_event_matches=sub_event_matches,
         )
@@ -196,6 +239,47 @@ class MatchingService(MatchingServiceInterface):
         )
 
     @staticmethod
+    def _condition_text_for_event(
+        extraction_result: ExtractionResult,
+        event_index: int | None,
+    ) -> str | None:
+        if event_index is None:
+            return extraction_result.action_description
+        if 0 <= event_index < len(extraction_result.sub_events):
+            return extraction_result.sub_events[event_index].action_description
+        return extraction_result.action_description
+
+    @staticmethod
+    def _event_village_mentions(
+        extraction_result: ExtractionResult,
+        sub_event_matches: list[SubEventMatchResult],
+        root_condition: _ClassifiedMatch,
+    ) -> list[tuple[VillageRoleEntry, int | None, int | None, _ClassifiedMatch]]:
+        items: list[tuple[VillageRoleEntry, int | None, int | None, _ClassifiedMatch]] = []
+        for index, sub_event in enumerate(extraction_result.sub_events):
+            if not sub_event.locations:
+                continue
+            match = sub_event_matches[index] if index < len(sub_event_matches) else None
+            condition = (
+                _ClassifiedMatch(
+                    match.matched_condition_id,
+                    match.condition_confidence,
+                    match.condition_match_status,
+                )
+                if match is not None
+                else root_condition
+            )
+            event_size = len(sub_event.locations)
+            for location in sub_event.locations:
+                items.append((location, index, event_size, condition))
+        if items:
+            return items
+        return [
+            (mention, None, None, root_condition)
+            for mention in MatchingService._village_mentions(extraction_result)
+        ]
+
+    @staticmethod
     def _village_mentions(
         extraction_result: ExtractionResult,
     ) -> list[VillageRoleEntry]:
@@ -209,6 +293,8 @@ class MatchingService(MatchingServiceInterface):
     def _resolve_village_candidates(
         self,
         mention: str | None,
+        *,
+        qualifier_text: str | None = None,
     ) -> _VillageCandidateResolution:
         normalized = normalize_arabic_text(mention or "")
         if not normalized:
@@ -216,10 +302,14 @@ class MatchingService(MatchingServiceInterface):
                 (),
                 _ClassifiedMatch(None, None, MatchResultStatus.unmatched),
             )
+        district_hint = _district_hint(
+            " ".join(part for part in (normalized, qualifier_text or "") if part)
+        )
+        search_text = _strip_district_hint(normalized)
 
         resolve_alias = getattr(self.villages, "resolve_alias", None)
-        if resolve_alias is not None:
-            alias_hit = resolve_alias(normalized)
+        if resolve_alias is not None and district_hint is None:
+            alias_hit = resolve_alias(search_text)
             if alias_hit is not None:
                 village, score = alias_hit
                 confidence = max(0.0, min(float(score), 1.0))
@@ -236,13 +326,25 @@ class MatchingService(MatchingServiceInterface):
         candidates = tuple(
             (candidate, max(0.0, min(float(score), 1.0)))
             for candidate, score in self.villages.find_similar(
-                normalized,
+                search_text,
                 self.candidate_limit,
             )
         )
-        classified = self._classify_candidates(candidates, normalized)
-        collision_like = self._has_collision_like_alternative(
-            normalized,
+        district_resolved = False
+        if district_hint:
+            district_candidates = tuple(
+                (candidate, max(score, MATCH_THRESHOLD + 0.1))
+                for candidate, score in candidates
+                if self._candidate_matches_district(candidate, district_hint)
+            )
+            if district_candidates:
+                candidates = tuple(
+                    sorted(district_candidates, key=lambda item: item[1], reverse=True)
+                )
+                district_resolved = True
+        classified = self._classify_candidates(candidates, search_text)
+        collision_like = False if district_resolved else self._has_collision_like_alternative(
+            search_text,
             candidates,
         )
         if (
@@ -275,9 +377,50 @@ class MatchingService(MatchingServiceInterface):
             reference = normalize_arabic_text(
                 getattr(candidate, "ref_name_ar", None) or ""
             )
-            if reference == mention or reference.startswith(f"{mention} "):
+            reference_tokens = reference.split()
+            mention_tokens = mention.split()
+            contains_mention = (
+                reference == mention
+                or reference.startswith(f"{mention} ")
+                or _contains_token_sequence(reference_tokens, mention_tokens)
+            )
+            if contains_mention:
                 matching_candidates += 1
         return matching_candidates >= 2
+
+    @staticmethod
+    def _rank_by_district_hint(
+        candidates: tuple[tuple[Village, float], ...],
+        district_hint: str,
+    ) -> tuple[tuple[Village, float], ...]:
+        if not candidates:
+            return candidates
+        boosted: list[tuple[Village, float, bool]] = []
+        hint = normalize_arabic_text(district_hint)
+        for candidate, score in candidates:
+            caza_ar = normalize_arabic_text(getattr(candidate, "caza_ar", None) or "")
+            caza_en = normalize_arabic_text(getattr(candidate, "caza_en", None) or "")
+            district_match = bool(hint and (hint in caza_ar or hint in caza_en))
+            if hint and (hint in caza_ar or hint in caza_en):
+                boosted.append((candidate, min(1.0, max(score, MATCH_THRESHOLD + 0.1)), district_match))
+            else:
+                boosted.append((candidate, min(score, LOW_CONFIDENCE_THRESHOLD), district_match))
+        ranked = sorted(boosted, key=lambda item: (item[2], item[1]), reverse=True)
+        return tuple((candidate, score) for candidate, score, _matched in ranked)
+
+    @staticmethod
+    def _candidate_matches_district(candidate: Village, district_hint: str) -> bool:
+        hint = normalize_arabic_text(district_hint)
+        if not hint:
+            return False
+        for value in (
+            getattr(candidate, "caza_ar", None),
+            getattr(candidate, "caza_en", None),
+        ):
+            district = normalize_arabic_text(value or "")
+            if district and (hint == district or hint in district or district in hint):
+                return True
+        return False
 
     @staticmethod
     def _is_anchor(resolution: _VillageCandidateResolution) -> bool:

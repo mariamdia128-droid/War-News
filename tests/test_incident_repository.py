@@ -7,7 +7,7 @@ import app.accounts.models  # noqa: F401
 import app.logs.models  # noqa: F401
 import app.sources.models  # noqa: F401
 from app.news.dtos import IncidentListItemDTO, IncidentListParams
-from app.news.models import Incident, MessageStatus
+from app.news.models import Incident, IncidentUpdate, MessageStatus, UpdateAction
 from app.news.repositories.incident_repository import IncidentRepository
 from app.news.services.materialization.verification_signals import (
     LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
@@ -58,6 +58,69 @@ def test_pipeline_duplicate_for_raw_message_id_retires_incident() -> None:
     assert incident.duplicate_flag is False
     assert db.added == [incident]
     assert db.flush_calls == 1
+
+
+def test_toll_revisions_hide_noop_and_preserve_source_attribution() -> None:
+    incident_id = uuid4()
+    timestamp = datetime.now(timezone.utc)
+    no_op = IncidentUpdate(
+        incident_id=incident_id,
+        action=UpdateAction.pipeline_merge,
+        old_values={"deaths": None, "injuries": None},
+        new_values={
+            "story_revision": True,
+            "deaths": None,
+            "injuries": None,
+            "merged_from": {"raw_message_id": 1},
+        },
+        created_at=timestamp,
+    )
+    changed = IncidentUpdate(
+        incident_id=incident_id,
+        action=UpdateAction.pipeline_merge,
+        old_values={"deaths": None, "injuries": None},
+        new_values={
+            "story_revision": True,
+            "deaths": 1,
+            "injuries": None,
+            "merged_from": {
+                "raw_message_id": 9298,
+                "channel": "newtv",
+                "khabar": "شهيد في زبدين",
+            },
+        },
+        created_at=timestamp,
+    )
+    db = _SessionStub([no_op, changed])
+
+    revisions = IncidentRepository(db)._toll_revisions_for(incident_id)  # type: ignore[arg-type]
+
+    assert len(revisions) == 1
+    assert revisions[0].new_deaths == 1
+    assert revisions[0].source_raw_message_id == 9298
+    assert revisions[0].source_channel == "newtv"
+    assert revisions[0].source_khabar == "شهيد في زبدين"
+
+
+def test_toll_revision_ignores_malformed_merged_from_payload() -> None:
+    incident_id = uuid4()
+    update = IncidentUpdate(
+        incident_id=incident_id,
+        action=UpdateAction.pipeline_merge,
+        old_values={"deaths": None},
+        new_values={
+            "story_revision": True,
+            "deaths": 1,
+            "merged_from": "legacy",
+        },
+        created_at=datetime.now(timezone.utc),
+    )
+
+    revisions = IncidentRepository(_SessionStub([update]))._toll_revisions_for(  # type: ignore[arg-type]
+        incident_id
+    )
+
+    assert revisions[0].source_raw_message_id is None
 
 
 def test_pipeline_duplicate_for_raw_message_id_is_idempotent() -> None:

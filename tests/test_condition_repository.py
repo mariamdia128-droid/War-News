@@ -1,4 +1,6 @@
+import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +21,14 @@ from app.news.dtos import MatchResultStatus
 from app.news.models import Condition
 from app.news.repositories.condition_repository import ConditionRepository
 from app.news.services.matching.condition_aliases import CONDITION_ALIASES
+
+
+def test_vehicle_movement_is_seeded_without_a_hardcoded_id() -> None:
+    rows = json.loads(Path("Data/Conditions.json").read_text(encoding="utf-8"))
+    row = next(item for item in rows if item["action_en"] == "Vehicle Movement")
+
+    assert row["action_ar"] == "تحرك آليات"
+    assert "id" not in row
 
 
 class _ResultStub:
@@ -85,6 +95,17 @@ def test_condition_query_includes_evidence_backed_aliases() -> None:
     assert sql.count("CASE") == 3 * sum(
         len(aliases) for aliases in CONDITION_ALIASES.values()
     )
+
+
+def test_action_aliases_cover_vehicle_movement_detonation_and_sound_bombs() -> None:
+    aliases = {
+        action_ar: {alias.text for alias in values}
+        for action_ar, values in CONDITION_ALIASES.items()
+    }
+
+    assert {"تحرك لآليات", "تحرك آليات", "تحركت آليات"} <= aliases["تحرك آليات"]
+    assert {"تفجير", "تفجيران", "تفجيرات"} <= aliases["تلغيم وتفجير"]
+    assert {"إلقاء قنبلة صوتية", "قنبلة صوتية"} <= aliases["قنابل صوتية"]
 
 
 def test_real_verbose_airstrike_prefers_warplane_over_artillery() -> None:

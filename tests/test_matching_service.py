@@ -3,7 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.llm.dtos import ExtractionResult, VillageRole, VillageRoleEntry
+from app.llm.dtos import (
+    ExtractionCasualties,
+    ExtractionResult,
+    ExtractionSubEvent,
+    VillageRole,
+    VillageRoleEntry,
+)
 from app.news.actions.match_incident_action import MatchIncidentAction
 from app.news.dtos import (
     MatchResultDTO,
@@ -160,6 +166,28 @@ def test_village_roles_are_preserved_in_match_entries() -> None:
         result.village_matches[1].evidence_span
         == "المنصوري: شهيد و3 جرحى"
     )
+
+
+def test_message_10387_parenthetical_qualifier_is_not_a_second_village() -> None:
+    extraction = _extraction(
+        village=["فرون", "وادي الخنازير"],
+        action=None,
+        village_roles=[
+            VillageRoleEntry(
+                village="فرون",
+                qualifier_text="وادي الخنازير",
+            )
+        ],
+    )
+
+    result = MatchingService(
+        _SimilarRepositoryStub(10387, 0.9),
+        _SimilarRepositoryStub(None, None),
+    ).match(extraction)
+
+    assert len(result.village_matches) == 1
+    assert result.village_matches[0].raw_village_text == "فرون"
+    assert result.village_matches[0].qualifier_text == "وادي الخنازير"
 
 
 def test_any_village_low_confidence_flag_set_correctly() -> None:
@@ -428,10 +456,13 @@ def _geo_village(
     ref_name_ar: str,
     coord_x: float,
     coord_y: float,
+    caza_ar: str | None = None,
 ):
     return SimpleNamespace(
         id=village_id,
         ref_name_ar=ref_name_ar,
+        caza_ar=caza_ar,
+        caza_en=None,
         coord_x=coord_x,
         coord_y=coord_y,
     )
@@ -484,6 +515,124 @@ def test_geo_context_resolves_zibdine_near_harouf() -> None:
         zibdine_match.alternate_candidate_village_id
         == zibdine_jbayl.id
     )
+
+
+def test_qada_hint_resolves_zibdine_to_nabatiyeh_candidate() -> None:
+    zibdine_jbayl = _geo_village(1530, "زبدين", 0, 0, caza_ar="جبيل")
+    zibdine_nabatiyeh = _geo_village(
+        1529,
+        "زبدين النبطية",
+        0,
+        0,
+        caza_ar="النبطية",
+    )
+    villages = _GeoVillageRepositoryStub(
+        {
+            "زبدين": [
+                (zibdine_jbayl, 1.0),
+                (zibdine_nabatiyeh, 0.43),
+            ]
+        }
+    )
+    service = MatchingService(villages, _SimilarRepositoryStub(None, None))
+
+    result = service.match(_extraction(village=["زبدين قضاء النبطية"], action=None))
+
+    assert result.village_matches[0].matched_village_id == 1529
+    assert result.village_matches[0].village_match_status == MatchResultStatus.matched
+
+
+def test_raw_9298_qada_qualifier_resolves_zibdine_to_nabatiyeh() -> None:
+    zibdine_jbayl = _geo_village(1530, "زبدين", 0, 0, caza_ar="جبيل")
+    zibdine_nabatiyeh = _geo_village(
+        1529,
+        "زبدين النبطية",
+        0,
+        0,
+        caza_ar="النبطية",
+    )
+    villages = _GeoVillageRepositoryStub(
+        {
+            "زبدين": [
+                (zibdine_jbayl, 1.0),
+                (zibdine_nabatiyeh, 0.43),
+            ]
+        }
+    )
+    extraction = _extraction(
+        village=["زبدين"],
+        action=None,
+        village_roles=[
+            VillageRoleEntry(
+                village="زبدين",
+                qualifier_text="قضاء النبطية",
+            )
+        ],
+    )
+
+    result = MatchingService(
+        villages,
+        _SimilarRepositoryStub(None, None),
+    ).match(extraction)
+
+    assert result.village_matches[0].matched_village_id == 1529
+    assert result.village_matches[0].village_match_status == MatchResultStatus.matched
+
+
+def test_message_10395_bare_qsair_uses_south_lebanon_geo_anchor() -> None:
+    anchor = _geo_village(700, "الطيبة", 0, 0)
+    qsair_akkar = _geo_village(900, "القصير", 150000, 0, caza_ar="عكار")
+    aadchit_el_qoussair = _geo_village(
+        73256,
+        "عدشيت القصير",
+        5000,
+        0,
+        caza_ar="مرجعيون",
+    )
+    villages = _GeoVillageRepositoryStub(
+        {
+            "القصير": [
+                (qsair_akkar, 1.0),
+                (aadchit_el_qoussair, 0.42),
+            ]
+        },
+        aliases={"الطيبه": anchor},
+    )
+
+    result = MatchingService(
+        villages,
+        _SimilarRepositoryStub(None, None),
+    ).match(_extraction(village=["الطيبة", "القصير"], action=None))
+
+    assert result.village_matches[1].matched_village_id == 73256
+    assert result.village_matches[1].resolved_by_geo_context is True
+
+
+def test_sub_event_locations_receive_scoped_conditions() -> None:
+    villages = _MultiSimilarRepositoryStub([(101, 1.0), (202, 1.0)])
+    conditions = _MultiSimilarRepositoryStub([(5, 1.0)])
+    extraction = _extraction(village=[], action="قصف مدفعي")
+    extraction = extraction.model_copy(
+        update={
+            "sub_events": [
+                ExtractionSubEvent(
+                    locations=[
+                        VillageRoleEntry(village="المنصوري", role=VillageRole.target),
+                    ],
+                    action_description="قصف مدفعي",
+                    evidence_span="قصف مدفعي يستهدف بلدة المنصوري",
+                    casualties=ExtractionCasualties(),
+                )
+            ]
+        }
+    )
+    service = MatchingService(villages, conditions)
+
+    result = service.match(extraction)
+
+    assert len(result.village_matches) == 1
+    assert result.village_matches[0].matched_condition_id == 5
+    assert result.village_matches[0].event_index == 0
 
 
 def test_exact_duplicate_without_anchor_keeps_low_confidence_winner() -> None:

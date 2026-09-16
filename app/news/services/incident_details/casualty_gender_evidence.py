@@ -39,10 +39,14 @@ def _explicit_form_patterns(
     if singular:
         # One pattern per singular synonym so each can independently cover total=1.
         for term in singular:
-            patterns.append((1, _standalone(re.escape(term))))
+            patterns.append(
+                (1, _standalone(re.escape(normalize_arabic_text(term))))
+            )
     dual = terms_by_category(_CASUALTY_GENDER_YAML, dual_category)
     if dual:
-        alternation = "|".join(re.escape(term) for term in dual)
+        alternation = "|".join(
+            re.escape(normalize_arabic_text(term)) for term in dual
+        )
         patterns.append((2, _standalone(alternation)))
     return tuple(patterns)
 
@@ -61,11 +65,23 @@ _EXPLICIT_FORMS: dict[str, tuple[tuple[int, re.Pattern[str]], ...]] = {
 }
 
 _COUNTED_PLURALS: dict[str, tuple[str, ...]] = {
-    "male_deaths": terms_by_category(_CASUALTY_GENDER_YAML, "male_death_plural"),
-    "female_deaths": terms_by_category(_CASUALTY_GENDER_YAML, "female_death_plural"),
-    "male_injuries": terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_plural"),
-    "female_injuries": terms_by_category(
-        _CASUALTY_GENDER_YAML, "female_injury_plural"
+    "male_deaths": tuple(
+        normalize_arabic_text(term)
+        for term in terms_by_category(_CASUALTY_GENDER_YAML, "male_death_plural")
+    ),
+    "female_deaths": tuple(
+        normalize_arabic_text(term)
+        for term in terms_by_category(_CASUALTY_GENDER_YAML, "female_death_plural")
+    ),
+    "male_injuries": tuple(
+        normalize_arabic_text(term)
+        for term in terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_plural")
+    ),
+    "female_injuries": tuple(
+        normalize_arabic_text(term)
+        for term in terms_by_category(
+            _CASUALTY_GENDER_YAML, "female_injury_plural"
+        )
     ),
 }
 
@@ -90,6 +106,7 @@ def apply_explicit_arabic_gender_evidence(
     casualties: ExtractionCasualties,
 ) -> ExtractionCasualties:
     """Fill gender only when an unambiguous Arabic singular/dual form covers the total."""
+    text = normalize_arabic_text(text or "")
     values = casualties.model_dump(mode="python")
     for outcome, reported_key, total_key in (
         ("deaths", "deaths", "total_deaths"),
@@ -175,14 +192,58 @@ def apply_gendered_occupation_casualty_evidence(
     return ExtractionCasualties.model_validate(values)
 
 
+def infer_singular_death_count(
+    text: str,
+    casualties: ExtractionCasualties,
+) -> ExtractionCasualties:
+    """Infer one death from unambiguous singular death nouns when no total exists."""
+    values = casualties.model_dump(mode="python")
+    if any(
+        isinstance(values.get(key), int) and values.get(key) > 0
+        for key in ("deaths", "total_deaths", "male_deaths", "female_deaths")
+    ):
+        return casualties
+    normalized = normalize_arabic_text(text or "")
+    if not normalized:
+        return casualties
+    male_hit = any(
+        count == 1 and pattern.search(normalized)
+        for count, pattern in _EXPLICIT_FORMS["male_deaths"]
+    )
+    female_hit = any(
+        count == 1 and pattern.search(normalized)
+        for count, pattern in _EXPLICIT_FORMS["female_deaths"]
+    )
+    if male_hit == female_hit:
+        return casualties
+    singular_context = re.search(
+        r"(?:سقوط|ارتقاء|استشهاد|وفاه)\s+[^،,:؛]{0,30}"
+        r"(?:شهيد|شهيده|قتيل|قتيله)"
+        r"|(?:شهيد|شهيده|قتيل|قتيله)\s+"
+        r"(?:في|جراء|اثر|نتيجه|بعد|بغاره|بقصف|بضربه)"
+        r"|(?:شهيد|شهيده)\s+(?:مسعف|صحفي|اعلامي|جندي|عنصر)",
+        normalized,
+    )
+    if singular_context is None:
+        return casualties
+    values["deaths"] = 1
+    values["total_deaths"] = 1
+    return ExtractionCasualties.model_validate(values)
+
+
 def apply_casualty_gender_backstops(
     text: str,
     result: ExtractionResult,
 ) -> ExtractionResult:
     """Apply explicit-form and occupation gender backstops to root and sub-events."""
+    if not isinstance(result, ExtractionResult):
+        return result
     root = apply_gendered_occupation_casualty_evidence(
         text,
-        apply_explicit_arabic_gender_evidence(text, result.casualties),
+        apply_explicit_arabic_gender_evidence(
+            text,
+            infer_singular_death_count(text, result.casualties),
+        ),
     )
     sub_events: list[ExtractionSubEvent] = []
     for sub_event in result.sub_events:
@@ -194,7 +255,7 @@ def apply_casualty_gender_backstops(
                         span,
                         apply_explicit_arabic_gender_evidence(
                             span,
-                            sub_event.casualties,
+                            infer_singular_death_count(span, sub_event.casualties),
                         ),
                     )
                 }

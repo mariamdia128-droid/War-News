@@ -441,7 +441,17 @@ def test_extract_tier1_parses_sub_events() -> None:
             "action_description": "غارات على منزل وسيارة",
             "sub_events": [
                 {
-                    "action_description": "غارة على منزل",
+                        "locations": [
+                            {
+                                "village": "كفررمان",
+                                "role": "target",
+                                "deaths": 8,
+                                "injuries": 11,
+                                "evidence_span": "8 شهداء و11 جريحاً",
+                                "qualifier_text": None,
+                            }
+                        ],
+                        "action_text": "غارة على منزل",
                     "casualties": {
                         "deaths": 8,
                         "injuries": 11,
@@ -449,10 +459,25 @@ def test_extract_tier1_parses_sub_events() -> None:
                         "total_injuries": 11,
                     },
                     "evidence_span": "غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً",
-                    "casualty_evidence": [],
+                        "casualty_evidence": [
+                            {"field": "deaths", "evidence_span": "8 شهداء"},
+                            {"field": "injuries", "evidence_span": "11 جريحاً"},
+                            {"field": "total_deaths", "evidence_span": "8 شهداء"},
+                            {"field": "total_injuries", "evidence_span": "11 جريحاً"},
+                        ],
                 },
                 {
-                    "action_description": "استهداف سيارة",
+                        "locations": [
+                            {
+                                "village": "كفررمان",
+                                "role": "target",
+                                "deaths": 1,
+                                "injuries": 2,
+                                "evidence_span": "فسقط 1 شهيد وأصيب 2",
+                                "qualifier_text": None,
+                            }
+                        ],
+                        "action_text": "استهداف سيارة",
                     "casualties": {
                         "deaths": 1,
                         "injuries": 2,
@@ -460,8 +485,14 @@ def test_extract_tier1_parses_sub_events() -> None:
                         "total_injuries": 2,
                         "male_deaths": 1,
                     },
-                    "evidence_span": "استُهدفت سيارة فاستُشهد مسعف وأصيب 2",
-                    "casualty_evidence": [],
+                        "evidence_span": "استُهدفت سيارة فسقط 1 شهيد وأصيب 2",
+                        "casualty_evidence": [
+                                {"field": "deaths", "evidence_span": "1 شهيد"},
+                            {"field": "injuries", "evidence_span": "أصيب 2"},
+                                {"field": "total_deaths", "evidence_span": "1 شهيد"},
+                            {"field": "total_injuries", "evidence_span": "أصيب 2"},
+                                {"field": "male_deaths", "evidence_span": "1 شهيد"},
+                        ],
                 },
             ],
             "casualties": {},
@@ -476,7 +507,11 @@ def test_extract_tier1_parses_sub_events() -> None:
         category_detail=_CategoryDetailStub(details={}),
     )
 
-    result = service.extract_tier1("غارة على منزل وسيارة في كفررمان", raw_message_id=7)
+    result = service.extract_tier1(
+        "غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً، "
+        "ثم استُهدفت سيارة فسقط 1 شهيد وأصيب 2",
+        raw_message_id=7,
+    )
 
     assert len(result.sub_events) == 2
     assert result.sub_events[0].casualties.deaths == 8

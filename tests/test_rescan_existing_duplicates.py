@@ -46,7 +46,7 @@ def _incident(
     )
 
 
-def test_scan_identifies_possible_duplicate_from_embedding() -> None:
+def test_scan_identifies_high_confidence_duplicate_from_embedding() -> None:
     result = scan_incidents(
         [
             _incident(1, embedding=[1.0, 0.0]),
@@ -57,11 +57,12 @@ def test_scan_identifies_possible_duplicate_from_embedding() -> None:
     )
 
     assert result.pairs_evaluated == 1
-    assert result.verdict_counts["possible_duplicate"] == 1
+    assert result.verdict_counts["high_confidence_duplicate"] == 1
     assert len(result.plans) == 1
     assert result.plans[0].earlier.id == UUID(int=1)
     assert result.plans[0].later.id == UUID(int=2)
     assert result.plans[0].embedding_similarity == 0.8
+    assert result.plans[0].duplicate_level == "high"
 
 
 def test_scan_uses_verified_earlier_incident_as_candidate() -> None:

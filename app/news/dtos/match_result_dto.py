@@ -23,6 +23,14 @@ class VillageMatchResult(BaseModel):
     deaths: int | None = None
     injuries: int | None = None
     evidence_span: str | None = None
+    matched_condition_id: int | None = None
+    condition_confidence: float | None = None
+    condition_match_status: MatchResultStatus | None = None
+    condition_review_required: bool | None = None
+    raw_condition_text: str | None = None
+    event_index: int | None = None
+    event_location_count: int | None = None
+    qualifier_text: str | None = None
     resolved_by_geo_context: bool = False
     geo_context_anchor_village_id: int | None = None
     original_top_candidate_id: int | None = None

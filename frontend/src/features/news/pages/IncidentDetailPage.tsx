@@ -512,6 +512,15 @@ export const IncidentDetailPage = () => {
                 className="text-caption text-text-muted"
               >
                 {`Toll updated ${formatDateTime(revision.updated_at)} — was ${revision.old_deaths ?? "—"}/${revision.old_injuries ?? "—"}, now ${revision.new_deaths ?? "—"}/${revision.new_injuries ?? "—"}`}
+                {revision.source_raw_message_id ? (
+                  <a
+                    className="ml-2 font-semibold text-primary hover:underline"
+                    href={`${roleBase}/rejected-news?raw_message_id=${revision.source_raw_message_id}&source=1`}
+                    title={revision.source_channel ?? revision.source_khabar ?? undefined}
+                  >
+                    View source
+                  </a>
+                ) : null}
               </p>
             ))}
           </div>

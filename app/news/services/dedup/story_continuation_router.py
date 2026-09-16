@@ -57,10 +57,15 @@ class StoryContinuationRouter:
             candidate_embedding=candidate_embedding,
             exclude_raw_message_id=exclude_raw_message_id,
         )
+        allowed_village_ids = _story_equivalent_village_ids(
+            scoped_match,
+            village_id,
+            candidate_text=candidate_text,
+        )
         village_candidates = [
             candidate
             for candidate in candidates
-            if candidate.incident.village_id == village_id
+            if candidate.incident.village_id in allowed_village_ids
         ]
         classification = self.relationships.classify_best(
             current_text=strip_boilerplate(candidate_text or ""),
@@ -88,3 +93,45 @@ def _candidate_by_id(
         if candidate.incident.id == incident_id:
             return candidate
     return None
+
+
+def _story_equivalent_village_ids(
+    match_result: dict[str, Any],
+    village_id: int,
+    *,
+    candidate_text: str | None = None,
+) -> set[int]:
+    allowed = {village_id}
+    matches = match_result.get("village_matches") or []
+    current_event_index: int | None = None
+    for item in matches:
+        if not isinstance(item, dict):
+            continue
+        if item.get("matched_village_id") != village_id:
+            continue
+        if item.get("event_location_count", 0) and item.get("event_location_count") > 1:
+            current_event_index = item.get("event_index")
+        break
+    if current_event_index is None:
+        normalized_text = strip_boilerplate(candidate_text or "")
+        if "طريق" in normalized_text and any(
+            separator in normalized_text for separator in ("-", "–", "—")
+        ):
+            for item in matches:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("village_role", "target") != "target":
+                    continue
+                matched_id = item.get("matched_village_id")
+                if isinstance(matched_id, int) and not isinstance(matched_id, bool):
+                    allowed.add(matched_id)
+        return allowed
+    for item in matches:
+        if not isinstance(item, dict):
+            continue
+        if item.get("event_index") != current_event_index:
+            continue
+        matched_id = item.get("matched_village_id")
+        if isinstance(matched_id, int) and not isinstance(matched_id, bool):
+            allowed.add(matched_id)
+    return allowed

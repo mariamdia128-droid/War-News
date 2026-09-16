@@ -487,21 +487,36 @@ class IncidentRepository(IncidentRepositoryInterface):
             if not new_values.get("story_revision"):
                 continue
             old_values = update.old_values or {}
+            old_deaths = _optional_count(
+                old_values.get("total_deaths"), old_values.get("deaths")
+            )
+            old_injuries = _optional_count(
+                old_values.get("total_injuries"), old_values.get("injuries")
+            )
+            new_deaths = _optional_count(
+                new_values.get("total_deaths"), new_values.get("deaths")
+            )
+            new_injuries = _optional_count(
+                new_values.get("total_injuries"), new_values.get("injuries")
+            )
+            if (old_deaths, old_injuries) == (new_deaths, new_injuries):
+                continue
+            merged_from_value = new_values.get("merged_from")
+            merged_from = (
+                merged_from_value
+                if isinstance(merged_from_value, dict)
+                else {}
+            )
             revisions.append(
                 TollRevisionDTO(
                     updated_at=update.created_at,
-                    old_deaths=_optional_count(
-                        old_values.get("total_deaths"), old_values.get("deaths")
-                    ),
-                    old_injuries=_optional_count(
-                        old_values.get("total_injuries"), old_values.get("injuries")
-                    ),
-                    new_deaths=_optional_count(
-                        new_values.get("total_deaths"), new_values.get("deaths")
-                    ),
-                    new_injuries=_optional_count(
-                        new_values.get("total_injuries"), new_values.get("injuries")
-                    ),
+                    old_deaths=old_deaths,
+                    old_injuries=old_injuries,
+                    new_deaths=new_deaths,
+                    new_injuries=new_injuries,
+                    source_raw_message_id=merged_from.get("raw_message_id"),
+                    source_channel=merged_from.get("channel"),
+                    source_khabar=merged_from.get("khabar"),
                 )
             )
         return revisions
@@ -1467,7 +1482,10 @@ class IncidentRepository(IncidentRepositoryInterface):
         if exclude_raw_message_id is not None:
             filters.append(Incident.raw_message_id != exclude_raw_message_id)
 
-        rows = self.db.execute(select(*columns).where(*filters)).all()
+        result = self.db.execute(select(*columns).where(*filters))
+        if result is None:
+            return []
+        rows = result.all()
 
         candidates: list[FastDedupCandidate] = []
         for row in rows:
@@ -1566,7 +1584,10 @@ class IncidentRepository(IncidentRepositoryInterface):
         if exclude_raw_message_id is not None:
             filters.append(Incident.raw_message_id != exclude_raw_message_id)
 
-        rows = self.db.execute(select(*columns).where(*filters)).all()
+        result = self.db.execute(select(*columns).where(*filters))
+        if result is None:
+            return []
+        rows = result.all()
 
         candidates: list[StoryCandidate] = []
         for row in rows:

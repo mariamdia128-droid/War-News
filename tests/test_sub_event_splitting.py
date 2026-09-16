@@ -6,7 +6,13 @@ from types import SimpleNamespace
 import app.accounts.models  # noqa: F401
 import app.logs.models  # noqa: F401
 import app.sources.models  # noqa: F401
-from app.llm.dtos import ExtractionCasualties, ExtractionResult, ExtractionSubEvent
+from app.llm.dtos import (
+    CasualtyScope,
+    ExtractionCasualties,
+    ExtractionResult,
+    ExtractionSubEvent,
+    VillageRoleEntry,
+)
 from app.news.dtos import MatchResultStatus
 from app.news.models import Incident, IncidentDetail
 from app.news.services.dedup.fast_path_dedup import FastPathDedupOutcome
@@ -16,7 +22,6 @@ from app.news.services.materialization.incident_materialization_service import (
 )
 from tests.test_incident_materialization_service import (
     _SessionStub,
-    _match_result,
     _representative,
 )
 from tests.test_matching_service import _SimilarRepositoryStub, _extraction
@@ -33,7 +38,8 @@ def _two_action_extraction() -> ExtractionResult:
         action_description="غارات على منزل وسيارة",
         sub_events=[
             ExtractionSubEvent(
-                action_description="غارة على منزل",
+                locations=[VillageRoleEntry(village="كفر رمان", deaths=8, injuries=11)],
+                action_text="غارة على منزل",
                 casualties=ExtractionCasualties(
                     deaths=8,
                     injuries=11,
@@ -43,7 +49,8 @@ def _two_action_extraction() -> ExtractionResult:
                 evidence_span=HOUSE_SPAN,
             ),
             ExtractionSubEvent(
-                action_description="استهداف سيارة",
+                locations=[VillageRoleEntry(village="كفر رمان", deaths=1, injuries=2)],
+                action_text="استهداف سيارة",
                 casualties=ExtractionCasualties(
                     deaths=1,
                     injuries=2,
@@ -67,6 +74,24 @@ class _ConditionByTextStub:
         return [(SimpleNamespace(id=1), 0.93)]
 
 
+class _RouteVillageRepositoryStub:
+    def find_similar(self, text: str, limit: int = 5):
+        village_id = 652 if "حاروف" in text else 1529
+        return [
+            (
+                SimpleNamespace(
+                    id=village_id,
+                    ref_name_ar=text,
+                    caza_ar="النبطية",
+                    caza_en="Nabatiyeh",
+                    coord_x=None,
+                    coord_y=None,
+                ),
+                1.0,
+            )
+        ]
+
+
 def test_matching_scores_each_sub_event_action() -> None:
     service = MatchingService(
         _SimilarRepositoryStub(851, 0.9),
@@ -82,35 +107,18 @@ def test_matching_scores_each_sub_event_action() -> None:
     assert result.sub_event_matches[1].condition_match_status == MatchResultStatus.matched
 
 
-def test_fast_path_creates_one_incident_per_sub_event() -> None:
+def test_message_10395_creates_only_declared_location_action_pairs() -> None:
     db = _SessionStub()
     service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    extraction = _two_action_extraction()
+    match_result = MatchingService(
+        _SimilarRepositoryStub(851, 0.9),
+        _ConditionByTextStub(),
+    ).match(extraction)
     representative = _representative(
-        match_result={
-            **_match_result(village_id=851, condition_id=1),
-            "sub_event_matches": [
-                {
-                    "index": 0,
-                    "action_description": "غارة على منزل",
-                    "evidence_span": HOUSE_SPAN,
-                    "matched_condition_id": 1,
-                    "condition_confidence": 0.93,
-                    "condition_match_status": "matched",
-                    "condition_review_required": False,
-                },
-                {
-                    "index": 1,
-                    "action_description": "استهداف سيارة",
-                    "evidence_span": CAR_SPAN,
-                    "matched_condition_id": 8,
-                    "condition_confidence": 0.91,
-                    "condition_match_status": "matched",
-                    "condition_review_required": False,
-                },
-            ],
-        }
+        match_result=match_result.model_dump(mode="json")
     )
-    representative.extraction_result = _two_action_extraction().model_dump(mode="json")
+    representative.extraction_result = extraction.model_dump(mode="json")
     fast_dedup = SimpleNamespace(
         decide_for_village=lambda **_kwargs: SimpleNamespace(
             outcome=FastPathDedupOutcome.materialize,
@@ -146,3 +154,62 @@ def test_single_action_extraction_does_not_split() -> None:
 
     assert result.sub_event_matches == []
     assert result.matched_condition_id == 5
+
+
+def test_raw_9302_route_scoped_casualty_is_not_copied_to_both_endpoints() -> None:
+    route_span = "شهيد في غارة استهدفت دراجة على طريق مرج حاروف - زبدين"
+    extraction = ExtractionResult(
+        is_relevant=True,
+        village=["حاروف", "زبدين"],
+        village_roles=[],
+        action_description="غارة على دراجة نارية",
+        sub_events=[
+            ExtractionSubEvent(
+                locations=[
+                    VillageRoleEntry(village="حاروف"),
+                    VillageRoleEntry(
+                        village="زبدين",
+                        deaths=1,
+                        evidence_span=route_span,
+                    ),
+                ],
+                action_text="غارة على دراجة نارية",
+                casualties=ExtractionCasualties(
+                    deaths=1,
+                    total_deaths=1,
+                    male_deaths=1,
+                ),
+                evidence_span=route_span,
+            )
+        ],
+        casualty_scope=CasualtyScope.per_village_exact,
+        casualties=ExtractionCasualties(),
+        model="test",
+        extracted_at=datetime.now(timezone.utc),
+    )
+    match_result = MatchingService(
+        _RouteVillageRepositoryStub(),
+        _ConditionByTextStub(),
+    ).match(extraction)
+    representative = _representative(
+        match_result=match_result.model_dump(mode="json")
+    )
+    representative.raw_text = route_span
+    representative.extraction_result = extraction.model_dump(mode="json")
+    db = _SessionStub()
+
+    created = IncidentMaterializationService(db).process_fast_path(  # type: ignore[arg-type]
+        representative,
+        SimpleNamespace(
+            decide_for_village=lambda **_kwargs: SimpleNamespace(
+                outcome=FastPathDedupOutcome.materialize,
+                representative_raw_message_id=None,
+                canonical_incident_id=None,
+            )
+        ),
+    )
+
+    assert len(created) == 2
+    assert sorted(incident.deaths or 0 for incident in created) == [0, 1]
+    assert created[0].story_group_id == created[1].story_group_id
+    assert created[0].story_group_id is not None

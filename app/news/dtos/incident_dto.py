@@ -130,6 +130,9 @@ class TollRevisionDTO(BaseModel):
     old_injuries: int | None = None
     new_deaths: int | None = None
     new_injuries: int | None = None
+    source_raw_message_id: int | None = None
+    source_channel: str | None = None
+    source_khabar: str | None = None
 
 
 class RelatedIncidentDTO(BaseModel):

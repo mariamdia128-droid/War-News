@@ -46,6 +46,21 @@
   meaning: "تلغيم وتفجير"
   notes: "recon 2026-09-16: plural detonation variant"
 
+- term: "إلقاء قنبلة صوتية"
+  category: condition_alias
+  meaning: "قنابل صوتية"
+  notes: "Singular sound-bomb wording."
+
+- term: "قنبلة صوتية"
+  category: condition_alias
+  meaning: "قنابل صوتية"
+  notes: "Singular sound-bomb wording."
+
+- term: "تحرك لآليات"
+  category: condition_alias
+  meaning: "تحرك آليات"
+  notes: "Vehicle movement wording without the definite article."
+
 - term: "تحرك للآليات"
   category: condition_alias
   meaning: "تحرك آليات"
@@ -55,6 +70,11 @@
   category: condition_alias
   meaning: "تحرك آليات"
   notes: "recon 2026-09-16: Vehicle Movement condition"
+
+- term: "تحركت آليات"
+  category: condition_alias
+  meaning: "تحرك آليات"
+  notes: "Inflected Vehicle Movement wording."
 
 - term: "تحرك للدبابات"
   category: condition_alias

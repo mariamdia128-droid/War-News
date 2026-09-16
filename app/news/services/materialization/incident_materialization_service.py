@@ -152,7 +152,11 @@ def _new_incident_payload(incident: Incident) -> str:
         "raw_message_id": incident.raw_message_id,
         "raw_status": raw_message.status.value if raw_message is not None else None,
         "village_id": incident.village_id,
-        "story_group_id": str(incident.story_group_id) if incident.story_group_id else None,
+        "story_group_id": (
+            str(getattr(incident, "story_group_id", None))
+            if getattr(incident, "story_group_id", None)
+            else None
+        ),
         "condition_id": incident.condition_id,
         "village": (
             village.ref_name_en or village.cad_name if village is not None else None
@@ -265,7 +269,7 @@ class IncidentMaterializationService:
             return []
 
         assert match_result is not None
-        condition_id = self._required_int(match_result, "matched_condition_id")
+        condition_id = self._materializable_condition_id(match_result)
         condition_status = match_result.get("condition_match_status")
 
         if representative.extraction_result is None:
@@ -288,7 +292,7 @@ class IncidentMaterializationService:
             for village_match in village_matches
             if self._materializes_village_match(village_match)
         ]
-        is_multi_village = len(target_matches) > 1
+        is_multi_village = self._distinct_target_village_count(target_matches) > 1
         self._ensure_bulletin_group(
             representative,
             extraction,
@@ -310,8 +314,14 @@ class IncidentMaterializationService:
 
         for unit in units:
             village_match = unit.village_match
-            condition_id = unit.condition_id
-            condition_status = unit.condition_status
+            condition_id = self._condition_id_for_village(unit.village_match, unit.condition_id)
+            if condition_id is None:
+                self.fast_stats.skipped_ineligible += 1
+                continue
+            condition_status = self._condition_status_for_village(
+                unit.village_match,
+                unit.condition_status,
+            )
             if not self._materializes_village_match(village_match):
                 logger.info(
                     "raw_message_id=%s village suppressed from materialization: role=%r text=%r",
@@ -322,14 +332,15 @@ class IncidentMaterializationService:
                 continue
             village_status = village_match.get("village_match_status")
             village_id = self._optional_int(village_match.get("matched_village_id"))
-            if unit.casualties is not None:
-                village_casualties = unit.casualties
-            else:
-                village_casualties = self._root_casualties_for_village(
+            village_casualties = (
+                unit.casualties
+                if unit.casualties is not None
+                else self._casualties_for_village(
+                    extraction,
                     village_match,
-                    extraction.casualties,
                     is_multi_village=is_multi_village,
                 )
+            )
             village_deaths = village_casualties.deaths
             village_injuries = village_casualties.injuries
             holds_village_lock = (
@@ -365,7 +376,11 @@ class IncidentMaterializationService:
             materializable_villages += 1
 
             story_route = None
-            if decision.outcome != FastPathDedupOutcome.confident_duplicate:
+            if (
+                decision.outcome != FastPathDedupOutcome.confident_duplicate
+                and isinstance(representative.content_embedding, list)
+                and bool(representative.content_embedding)
+            ):
                 story_route = self.story_router.route_for_village(
                     match_result=match_result,
                     message_datetime=event_datetime,
@@ -404,14 +419,19 @@ class IncidentMaterializationService:
             ):
                 confident_duplicate_villages += 1
                 representative_raw_message_id = story_route.candidate.raw_message_id
+                revision_casualties = self._revision_casualties_for_route(
+                    unit,
+                    extraction,
+                    village_casualties,
+                )
                 self.story_router.incidents.apply_story_revision(
                     existing=story_route.candidate,
                     new_candidate_data=self._story_revision_payload(
                         representative=representative,
                         extraction=extraction,
-                        village_casualties=village_casualties,
-                        village_deaths=village_deaths,
-                        village_injuries=village_injuries,
+                        village_casualties=revision_casualties,
+                        village_deaths=revision_casualties.deaths,
+                        village_injuries=revision_casualties.injuries,
                         is_multi_village=is_multi_village,
                     ),
                     raw_message_id=representative.id,
@@ -438,6 +458,7 @@ class IncidentMaterializationService:
                     condition_id=condition_id,
                     event_datetime=event_datetime,
                     origin_villages=origin_villages,
+                    location_qualifier=village_match.get("qualifier_text"),
                     deaths=village_deaths,
                     injuries=village_injuries,
                     duplicate_flag=True,
@@ -572,6 +593,7 @@ class IncidentMaterializationService:
                 condition_id=condition_id,
                 event_datetime=event_datetime,
                 origin_villages=origin_villages,
+                location_qualifier=village_match.get("qualifier_text"),
                 deaths=village_deaths,
                 injuries=village_injuries,
                 scope_review_reason=extraction.casualty_scope_review_reason
@@ -740,6 +762,16 @@ class IncidentMaterializationService:
             "children_i": village_casualties.children_injuries,
         }
 
+    @staticmethod
+    def _revision_casualties_for_route(
+        unit: _FastPathUnit,
+        extraction: ExtractionResult,
+        village_casualties: ExtractionCasualties,
+    ) -> ExtractionCasualties:
+        # Route endpoints may describe one event, but casualties still belong
+        # only to the endpoint whose location entry carries the explicit count.
+        return village_casualties
+
     def _mark_unmaterializable(self, representative: RawMessage, reason: str) -> None:
         """Persist a terminal status in its own transaction.
 
@@ -773,6 +805,7 @@ class IncidentMaterializationService:
         condition_id: int,
         event_datetime: datetime,
         origin_villages: list[str],
+        location_qualifier: Any,
         deaths: int | None,
         injuries: int | None,
         duplicate_flag: bool = False,
@@ -831,7 +864,7 @@ class IncidentMaterializationService:
             event_time=event_datetime.time(),
             khabar=sanitized_khabar,
             khabar_embedding=representative.content_embedding,
-            note=self._origin_village_note(origin_villages),
+            note=self._incident_note(origin_villages, location_qualifier),
             total_deaths=total_deaths,
             total_injuries=total_injuries,
             deaths=deaths,
@@ -914,7 +947,7 @@ class IncidentMaterializationService:
             return []
 
         assert match_result is not None
-        condition_id = self._required_int(match_result, "matched_condition_id")
+        condition_id = self._materializable_condition_id(match_result)
 
         if representative.extraction_result is None:
             raise ValueError(
@@ -946,7 +979,7 @@ class IncidentMaterializationService:
             for village_match in village_matches
             if self._materializes_village_match(village_match)
         ]
-        is_multi_village = len(target_matches) > 1
+        is_multi_village = self._distinct_target_village_count(target_matches) > 1
         category_casualties_suppressed = False
         if is_multi_village:
             mapped_fields, category_casualties_suppressed = (
@@ -967,6 +1000,17 @@ class IncidentMaterializationService:
             )
             return []
 
+        event_indexes = {
+            index
+            for item in target_matches
+            if (index := self._optional_int(item.get("event_index"))) is not None
+        }
+        shared_story_group_id = (
+            uuid4()
+            if len(event_indexes) >= 2
+            or (event_indexes and len(target_matches) >= 2)
+            else None
+        )
         for village_match in village_matches:
             if not self._materializes_village_match(village_match):
                 logger.info(
@@ -978,9 +1022,16 @@ class IncidentMaterializationService:
                 continue
             village_status = village_match.get("village_match_status")
             village_id = self._optional_int(village_match.get("matched_village_id"))
-            village_casualties = self._root_casualties_for_village(
+            village_condition_id = self._condition_id_for_village(
                 village_match,
-                casualties,
+                condition_id,
+            )
+            if village_condition_id is None:
+                self.stats.skipped_ineligible += 1
+                continue
+            village_casualties = self._casualties_for_village(
+                extraction,
+                village_match,
                 is_multi_village=is_multi_village,
             )
             village_deaths = village_casualties.deaths
@@ -1014,8 +1065,9 @@ class IncidentMaterializationService:
             exact_hash = self._build_exact_hash(
                 khabar=sanitized_khabar,
                 village_id=village_id,
-                condition_id=condition_id,
+                condition_id=village_condition_id,
                 event_date=event_datetime.date().isoformat(),
+                hash_suffix=self._event_hash_suffix(extraction, village_match),
             )
 
             # Dedup check: merge into an existing similar incident instead of
@@ -1028,7 +1080,7 @@ class IncidentMaterializationService:
             if self.dedup_service is not None and khabar_embedding is not None:
                 existing, score = self.dedup_service.find_best_match(
                     village_id=village_id,
-                    condition_id=condition_id,
+                    condition_id=village_condition_id,
                     event_date=event_datetime.date(),
                     khabar_embedding=khabar_embedding,
                     exclude_raw_message_id=representative.id,
@@ -1145,13 +1197,16 @@ class IncidentMaterializationService:
             incident = Incident(
                 raw_message_id=representative.id,
                 village_id=village_id,
-                condition_id=condition_id,
+                condition_id=village_condition_id,
                 source_id=representative.source_id,
                 event_date=event_datetime.date(),
                 event_time=event_datetime.time(),
                 khabar=sanitized_khabar,
                 khabar_embedding=khabar_embedding,
-                note=self._origin_village_note(origin_villages),
+                note=self._incident_note(
+                    origin_villages,
+                    village_match.get("qualifier_text"),
+                ),
                 total_deaths=total_deaths,
                 total_injuries=total_injuries,
                 deaths=village_deaths,
@@ -1162,6 +1217,7 @@ class IncidentMaterializationService:
                 duplicate_similarity_score=duplicate_score,
                 verification_status=verification_status,
                 verification_reason=verification_reason,
+                story_group_id=shared_story_group_id,
                 created_by=None,
             )
 
@@ -1291,7 +1347,54 @@ class IncidentMaterializationService:
         root_condition_status: Any,
         representative_text: str | None,
     ) -> list[_FastPathUnit]:
-        """One unit per village, or village×sub-event when a bulletin splits."""
+        """Build only declared location/action pairs; never a Cartesian product."""
+        indexed_matches = [
+            item
+            for item in village_matches
+            if self._optional_int(item.get("event_index")) is not None
+        ]
+        if indexed_matches:
+            event_indexes = {
+                index
+                for item in indexed_matches
+                if (index := self._optional_int(item.get("event_index"))) is not None
+            }
+            shared_group = (
+                uuid4()
+                if len(event_indexes) >= 2 or len(indexed_matches) >= 2
+                else None
+            )
+            units: list[_FastPathUnit] = []
+            for village_match in indexed_matches:
+                index = self._optional_int(village_match.get("event_index"))
+                if index is None or not 0 <= index < len(extraction.sub_events):
+                    continue
+                condition_id = self._condition_id_for_village(
+                    village_match,
+                    root_condition_id,
+                )
+                if condition_id is None:
+                    continue
+                sub_event = extraction.sub_events[index]
+                units.append(
+                    _FastPathUnit(
+                        village_match=village_match,
+                        condition_id=condition_id,
+                        condition_status=self._condition_status_for_village(
+                            village_match,
+                            root_condition_status,
+                        ),
+                        casualties=self._event_casualties_for_match(
+                            sub_event,
+                            village_match,
+                        ),
+                        hash_suffix=self._event_hash_suffix(extraction, village_match),
+                        route_text=sub_event.evidence_span or representative_text,
+                        story_group_id=shared_group,
+                    )
+                )
+            return units
+
         paired: list[tuple[int, ExtractionSubEvent, dict[str, Any], int]] = []
         sub_matches = match_result.get("sub_event_matches") or []
         by_index: dict[int, dict[str, Any]] = {}
@@ -1314,40 +1417,163 @@ class IncidentMaterializationService:
                 continue
             paired.append((index, sub_event, match or {}, condition_id))
 
-        splitting = len(paired) >= 2
-        shared_group = uuid4() if splitting else None
+        if len(paired) >= 2:
+            shared_group = uuid4()
+            units: list[_FastPathUnit] = []
+            for village_match in village_matches:
+                for index, sub_event, match, sub_condition_id in paired:
+                    suffix = (sub_event.evidence_span or f"sub-{index}").strip()[:80]
+                    units.append(
+                        _FastPathUnit(
+                            village_match=village_match,
+                            condition_id=sub_condition_id,
+                            condition_status=match.get(
+                                "condition_match_status",
+                                root_condition_status,
+                            ),
+                            casualties=sub_event.casualties,
+                            hash_suffix=suffix,
+                            route_text=sub_event.evidence_span or representative_text,
+                            story_group_id=shared_group,
+                        )
+                    )
+            return units
+
         units: list[_FastPathUnit] = []
         for village_match in village_matches:
-            if not splitting:
-                units.append(
-                    _FastPathUnit(
-                        village_match=village_match,
-                        condition_id=root_condition_id,
-                        condition_status=root_condition_status,
-                        casualties=None,
-                        hash_suffix=None,
-                        route_text=representative_text,
-                        story_group_id=None,
-                    )
-                )
+            condition_id = self._condition_id_for_village(
+                village_match,
+                root_condition_id,
+            )
+            if condition_id is None:
                 continue
-            for index, sub_event, match, sub_condition_id in paired:
-                suffix = (sub_event.evidence_span or f"sub-{index}").strip()[:80]
-                units.append(
-                    _FastPathUnit(
-                        village_match=village_match,
-                        condition_id=sub_condition_id,
-                        condition_status=match.get(
-                            "condition_match_status",
-                            root_condition_status,
-                        ),
-                        casualties=sub_event.casualties,
-                        hash_suffix=suffix,
-                        route_text=sub_event.evidence_span or representative_text,
-                        story_group_id=shared_group,
-                    )
+            units.append(
+                _FastPathUnit(
+                    village_match=village_match,
+                    condition_id=condition_id,
+                    condition_status=self._condition_status_for_village(
+                        village_match,
+                        root_condition_status,
+                    ),
+                    casualties=None,
+                    hash_suffix=None,
+                    route_text=representative_text,
+                    story_group_id=None,
                 )
+            )
         return units
+
+    @classmethod
+    def _condition_id_for_village(
+        cls,
+        village_match: dict[str, Any],
+        fallback: int,
+    ) -> int | None:
+        condition_id = cls._optional_int(village_match.get("matched_condition_id"))
+        if condition_id is not None:
+            return condition_id
+        if village_match.get("event_index") is not None:
+            return None
+        return fallback
+
+    @staticmethod
+    def _condition_status_for_village(
+        village_match: dict[str, Any],
+        fallback: Any,
+    ) -> Any:
+        return village_match.get("condition_match_status") or fallback
+
+    @classmethod
+    def _materializable_condition_id(cls, match_result: dict[str, Any]) -> int:
+        root = cls._optional_int(match_result.get("matched_condition_id"))
+        if root is not None:
+            return root
+        for village_match in match_result.get("village_matches") or []:
+            if not isinstance(village_match, dict):
+                continue
+            condition_id = cls._optional_int(
+                village_match.get("matched_condition_id")
+            )
+            if condition_id is not None:
+                return condition_id
+        raise ValueError("match_result has no materializable condition id")
+
+    @classmethod
+    def _distinct_target_village_count(
+        cls,
+        target_matches: list[dict[str, Any]],
+    ) -> int:
+        return len(
+            {
+                village_id
+                for item in target_matches
+                if (village_id := cls._optional_int(item.get("matched_village_id")))
+                is not None
+            }
+        )
+
+    @classmethod
+    def _event_casualties_for_match(
+        cls,
+        sub_event: ExtractionSubEvent,
+        village_match: dict[str, Any],
+    ) -> ExtractionCasualties:
+        deaths = cls._optional_int(village_match.get("deaths"))
+        injuries = cls._optional_int(village_match.get("injuries"))
+        location_count = cls._optional_int(village_match.get("event_location_count"))
+        if location_count is not None and location_count > 1:
+            if deaths is None and injuries is None:
+                return ExtractionCasualties()
+            return sub_event.casualties.model_copy(
+                update={
+                    "deaths": deaths,
+                    "total_deaths": deaths,
+                    "injuries": injuries,
+                    "total_injuries": injuries,
+                }
+            )
+        return sub_event.casualties.model_copy(
+            update={
+                "deaths": (
+                    deaths if deaths is not None else sub_event.casualties.deaths
+                ),
+                "injuries": (
+                    injuries if injuries is not None else sub_event.casualties.injuries
+                ),
+            }
+        )
+
+    @classmethod
+    def _casualties_for_village(
+        cls,
+        extraction: ExtractionResult,
+        village_match: dict[str, Any],
+        *,
+        is_multi_village: bool,
+    ) -> ExtractionCasualties:
+        event_index = cls._optional_int(village_match.get("event_index"))
+        if event_index is not None and 0 <= event_index < len(extraction.sub_events):
+            return cls._event_casualties_for_match(
+                extraction.sub_events[event_index],
+                village_match,
+            )
+        return cls._root_casualties_for_village(
+            village_match,
+            extraction.casualties,
+            is_multi_village=is_multi_village,
+        )
+
+    @classmethod
+    def _event_hash_suffix(
+        cls,
+        extraction: ExtractionResult,
+        village_match: dict[str, Any],
+    ) -> str | None:
+        event_index = cls._optional_int(village_match.get("event_index"))
+        if event_index is None or not 0 <= event_index < len(extraction.sub_events):
+            return None
+        sub_event = extraction.sub_events[event_index]
+        return (sub_event.evidence_span or f"sub-{event_index}").strip()[:80]
 
     @staticmethod
     def _root_casualties_for_village(
@@ -1468,6 +1694,17 @@ class IncidentMaterializationService:
             return f"Origin village: {origin_villages[0]}"
         joined = ", ".join(origin_villages)
         return f"Origin villages: {joined}"
+
+    @classmethod
+    def _incident_note(
+        cls,
+        origin_villages: list[str],
+        qualifier_text: Any,
+    ) -> str | None:
+        parts = [cls._origin_village_note(origin_villages)]
+        if isinstance(qualifier_text, str) and qualifier_text.strip():
+            parts.append(f"Location qualifier: {qualifier_text.strip()}")
+        return "\n".join(part for part in parts if part) or None
 
     @staticmethod
     def _build_exact_hash(

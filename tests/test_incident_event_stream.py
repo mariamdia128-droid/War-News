@@ -77,6 +77,7 @@ def test_notify_new_incident_publishes_expected_pg_notify_payload() -> None:
         "raw_message_id": 42,
         "raw_status": "materialized",
         "village_id": 7,
+        "story_group_id": None,
         "condition_id": 3,
         "village": "Aita al-Shaab",
         "condition": "Shelling",

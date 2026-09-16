@@ -129,6 +129,9 @@ export type TollRevision = {
   old_injuries: number | null;
   new_deaths: number | null;
   new_injuries: number | null;
+  source_raw_message_id: number | null;
+  source_channel: string | null;
+  source_khabar: string | null;
 };
 
 export type RelatedIncident = {

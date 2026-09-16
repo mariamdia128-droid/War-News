@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Button, ConfirmDialog, DataTable, Dialog, EmptyState, Input, type DataTableColumn } from "../../../components/ui";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { formatDateTime } from "../../../lib/formatters";
@@ -23,9 +24,16 @@ const twoLineClampClass =
 
 export const RejectedNewsPage = () => {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const sourceMode = searchParams.get("source") === "1";
+  const sourceRawMessageId = Number(searchParams.get("raw_message_id"));
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(
+    Number.isSafeInteger(sourceRawMessageId) && sourceRawMessageId > 0
+      ? sourceRawMessageId
+      : null,
+  );
   const [reasonItem, setReasonItem] = useState<RejectedNewsItem | null>(null);
   const [restoreItem, setRestoreItem] = useState<RejectedNewsItem | null>(null);
   const offset = (page - 1) * PAGE_SIZE;
@@ -247,12 +255,12 @@ export const RejectedNewsPage = () => {
     ) : null}
 
     {selectedId != null ? (
-      <Dialog title="Rejected news details" eyebrow={`Raw message #${selectedId}`} size="lg" onClose={() => setSelectedId(null)}>
+      <Dialog title={sourceMode ? "Source report details" : "Rejected news details"} eyebrow={`Raw message #${selectedId}`} size="lg" onClose={() => setSelectedId(null)}>
         {detail.isLoading ? (
           <p>Loading report...</p>
         ) : selected ? (
           <div className="space-y-5">
-            <div className="flex flex-wrap items-center gap-2">
+            {!sourceMode ? <div className="flex flex-wrap items-center gap-2">
               <StatusBadge label={reasonLabel(selected.rejection_type)} variant={reasonVariant(selected.rejection_type)} />
               <Button type="button" variant="secondary" onClick={() => {
                 setSelectedId(null);
@@ -260,7 +268,7 @@ export const RejectedNewsPage = () => {
               }}>
                 Why rejected?
               </Button>
-            </div>
+            </div> : null}
             <div>
               <p className="text-caption font-semibold uppercase text-text-muted">News summary</p>
               <p className="mt-2 leading-7" dir="auto">{selected.summary}</p>
@@ -279,9 +287,9 @@ export const RejectedNewsPage = () => {
                 <p className="mt-1">{selected.source_name ?? selected.source_platform ?? "Unknown"}</p>
               </div>
             </div>
-            <div className="flex justify-end border-t border-border pt-4">
+            {!sourceMode ? <div className="flex justify-end border-t border-border pt-4">
               <Button onClick={() => setRestoreItem(selected)}>Move to incidents</Button>
-            </div>
+            </div> : null}
           </div>
         ) : (
           <p>Rejected news was not found.</p>

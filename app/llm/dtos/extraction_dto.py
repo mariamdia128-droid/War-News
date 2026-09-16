@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ExtractionCategoryKey(str, Enum):
@@ -76,6 +76,7 @@ class VillageRoleEntry(BaseModel):
     deaths: int | None = Field(default=None, ge=0)
     injuries: int | None = Field(default=None, ge=0)
     evidence_span: str | None = None
+    qualifier_text: str | None = None
 
 
 class CasualtyTransition(BaseModel):
@@ -115,10 +116,19 @@ class ExtractionSubEvent(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    action_description: str | None = None
+    locations: list[VillageRoleEntry] = Field(default_factory=list)
+    action_text: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("action_text", "action_description"),
+    )
     casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
     evidence_span: str | None = None
     casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
+
+    @property
+    def action_description(self) -> str | None:
+        """Backward-compatible accessor for persisted pre-action_text payloads."""
+        return self.action_text
 
 
 class ExtractionVehicleDetails(BaseModel):

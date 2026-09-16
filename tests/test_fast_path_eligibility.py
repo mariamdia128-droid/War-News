@@ -91,6 +91,27 @@ def test_permanent_ineligibility_none_when_materializable() -> None:
     )
 
 
+def test_event_condition_can_materialize_when_root_condition_is_unmatched() -> None:
+    assert (
+        permanent_ineligibility_reason(
+            {
+                "condition_match_status": "unmatched",
+                "matched_condition_id": None,
+                "village_matches": [
+                    {
+                        "matched_village_id": 42,
+                        "village_match_status": "matched",
+                        "matched_condition_id": 8,
+                        "condition_match_status": "matched",
+                        "event_index": 0,
+                    }
+                ],
+            }
+        )
+        is None
+    )
+
+
 def test_claim_sql_excludes_air_violations_and_requires_village() -> None:
     compiled = str(
         select(RawMessage)

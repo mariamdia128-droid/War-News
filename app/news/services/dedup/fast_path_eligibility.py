@@ -19,11 +19,28 @@ ERROR_UNMATERIALIZABLE = "fast_path: permanently unmaterializable"
 # bind placeholder by using jsonb_typeof instead of the jsonb `?` operator.
 FAST_PATH_MATERIALIZABLE_SQL = """
 (
-  (raw_messages.match_result->>'condition_match_status') IN (
-    'matched', 'matched_low_confidence'
+  (
+    (
+      (raw_messages.match_result->>'condition_match_status') IN (
+        'matched', 'matched_low_confidence'
+      )
+      AND (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
+      AND (raw_messages.match_result->>'matched_condition_id')::int
+          NOT IN (35, 36, 38)
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        COALESCE(raw_messages.match_result->'village_matches', '[]'::jsonb)
+      ) AS conditioned_village(value)
+      WHERE conditioned_village.value->>'condition_match_status' IN (
+        'matched', 'matched_low_confidence'
+      )
+        AND (conditioned_village.value->>'matched_condition_id') ~ '^[0-9]+$'
+        AND (conditioned_village.value->>'matched_condition_id')::int
+            NOT IN (35, 36, 38)
+    )
   )
-  AND (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
-  AND (raw_messages.match_result->>'matched_condition_id')::int NOT IN (35, 36, 38)
   AND (
     (
       jsonb_typeof(raw_messages.match_result->'village_matches') = 'array'
@@ -76,12 +93,22 @@ def _normalized_village_matches(match_result: dict[str, Any]) -> list[dict[str, 
 
 
 def has_materializable_village(match_result: dict[str, Any]) -> bool:
+    root_status = match_result.get("condition_match_status")
+    root_condition_id = _optional_int(match_result.get("matched_condition_id"))
     for village in _normalized_village_matches(match_result):
         if village.get("village_role", "target") != "target":
             continue
         if village.get("village_match_status") not in ELIGIBLE_MATCH_STATUSES:
             continue
         if _optional_int(village.get("matched_village_id")) is None:
+            continue
+        condition_status = village.get("condition_match_status", root_status)
+        condition_id = _optional_int(
+            village.get("matched_condition_id", root_condition_id)
+        )
+        if condition_status not in ELIGIBLE_MATCH_STATUSES or condition_id is None:
+            continue
+        if condition_id in AIR_VIOLATION_CONDITION_IDS:
             continue
         return True
     return False
@@ -94,17 +121,32 @@ def permanent_ineligibility_reason(
     if not match_result:
         return ERROR_UNMATCHED_CONDITION
 
+    if has_materializable_village(match_result):
+        return None
     condition_status = match_result.get("condition_match_status")
-    if condition_status not in ELIGIBLE_MATCH_STATUSES:
-        return ERROR_UNMATCHED_CONDITION
     condition_id = _optional_int(match_result.get("matched_condition_id"))
-    if condition_id is None:
-        return ERROR_UNMATCHED_CONDITION
-    if condition_id in AIR_VIOLATION_CONDITION_IDS:
+    village_conditions = [
+        _optional_int(item.get("matched_condition_id"))
+        for item in _normalized_village_matches(match_result)
+        if item.get("condition_match_status") in ELIGIBLE_MATCH_STATUSES
+    ]
+    valid_condition_ids = [
+        value for value in ([condition_id] + village_conditions) if value is not None
+    ]
+    if valid_condition_ids and all(
+        value in AIR_VIOLATION_CONDITION_IDS for value in valid_condition_ids
+    ):
         return ERROR_AIR_VIOLATION
+    if (
+        condition_status not in ELIGIBLE_MATCH_STATUSES
+        and not village_conditions
+    ):
+        return ERROR_UNMATCHED_CONDITION
+    if condition_id is None and not village_conditions:
+        return ERROR_UNMATCHED_CONDITION
     if not has_materializable_village(match_result):
         return ERROR_NO_VILLAGE
-    return None
+    return ERROR_UNMATCHED_CONDITION
 
 
 def ineligible_fast_path_update_sql() -> TextClause:

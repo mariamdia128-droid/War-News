@@ -16,6 +16,10 @@
   meaning: male_death
   notes: "Accusative form used by casualty_count_backstop."
 
+- term: "قتيل"
+  category: male_death_singular
+  meaning: male_death
+
 - term: "شهيدان"
   category: male_death_dual
   meaning: male_death
@@ -30,6 +34,10 @@
   category: female_death_singular
   meaning: female_death
   notes: "Fixture: شهيدة وجريحة."
+
+- term: "قتيلة"
+  category: female_death_singular
+  meaning: female_death
 
 - term: "شهيدتان"
   category: female_death_dual

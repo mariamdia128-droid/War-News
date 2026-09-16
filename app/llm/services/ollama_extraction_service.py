@@ -89,6 +89,7 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
                     "deaths": {"type": ["integer", "null"], "minimum": 0},
                     "injuries": {"type": ["integer", "null"], "minimum": 0},
                     "evidence_span": {"type": ["string", "null"]},
+                    "qualifier_text": {"type": ["string", "null"]},
                 },
                 "required": [
                     "village",
@@ -96,6 +97,7 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
                     "deaths",
                     "injuries",
                     "evidence_span",
+                    "qualifier_text",
                 ],
             },
         },
@@ -106,7 +108,33 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "action_description": {"type": ["string", "null"]},
+                    "locations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "village": {"type": "string"},
+                                "role": {
+                                    "type": "string",
+                                    "enum": ["origin", "target"],
+                                },
+                                "deaths": {"type": ["integer", "null"], "minimum": 0},
+                                "injuries": {"type": ["integer", "null"], "minimum": 0},
+                                "evidence_span": {"type": ["string", "null"]},
+                                "qualifier_text": {"type": ["string", "null"]},
+                            },
+                            "required": [
+                                "village",
+                                "role",
+                                "deaths",
+                                "injuries",
+                                "evidence_span",
+                                "qualifier_text",
+                            ],
+                        },
+                    },
+                    "action_text": {"type": ["string", "null"]},
                     "casualties": {
                         "type": "object",
                         "additionalProperties": False,
@@ -152,7 +180,8 @@ GENERAL_EXTRACTION_RESPONSE_SCHEMA: JsonObject = {
                     },
                 },
                 "required": [
-                    "action_description",
+                    "locations",
+                    "action_text",
                     "casualties",
                     "evidence_span",
                     "casualty_evidence",
@@ -444,6 +473,11 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             villages,
             village_roles,
         )
+        sub_events = self._validated_sub_events(
+            general_response.sub_events,
+            post_text=post_text,
+            raw_message_id=raw_message_id,
+        )
         scope, scope_evidence, scope_needs_review, scope_reason = (
             self._validated_casualty_scope(
                 general_response,
@@ -462,7 +496,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 field_name="action_description",
                 raw_message_id=raw_message_id,
             ),
-            sub_events=list(general_response.sub_events),
+            sub_events=sub_events,
             categories=categories,
             casualties=casualties,
             casualty_evidence=casualty_evidence,
@@ -906,6 +940,13 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                         entry.village,
                     )
                     evidence_span = None
+                qualifier_text = self._validated_text(
+                    entry.qualifier_text,
+                    field_name="village_roles.qualifier_text",
+                    raw_message_id=raw_message_id,
+                )
+                if qualifier_text is not None and qualifier_text not in post_text:
+                    qualifier_text = None
 
                 evidence = (
                     [
@@ -937,6 +978,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                             "deaths": village_casualties.deaths,
                             "injuries": village_casualties.injuries,
                             "evidence_span": evidence_span,
+                            "qualifier_text": qualifier_text,
                         }
                     )
                 )
@@ -952,6 +994,57 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                     raw_message_id,
                     entry.model_dump(mode="json"),
                 )
+        return validated
+
+    def _validated_sub_events(
+        self,
+        sub_events: list[ExtractionSubEvent],
+        *,
+        post_text: str,
+        raw_message_id: int | None,
+    ) -> list[ExtractionSubEvent]:
+        validated: list[ExtractionSubEvent] = []
+        for index, sub_event in enumerate(sub_events):
+            locations = self._validated_village_roles(
+                sub_event.locations,
+                post_text=post_text,
+                raw_message_id=raw_message_id,
+            )
+            if not locations:
+                logger.warning(
+                    "Dropped locationless sub_event index=%s raw_message_id=%s",
+                    index,
+                    raw_message_id,
+                )
+                continue
+            evidence_span = self._validated_source_span(
+                sub_event.evidence_span,
+                post_text=post_text,
+                field_name=f"sub_events[{index}].evidence_span",
+                raw_message_id=raw_message_id,
+            )
+            casualty_text = evidence_span or post_text
+            casualties, casualty_evidence = apply_casualty_count_backstop(
+                casualty_text,
+                sub_event.casualties,
+                list(sub_event.casualty_evidence),
+                raw_message_id=raw_message_id,
+            )
+            validated.append(
+                sub_event.model_copy(
+                    update={
+                        "locations": locations,
+                        "action_text": self._validated_text(
+                            sub_event.action_text,
+                            field_name=f"sub_events[{index}].action_text",
+                            raw_message_id=raw_message_id,
+                        ),
+                        "casualties": casualties,
+                        "casualty_evidence": casualty_evidence,
+                        "evidence_span": evidence_span,
+                    }
+                )
+            )
         return validated
 
     @staticmethod

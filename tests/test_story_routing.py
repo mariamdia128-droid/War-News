@@ -10,9 +10,13 @@ import app.logs.models  # noqa: F401
 import app.sources.models  # noqa: F401
 from app.llm.dtos import StoryRelationship, StoryRelationshipClassification
 from app.news.models import Incident, IncidentDetail, IncidentUpdate, UpdateAction
-from app.news.repositories.incident_repository import IncidentRepository
+from app.news.repositories.incident_repository import IncidentRepository, StoryCandidate
 from app.news.services.dedup.fast_path_dedup import FastPathDedupOutcome
-from app.news.services.dedup.story_continuation_router import StoryRoute
+from app.news.services.dedup.story_continuation_router import (
+    StoryContinuationRouter,
+    StoryRoute,
+    _story_equivalent_village_ids,
+)
 from app.news.services.materialization.incident_materialization_service import (
     IncidentMaterializationService,
 )
@@ -151,6 +155,74 @@ def _fast_dedup_materialize():
         ),
         incidents=MagicMock(),
     )
+
+
+def test_single_action_route_treats_both_endpoints_as_story_equivalent() -> None:
+    match_result = {
+        "village_matches": [
+            {
+                "matched_village_id": 652,
+                "village_match_status": "matched",
+                "village_role": "target",
+            },
+            {
+                "matched_village_id": 1529,
+                "village_match_status": "matched",
+                "village_role": "target",
+            },
+        ]
+    }
+
+    assert _story_equivalent_village_ids(
+        match_result,
+        652,
+        candidate_text="استهداف دراجة على طريق مرج حاروف - زبدين",
+    ) == {652, 1529}
+
+
+def test_raw_9302_route_can_revise_raw_8788_zibdine_incident() -> None:
+    canonical = Incident()
+    canonical.id = uuid4()
+    canonical.village_id = 1529
+    canonical.raw_message_id = 8788
+    candidate = StoryCandidate(
+        incident=canonical,
+        time_gap_seconds=1_980,
+        embedding_similarity=0.9,
+    )
+    search = SimpleNamespace(
+        find_for_message=lambda **_kwargs: [candidate],
+    )
+    relationships = SimpleNamespace(
+        classify_best=lambda **_kwargs: StoryRelationshipClassification(
+            relationship=StoryRelationship.revision,
+            relationship_evidence="same motorcycle strike route",
+            candidate_incident_id=canonical.id,
+        )
+    )
+    router = StoryContinuationRouter(
+        MagicMock(),
+        search=search,
+        relationships=relationships,
+    )
+
+    route = router.route_for_village(
+        match_result={
+            "village_matches": [
+                {"matched_village_id": 652, "village_role": "target"},
+                {"matched_village_id": 1529, "village_role": "target"},
+            ]
+        },
+        message_datetime=datetime.now(timezone.utc),
+        candidate_text="استهداف دراجة على طريق مرج حاروف - زبدين",
+        candidate_embedding=[1.0, 0.0],
+        exclude_raw_message_id=9302,
+        village_id=652,
+    )
+
+    assert route is not None
+    assert route.relationship == StoryRelationship.revision
+    assert route.candidate.raw_message_id == 8788
 
 
 def test_revision_route_updates_existing_and_does_not_create() -> None:
