@@ -15,3 +15,4 @@ dist/
 *.session-journal
 Data/*.dump
 Data/pgadmin4-*.db
+scripts/output/historical_incident_reconcile/
