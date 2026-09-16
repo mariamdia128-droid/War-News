@@ -29,10 +29,10 @@ from scripts.backfill.historical_incident_reconcile.common import (
 )
 from scripts.backfill.historical_incident_reconcile.phase1_reextract import (
     RECON_CUTOFF,
+    load_or_create_population_manifest,
 )
 from scripts.backfill.historical_incident_reconcile.phase2_village import (
     _entry_key,
-    _population_a_ids,
 )
 
 PHASE = "phase4_manual_review"
@@ -163,8 +163,10 @@ def discover_village_manual_items(db: Any) -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def discover_no_direct_incidents(db: Any) -> list[dict[str, Any]]:
-    population_a = _population_a_ids(db)
+def discover_no_direct_incidents(
+    db: Any,
+    population_a: set[int],
+) -> list[dict[str, Any]]:
     return [
         dict(row)
         for row in db.execute(
@@ -268,8 +270,11 @@ def main() -> int:
 
     db = open_read_only_session()
     try:
+        _manifest_path, population_a_ids = load_or_create_population_manifest(
+            args.output_dir
+        )
         village = discover_village_manual_items(db)
-        no_direct = discover_no_direct_incidents(db)
+        no_direct = discover_no_direct_incidents(db, set(population_a_ids))
         for item in no_direct:
             item["classification"] = classify_no_direct(item)
         classes = Counter(item["classification"] for item in no_direct)

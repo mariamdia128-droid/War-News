@@ -8,7 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -165,11 +165,11 @@ def main() -> int:
     population = fetch_population()
     if args.limit is not None:
         population = population[: args.limit]
-    run_id = args.run_id or uuid4()
     checkpoint = JsonlCheckpoint(
         args.output_dir / f"{PHASE}.checkpoint.jsonl",
         PHASE,
     )
+    run_id = checkpoint.resolve_run_id(args.run_id)
     run_id, summary, results = run_batch(
         phase=PHASE,
         items=population,

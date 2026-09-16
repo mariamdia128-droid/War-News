@@ -7,11 +7,12 @@ checkpoint/report files; every database transaction is explicitly read-only.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -33,7 +34,13 @@ from app.news.services.dedup.story_continuation_router import (
 from app.news.services.materialization.incident_materialization_service import (
     IncidentMaterializationService,
 )
+from app.news.services.incident_details.casualty_gender_evidence import (
+    apply_casualty_gender_backstops,
+)
 from app.news.services.matching.matching_service import MatchingService
+from app.news.services.pipeline.pipeline_llm_workers import (
+    _final_action_description,
+)
 from scripts.backfill.historical_incident_reconcile.common import (
     DEFAULT_OUTPUT_DIR,
     JsonlCheckpoint,
@@ -41,11 +48,13 @@ from scripts.backfill.historical_incident_reconcile.common import (
     run_batch,
     tagged_audit_values,
     write_dry_run_report,
+    write_json,
 )
 
 PHASE = "phase1_reextract"
 ELIGIBLE_STATUSES = {"matched", "matched_low_confidence"}
 RECON_CUTOFF = "2026-09-16T08:26:01Z"
+POPULATION_QUERY_VERSION = "all-role-multivillage-v1"
 
 
 @dataclass(frozen=True)
@@ -56,6 +65,7 @@ class RawCandidate:
     source_id: int
     message_datetime: Any
     content_embedding: list[float] | None
+    cnrs_classification: dict[str, Any] | None
     old_extraction_result: dict[str, Any]
     old_match_result: dict[str, Any]
 
@@ -85,6 +95,7 @@ def fetch_population(limit: int | None, only_ids: list[int]) -> list[RawCandidat
                 """
                 SELECT r.id, r.raw_text, r.status::text AS status, r.source_id,
                        r.message_datetime, r.content_embedding,
+                       r.cnrs_classification,
                        r.extraction_result, r.match_result
                 FROM raw_messages r
                 CROSS JOIN LATERAL jsonb_array_elements(
@@ -124,6 +135,11 @@ def fetch_population(limit: int | None, only_ids: list[int]) -> list[RawCandidat
                     if row["content_embedding"] is not None
                     else None
                 ),
+                cnrs_classification=(
+                    dict(row["cnrs_classification"])
+                    if isinstance(row["cnrs_classification"], dict)
+                    else None
+                ),
                 old_extraction_result=dict(row["extraction_result"] or {}),
                 old_match_result=dict(row["match_result"] or {}),
             )
@@ -133,6 +149,100 @@ def fetch_population(limit: int | None, only_ids: list[int]) -> list[RawCandidat
     finally:
         db.rollback()
         db.close()
+
+
+def fetch_frozen_candidates(raw_message_ids: list[int]) -> list[RawCandidate]:
+    if not raw_message_ids:
+        return []
+    db = open_read_only_session()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT r.id, r.raw_text, r.status::text AS status, r.source_id,
+                       r.message_datetime, r.content_embedding,
+                       r.cnrs_classification,
+                       r.extraction_result, r.match_result
+                FROM raw_messages r
+                WHERE r.id = ANY(:raw_message_ids)
+                ORDER BY r.id
+                """
+            ),
+            {"raw_message_ids": raw_message_ids},
+        ).mappings()
+        by_id = {
+            candidate.id: candidate
+            for candidate in (
+                RawCandidate(
+                    id=int(row["id"]),
+                    raw_text=str(row["raw_text"] or ""),
+                    status=str(row["status"]),
+                    source_id=int(row["source_id"]),
+                    message_datetime=row["message_datetime"],
+                    content_embedding=(
+                        list(row["content_embedding"])
+                        if row["content_embedding"] is not None
+                        else None
+                    ),
+                    cnrs_classification=(
+                        dict(row["cnrs_classification"])
+                        if isinstance(row["cnrs_classification"], dict)
+                        else None
+                    ),
+                    old_extraction_result=dict(
+                        row["extraction_result"] or {}
+                    ),
+                    old_match_result=dict(row["match_result"] or {}),
+                )
+                for row in rows
+            )
+        }
+        missing = sorted(set(raw_message_ids) - set(by_id))
+        if missing:
+            raise RuntimeError(
+                f"Frozen Population A raw messages are missing: {missing}"
+            )
+        return [by_id[raw_id] for raw_id in raw_message_ids]
+    finally:
+        db.rollback()
+        db.close()
+
+
+def load_or_create_population_manifest(
+    output_dir: Path,
+) -> tuple[Path, list[int]]:
+    path = output_dir / f"{PHASE}.population.json"
+    if path.exists():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("query_version") != POPULATION_QUERY_VERSION:
+            raise RuntimeError(
+                f"Population manifest query version mismatch: {path}"
+            )
+        if payload.get("recon_cutoff") != RECON_CUTOFF:
+            raise RuntimeError(
+                f"Population manifest cutoff mismatch: {path}"
+            )
+        raw_ids = payload.get("raw_message_ids")
+        if not isinstance(raw_ids, list) or not all(
+            isinstance(value, int) and not isinstance(value, bool)
+            for value in raw_ids
+        ):
+            raise RuntimeError(f"Invalid Population A manifest: {path}")
+        return path, raw_ids
+
+    candidates = fetch_population(None, [])
+    raw_ids = [candidate.id for candidate in candidates]
+    write_json(
+        path,
+        {
+            "phase": PHASE,
+            "query_version": POPULATION_QUERY_VERSION,
+            "recon_cutoff": RECON_CUTOFF,
+            "population": len(raw_ids),
+            "raw_message_ids": raw_ids,
+        },
+    )
+    return path, raw_ids
 
 
 def build_targets(
@@ -365,30 +475,46 @@ def reconcile_direct_incidents(
             else None
         )
         if merge_target is not None:
-            operation = "merge"
-            reason = "route_story_equivalence"
+            operation = "route_merge_review"
+            reason = "route_story_equivalence_requires_global_reconciliation"
             canonical_id = str(merge_target["id"])
+            changes: dict[str, Any] = {}
+        elif (
+            incident.get("human_update_count")
+            or incident.get("created_by")
+            or incident.get("verified_by_user_id")
+            or incident.get("verification_status") == "verified"
+        ):
+            operation = "soft_delete_review"
+            reason = "unmatched_target_contains_human_provenance"
+            canonical_id = None
+            changes = {}
         else:
             operation = "soft_delete"
             reason = "no_corresponding_fixed_pipeline_target"
             canonical_id = None
+            changes = {"is_deleted": {"old": False, "new": True}}
         operations.append(
             {
                 "operation": operation,
                 "incident_id": str(incident["id"]),
                 "canonical_incident_id": canonical_id,
                 "reason": reason,
-                "changes": {"is_deleted": {"old": False, "new": True}},
-                "planned_incident_update_new_values": tagged_audit_values(
-                    {
-                        "is_deleted": True,
-                        "backfill_operation": operation,
-                        "reason": reason,
-                        "canonical_incident_id": canonical_id,
-                    },
-                    run_id,
+                "changes": changes,
+                "planned_incident_update_new_values": (
+                    tagged_audit_values(
+                        {
+                            "is_deleted": True,
+                            "backfill_operation": operation,
+                            "reason": reason,
+                            "canonical_incident_id": canonical_id,
+                        },
+                        run_id,
+                    )
+                    if operation == "soft_delete"
+                    else None
                 ),
-            }
+            },
         )
     return operations
 
@@ -437,6 +563,19 @@ class Phase1Processor:
         extraction = combined(
             candidate.raw_text,
             raw_message_id=candidate.id,
+        )
+        extraction = apply_casualty_gender_backstops(
+            candidate.raw_text,
+            extraction,
+        )
+        extraction = extraction.model_copy(
+            update={
+                "action_description": _final_action_description(
+                    candidate.raw_text,
+                    extraction.action_description,
+                    candidate.cnrs_classification,
+                )
+            }
         )
         db = open_read_only_session()
         try:
@@ -518,12 +657,21 @@ def main() -> int:
     parser.add_argument("--progress-every", type=int, default=1)
     args = parser.parse_args()
 
-    candidates = fetch_population(args.limit, args.raw_message_ids)
-    run_id = args.run_id or uuid4()
+    if args.raw_message_ids:
+        manifest_path = None
+        candidates = fetch_frozen_candidates(args.raw_message_ids)
+    else:
+        manifest_path, frozen_ids = load_or_create_population_manifest(
+            args.output_dir
+        )
+        candidates = fetch_frozen_candidates(frozen_ids)
+    if args.limit is not None:
+        candidates = candidates[: args.limit]
     checkpoint = JsonlCheckpoint(
         args.output_dir / f"{PHASE}.checkpoint.jsonl",
         PHASE,
     )
+    run_id = checkpoint.resolve_run_id(args.run_id)
     processor = Phase1Processor(run_id)
     run_id, summary, results = run_batch(
         phase=PHASE,
@@ -550,6 +698,10 @@ def main() -> int:
             ),
             "extraction_mode": "fixed_combined_tier1_one_call",
             "recon_cutoff": RECON_CUTOFF,
+            "population_manifest": (
+                str(manifest_path) if manifest_path is not None else None
+            ),
+            "population_query_version": POPULATION_QUERY_VERSION,
         },
     )
     return 1 if summary.failed else 0

@@ -1,7 +1,11 @@
+from pathlib import Path
 from uuid import UUID
 
+import scripts.backfill.historical_incident_reconcile.phase1_reextract as phase1
 from scripts.backfill.historical_incident_reconcile.phase1_reextract import (
     PlannedTarget,
+    RawCandidate,
+    load_or_create_population_manifest,
     reconcile_direct_incidents,
 )
 
@@ -113,7 +117,7 @@ def test_reconcile_soft_deletes_cartesian_extra_and_creates_missing_target() -> 
     }
 
 
-def test_route_like_unmatched_incident_is_planned_as_merge() -> None:
+def test_route_like_unmatched_incident_requires_global_merge_review() -> None:
     operations = reconcile_direct_incidents(
         raw_message_id=10,
         targets=[_target("0:1:8:0", 1, 8)],
@@ -122,7 +126,43 @@ def test_route_like_unmatched_incident_is_planned_as_merge() -> None:
         raw_text="على طريق حاروف - زبدين",
     )
 
-    merge = next(item for item in operations if item["operation"] == "merge")
+    merge = next(
+        item for item in operations if item["operation"] == "route_merge_review"
+    )
     assert merge["incident_id"] == "retired"
     assert merge["canonical_incident_id"] == "canonical"
-    assert merge["reason"] == "route_story_equivalence"
+    assert merge["reason"] == (
+        "route_story_equivalence_requires_global_reconciliation"
+    )
+    assert merge["planned_incident_update_new_values"] is None
+
+
+def test_population_manifest_freezes_ids_across_resume(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    candidates = [
+        RawCandidate(
+            id=10,
+            raw_text="text",
+            status="materialized",
+            source_id=1,
+            message_datetime=None,
+            content_embedding=None,
+            cnrs_classification=None,
+            old_extraction_result={},
+            old_match_result={},
+        )
+    ]
+    monkeypatch.setattr(phase1, "fetch_population", lambda *_args: candidates)
+
+    path, first = load_or_create_population_manifest(tmp_path)
+    monkeypatch.setattr(
+        phase1,
+        "fetch_population",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("recomputed")),
+    )
+    resumed_path, resumed = load_or_create_population_manifest(tmp_path)
+
+    assert path == resumed_path
+    assert first == resumed == [10]

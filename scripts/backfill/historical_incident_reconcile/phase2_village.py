@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -33,6 +33,7 @@ from scripts.backfill.historical_incident_reconcile.common import (
 )
 from scripts.backfill.historical_incident_reconcile.phase1_reextract import (
     RECON_CUTOFF,
+    load_or_create_population_manifest,
 )
 
 PHASE = "phase2_village"
@@ -91,13 +92,19 @@ def _population_a_ids(db: Any) -> set[int]:
     }
 
 
-def discover_corrections() -> tuple[
+def discover_corrections(
+    population_a_override: set[int] | None = None,
+) -> tuple[
     list[VillageCorrection],
     list[dict[str, Any]],
 ]:
     db = open_read_only_session()
     try:
-        population_a = _population_a_ids(db)
+        population_a = (
+            population_a_override
+            if population_a_override is not None
+            else _population_a_ids(db)
+        )
         rows = list(
             db.execute(
                 text(
@@ -261,14 +268,17 @@ def main() -> int:
     parser.add_argument("--limit", type=int)
     args = parser.parse_args()
 
-    corrections, manual = discover_corrections()
+    _manifest_path, population_a_ids = load_or_create_population_manifest(
+        args.output_dir
+    )
+    corrections, manual = discover_corrections(set(population_a_ids))
     if args.limit is not None:
         corrections = corrections[: args.limit]
-    run_id = args.run_id or uuid4()
     checkpoint = JsonlCheckpoint(
         args.output_dir / f"{PHASE}.checkpoint.jsonl",
         PHASE,
     )
+    run_id = checkpoint.resolve_run_id(args.run_id)
     run_id, summary, results = run_batch(
         phase=PHASE,
         items=corrections,
