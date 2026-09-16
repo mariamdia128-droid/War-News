@@ -429,7 +429,12 @@ class Phase1Processor:
         self.run_id = run_id
 
     def __call__(self, candidate: RawCandidate) -> dict[str, Any]:
-        extraction = self.extractor.extract_tier1(
+        combined = getattr(self.extractor, "_extract_tier1_combined", None)
+        if combined is None:
+            raise RuntimeError(
+                "Configured extractor does not expose fixed combined Tier-1"
+            )
+        extraction = combined(
             candidate.raw_text,
             raw_message_id=candidate.id,
         )
@@ -543,6 +548,7 @@ def main() -> int:
                 "parsed/materialized raw messages with >1 distinct matched "
                 "village across target and origin roles"
             ),
+            "extraction_mode": "fixed_combined_tier1_one_call",
             "recon_cutoff": RECON_CUTOFF,
         },
     )
