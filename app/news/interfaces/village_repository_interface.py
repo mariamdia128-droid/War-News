@@ -29,3 +29,10 @@ class VillageRepositoryInterface(ABC):
         Default no-op so lightweight test stubs need not implement aliases.
         """
         return None
+
+    def find_geo_conditional_aliases(
+        self,
+        normalized_text: str,
+    ) -> list[tuple[Village, float]]:
+        """Conditional exact aliases exposed only as geo-reranking candidates."""
+        return []

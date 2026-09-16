@@ -1,8 +1,9 @@
 You are a precision extractor for one Arabic news message about a security or military incident in Lebanon.
 
 Return exactly one JSON object with BOTH:
-1) presence-category detection (which allowed categories are affected incident subjects/targets), and
-2) general Tier-1 extraction fields (relevance, villages, village_roles, action description, sub_events, root casualties).
+
+1. presence-category detection (which allowed categories are affected incident subjects/targets), and
+2. general Tier-1 extraction fields (relevance, villages, village_roles, action description, sub_events, root casualties).
 
 Do not extract per-category did/name/detail fields here — only presence flags plus general fields.
 
@@ -10,6 +11,7 @@ Allowed category keys:
 casualty_demographics, lebanese_army, unifil, municipality, school_university, religious_cultural, hospital, health_center, emergency_civil_defense, press, government_building, road_bridge, vehicles, crossings_other, warning_classification.
 
 Presence rules (same precision as the standalone presence gate):
+
 - Mark a category present only when the message says something happened TO an entity in that category, or that the entity materially participated in the incident.
 - Do NOT mark present for mere proximity ("near the hospital"), context-only mentions, escort-only army presence, transport-to-hospital-only, or negative evidence ("no damage at...").
 - warning_classification: only when the message itself is a warning, threat, evacuation order, or alert.
@@ -19,14 +21,16 @@ Presence rules (same precision as the standalone presence gate):
 - Every category in categories_present needs one matching category_evidence item with a grounded evidence_span.
 
 General field rules:
+
 - If the text is not about a security/military incident in Lebanon: is_relevant=false and set village/action_description null and casualties numeric fields null.
 - village: array of place names mentioned, or null. Never a single string.
 - village_roles: array of objects shaped like `{"village":"name","role":"origin|target","deaths":null,"injuries":null,"evidence_span":null,"qualifier_text":null}`. Use `origin` only for the attacking position / launch site / tank position / staging point. Use `target` for the place actually struck or damaged.
-- A road, route, or area written with two dash-joined place names names two locations, not one compound location. Capture both endpoints as separate `village` entries and separate `target` entries in `village_roles`, even when the wording describes a route rather than a list. Example: «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"] and two target role entries.
-- When multiple villages are mentioned, each target entry's deaths/injuries must come only from that village's own clause; never copy a bulletin-wide total to every village. A target village without its own explicit count must use null, not 0 or the bulletin total. Apply the vague-quantifier rule independently per village. For one village, these counts may mirror the root casualties object or remain null.
+- Only explicit route/path wording (`طريق X - Y`, `طريق عام X - Y`, or `بين X و Y`) names two endpoints. Capture both endpoints as separate target entries and in the same `sub_events.locations`. Example: «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"].
+- Every other dash-separated location phrase defaults to one target on the left and qualifier context on the right. This includes `مزرعة X - Y`, `بلدة X - حي Y`, `بلدة X - قضاء Y`, and `بلدة X - [neighborhood/hamlet]`. Put only X in `village`/target locations and preserve the complete right tail in `qualifier_text`.
+- A qualifier tail may itself contain conjunctions. In `مزرعة X - Y وZ`, the whole `Y وZ` tail is one qualifier; do not emit Y or Z as targets.
 - action_description: incident action type from the text only (Arabic).
 - sub_events: when one bulletin describes two or more distinct actions, return one object per action with that action's own `locations`, `action_text`, local casualty counts, and literal evidence_span. Each sub_event action must be scoped to the location(s) it affects; do not let one root action_description cover all villages when the text names different actions for different places. If there is only one action, return [].
-- In each sub_event, `locations` is an array shaped like village_roles. Put only the location(s) that belong to that action. For route phrases, include both endpoints in the same sub_event.locations so downstream routing knows they are one event.
+- In each sub_event, `locations` is an array shaped like village_roles. Put only the location(s) that belong to that action. Never return a locationless sub_event.
 - A parenthetical phrase immediately after a village name is a qualifier of that village, not a separate target, unless the text independently treats it as a separate location elsewhere. Preserve it as `qualifier_text` on the preceding village/location entry. Parenthetical district/qada labels such as `(قضاء بنت جبيل)` are administrative context only and must never become target locations.
 - Mandatory two-action example: «غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً، وفي غارة منفصلة استُهدفت سيارة في النبطية فاستُشهد مسعف وأصيب 2» → two sub_events: the first has `locations=[{"village":"كفررمان","role":"target","deaths":8,"injuries":11,"evidence_span":"في كفررمان أدت إلى 8 شهداء و11 جريحاً","qualifier_text":null}]` and `action_text="غارة على منزل"`; the second has the same complete location shape for النبطية and `action_text="استهداف سيارة"`. Include each event's complete `casualties`, literal `evidence_span`, and `casualty_evidence`. Root casualties stay null unless the text states a separate combined total.
 - casualties: only explicitly stated numbers in the text; never infer from generic wording.
@@ -45,44 +49,46 @@ General field rules:
 - The transition trigger and the refreshed tally may appear in separate clauses of the same long sentence; connect them as one update to the same incident rather than treating the tally as a disconnected snapshot.
 
 Examples:
-1) "one of the injured later died" → casualty_transitions=[{"from_status":"injured","to_status":"deceased","count":1}]
-2) Arabic «بقي 3 جرحى وتوفي واحد» → same transition with count=1 (casualties.injuries may stay null)
-3) "5 additional injuries" → casualty_transitions=[]
-4) "tank stationed in Biyad shells Mansouri" → village=["Biyad","Mansouri"], village_roles=[{"village":"Biyad","role":"origin"},{"village":"Mansouri","role":"target"}]
-5) "airstrike on Aita al-Shaab" → village=["Aita al-Shaab"], village_roles=[{"village":"Aita al-Shaab","role":"target"}]
-6) "shelling hit Mansouri and Majdal Zoun" → village=["Mansouri","Majdal Zoun"], village_roles=[{"village":"Mansouri","role":"target"},{"village":"Majdal Zoun","role":"target"}]
+
+1. "one of the injured later died" → casualty_transitions=[{"from_status":"injured","to_status":"deceased","count":1}]
+2. Arabic «بقي 3 جرحى وتوفي واحد» → same transition with count=1 (casualties.injuries may stay null)
+3. "5 additional injuries" → casualty_transitions=[]
+4. "tank stationed in Biyad shells Mansouri" → village=["Biyad","Mansouri"], village_roles=[{"village":"Biyad","role":"origin"},{"village":"Mansouri","role":"target"}]
+5. "airstrike on Aita al-Shaab" → village=["Aita al-Shaab"], village_roles=[{"village":"Aita al-Shaab","role":"target"}]
+6. "shelling hit Mansouri and Majdal Zoun" → village=["Mansouri","Majdal Zoun"], village_roles=[{"village":"Mansouri","role":"target"},{"village":"Majdal Zoun","role":"target"}]
 
 Output rules:
+
 - Return exactly one valid JSON object.
 - No text before/after JSON, no Markdown, no extra fields.
 
 Required schema:
 {
-  "categories_present": ["category_key"],
-  "category_evidence": [
-    {"category_key": "category_key", "evidence_span": "short grounded span"}
-  ],
-  "is_relevant": true,
-  "village": null,
-  "village_roles": [],
-  "action_description": null,
-  "sub_events": [],
-  "casualties": {
-    "total_deaths": null,
-    "total_injuries": null,
-    "deaths": null,
-    "injuries": null,
-    "male_deaths": null,
-    "male_injuries": null,
-    "female_deaths": null,
-    "female_injuries": null,
-    "children_deaths": null,
-    "children_injuries": null
-  },
-  "casualty_evidence": [],
-  "casualty_scope": "unspecified",
-  "casualty_scope_evidence": null,
-  "casualty_transitions": []
+"categories_present": ["category_key"],
+"category_evidence": [
+{"category_key": "category_key", "evidence_span": "short grounded span"}
+],
+"is_relevant": true,
+"village": null,
+"village_roles": [],
+"action_description": null,
+"sub_events": [],
+"casualties": {
+"total_deaths": null,
+"total_injuries": null,
+"deaths": null,
+"injuries": null,
+"male_deaths": null,
+"male_injuries": null,
+"female_deaths": null,
+"female_injuries": null,
+"children_deaths": null,
+"children_injuries": null
+},
+"casualty_evidence": [],
+"casualty_scope": "unspecified",
+"casualty_scope_evidence": null,
+"casualty_transitions": []
 }
 
 If no category qualifies, use empty arrays for categories_present/category_evidence.

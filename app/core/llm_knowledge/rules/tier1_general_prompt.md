@@ -3,6 +3,7 @@
 مهمتك الوحيدة: استخرج is_relevant و village و village_roles و action_description و sub_events و casualties العامة فقط. لا تستخرج categories ولا تحكم على أي فئة في هذه المرحلة.
 
 قواعد الإخراج الصارمة:
+
 - أرجع كائن JSON واحداً صالحاً فقط.
 - لا تكتب أي نص قبل JSON أو بعده.
 - لا تستخدم Markdown ولا أسوار كود.
@@ -13,9 +14,12 @@
 اقرأ النص فقط، ولا تستخدم أي معرفة خارجية. إذا لم يكن النص عن حادث أمني أو عسكري في لبنان، أرجع is_relevant false واجعل باقي القيم null أو {}.
 
 إذا كان النص ذا صلة:
+
 - village: مصفوفة من أسماء البلدات أو الأماكن المذكورة في الخبر. إذا ورد اسم مكان واحد أرجع مصفوفة بعنصر واحد. إذا وردت أسماء أماكن متعددة أرجعها جميعاً في المصفوفة. إذا لم يظهر أي اسم مكان في النص أرجع null. لا تُرجع سلسلة نصية واحدة بل دائماً مصفوفة أو null.
 - village_roles: مصفوفة من كائنات بالشكل {"village":"اسم البلدة","role":"origin|target","deaths":null,"injuries":null,"evidence_span":null,"qualifier_text":null}. استخدم role="origin" فقط لموضع المنصة أو الدبابة أو موقع الإطلاق أو نقطة التمركز، واستخدم role="target" لمكان القصف/الضربة/الضرر الفعلي.
-- إذا سُمّي طريق أو مسار أو نطاق باسمَي مكان موصولين بشرطة، فهما موقعان منفصلان لا اسم مركب واحد. استخرج الطرفين كلّاً في عنصر village وعنصر target مستقل، حتى لو كانت الصياغة تصف طريقاً لا قائمة. مثال: «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"] وعنصرا target منفصلان.
+- لا تستخرج طرفين منفصلين إلا عند وجود علامة طريق/مسار صريحة مثل «طريق X - Y» أو «طريق عام X - Y» أو «بين X و Y». عندها استخرج الطرفين في village وtarget وفي locations للـ sub_event نفسه. مثال: «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"].
+- كل عبارة مكانية أخرى مفصولة بشرطة تعني افتراضياً هدفاً واحداً على يسار الشرطة وسياقاً توضيحياً على يمينها. يشمل ذلك «مزرعة X - Y» و«بلدة X - حي Y» و«بلدة X - قضاء Y» و«بلدة X - اسم حي/محلة». استخرج X فقط هدفاً وضع كامل الذيل Y في qualifier_text.
+- إذا احتوى الذيل التوضيحي على واو عطف، كما في «مزرعة X - Y وZ»، فاحفظ «Y وZ» كاملاً في qualifier_text ولا تستخرج Y أو Z كهدفين.
 - عند ذكر أكثر من بلدة أو موقع، استخرج في كل عنصر target أعداد deaths وinjuries الخاصة بتلك البلدة من جملتها أو عبارتها فقط، ولا تنسخ الحصيلة الإجمالية للنشرة إلى البلدات. يجب أن يكون evidence_span مقطعاً حرفياً قصيراً يربط اسم البلدة بأرقامها.
 - إذا ذُكرت بلدة target بلا عدد صريح خاص بها، اجعل deaths وinjuries وevidence_span لها null، لا 0 ولا حصيلة النشرة. طبّق على كل بلدة قاعدة الألفاظ المبهمة نفسها: عشرات، مئات، عدد من، بضعة وغيرها تعني null ولا تتحول إلى رقم.
 - عند ذكر بلدة واحدة فقط، اجعل أرقام عنصر village_roles مطابقة لأرقام casualties العامة إن وُجدت، مع evidence_span حرفي، أو اتركها null. كلاهما مقبول لأن مسار البلدة الواحدة يستخدم casualties العامة.
@@ -25,27 +29,31 @@
 - إذا جاءت عبارة بين قوسين مباشرة بعد اسم بلدة، فهي qualifier_text للبلدة السابقة وليست target مستقل، إلا إذا عاملها النص بوضوح كموقع مستقل في موضع آخر. تسميات القضاء/القضاء الإداري بين قوسين مثل (قضاء بنت جبيل) هي سياق إداري فقط ولا تُستخرج كموقع target.
 - مثال إلزامي للعملين: «غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً، وفي غارة منفصلة استُهدفت سيارة في النبطية فسقط 1 شهيد وأصيب 2» → sub_events=[{"locations":[{"village":"كفررمان","role":"target","deaths":8,"injuries":11,"evidence_span":"في كفررمان أدت إلى 8 شهداء و11 جريحاً","qualifier_text":null}],"action_text":"غارة على منزل","casualties":{"deaths":8,"injuries":11,"total_deaths":8,"total_injuries":11},"evidence_span":"غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً","casualty_evidence":[{"field":"deaths","evidence_span":"8 شهداء"},{"field":"injuries","evidence_span":"11 جريحاً"}]},{"locations":[{"village":"النبطية","role":"target","deaths":1,"injuries":2,"evidence_span":"في النبطية فسقط 1 شهيد وأصيب 2","qualifier_text":null}],"action_text":"استهداف سيارة","casualties":{"deaths":1,"injuries":2,"total_deaths":1,"total_injuries":2,"male_deaths":1},"evidence_span":"استُهدفت سيارة في النبطية فسقط 1 شهيد وأصيب 2","casualty_evidence":[{"field":"deaths","evidence_span":"1 شهيد"},{"field":"injuries","evidence_span":"أصيب 2"}]}] وcasualties العامة null أو مجموع فقط إذا صرّح النص بمجموع منفصل.
 - casualties: أعداد الضحايا العامة غير المنسوبة إلى فئة محددة، فقط إذا ذُكرت حرفياً.
-- casualty_transitions: انتقالات حالة بين جرحى ووفيات في *متابعات* لنفس الحادث. استخدمها عندما يذكر النص أن جرحى سابقين توفوا أو «بقي X جرحى وتوفي Y» أو «توفى واحد من الجرحى» دون إعادة عدّ كل الجرحى. لا تستخدمها للأخبار الأولية ولا للإضافات البسيطة مثل «5 جرحى جدد».
+- casualty_transitions: انتقالات حالة بين جرحى ووفيات في _متابعات_ لنفس الحادث. استخدمها عندما يذكر النص أن جرحى سابقين توفوا أو «بقي X جرحى وتوفي Y» أو «توفى واحد من الجرحى» دون إعادة عدّ كل الجرحى. لا تستخدمها للأخبار الأولية ولا للإضافات البسيطة مثل «5 جرحى جدد».
 - قاعدة إلزامية: إذا قال النص صراحة إن مصاباً أو جريحاً سابقاً توفي، فأرجع دائماً [{"from_status":"injured","to_status":"deceased","count":1}] حتى لو ذكر النص أيضاً حصيلة جديدة أو عدداً متبقياً للجرحى.
 - يشمل ذلك على الأقل الصيغ: «استشهاد أحد جريحي/الجرحى»، «وفاة أحد المصابين متأثراً بجراحه»، و«فارق أحد الجرحى الحياة».
 - قد تأتي عبارة الانتقال وعبارة الحصيلة أو العدد المتبقي في شقين مختلفين من الجملة نفسها أو في جملة طويلة متعددة الفواصل؛ اربطهما كتحديث واحد لنفس الحادث ولا تعتبر الحصيلة خبراً منفصلاً.
 
 أمثلة على casualty_transitions:
-1) «توفى أحد الجرحى جراء إصابته» → [{"from_status":"injured","to_status":"deceased","count":1}] و casualties.deaths=1 (اختياري).
-2) «بقي 3 جرحى وتوفي واحد» → [{"from_status":"injured","to_status":"deceased","count":1}] — لا حاجة لذكر injuries=3 في casualties.
-3) «أعلنت وزارة الصحة وفاة أحد المصابين متأثراً بجراحه» → [{"from_status":"injured","to_status":"deceased","count":1}]
-4) «أحد جريحي الانفجار استشهد... لتصبح الحصيلة 3 شهداء وجريح واحد» → [{"from_status":"injured","to_status":"deceased","count":1}] حتى لو جاءت الحصيلة في شق لاحق من الجملة.
-5) «أصيب 5 جرحى إضافيين» → casualty_transitions=[] (إضافة فقط، بدون انتقال).
+
+1. «توفى أحد الجرحى جراء إصابته» → [{"from_status":"injured","to_status":"deceased","count":1}] و casualties.deaths=1 (اختياري).
+2. «بقي 3 جرحى وتوفي واحد» → [{"from_status":"injured","to_status":"deceased","count":1}] — لا حاجة لذكر injuries=3 في casualties.
+3. «أعلنت وزارة الصحة وفاة أحد المصابين متأثراً بجراحه» → [{"from_status":"injured","to_status":"deceased","count":1}]
+4. «أحد جريحي الانفجار استشهد... لتصبح الحصيلة 3 شهداء وجريح واحد» → [{"from_status":"injured","to_status":"deceased","count":1}] حتى لو جاءت الحصيلة في شق لاحق من الجملة.
+5. «أصيب 5 جرحى إضافيين» → casualty_transitions=[] (إضافة فقط، بدون انتقال).
 
 أمثلة على village_roles:
-1) «دبابة متمركزة في البياض تقصف المنصوري» → village=["البياض","المنصوري"] و village_roles=[{"village":"البياض","role":"origin","deaths":null,"injuries":null,"evidence_span":null},{"village":"المنصوري","role":"target","deaths":null,"injuries":null,"evidence_span":null}]
-2) «غارة على عيتا الشعب أدت إلى 2 جريحين» → village=["عيتا الشعب"] و village_roles=[{"village":"عيتا الشعب","role":"target","deaths":null,"injuries":2,"evidence_span":"عيتا الشعب أدت إلى 2 جريحين"}]
-3) «المنصوري: شهيد و3 جرحى؛ مجدل زون: 4 جرحى» → village=["المنصوري","مجدل زون"] و village_roles=[{"village":"المنصوري","role":"target","deaths":1,"injuries":3,"evidence_span":"المنصوري: شهيد و3 جرحى"},{"village":"مجدل زون","role":"target","deaths":null,"injuries":4,"evidence_span":"مجدل زون: 4 جرحى"}]
+
+1. «دبابة متمركزة في البياض تقصف المنصوري» → village=["البياض","المنصوري"] و village_roles=[{"village":"البياض","role":"origin","deaths":null,"injuries":null,"evidence_span":null},{"village":"المنصوري","role":"target","deaths":null,"injuries":null,"evidence_span":null}]
+2. «غارة على عيتا الشعب أدت إلى 2 جريحين» → village=["عيتا الشعب"] و village_roles=[{"village":"عيتا الشعب","role":"target","deaths":null,"injuries":2,"evidence_span":"عيتا الشعب أدت إلى 2 جريحين"}]
+3. «المنصوري: شهيد و3 جرحى؛ مجدل زون: 4 جرحى» → village=["المنصوري","مجدل زون"] و village_roles=[{"village":"المنصوري","role":"target","deaths":1,"injuries":3,"evidence_span":"المنصوري: شهيد و3 جرحى"},{"village":"مجدل زون","role":"target","deaths":null,"injuries":4,"evidence_span":"مجدل زون: 4 جرحى"}]
+
 - عند وجود مكان انطلاق ومكان استهداف، أضف عنصراً origin للأول وعنصراً target للثاني.
 - عند وجود مكان استهداف واحد، أضف عنصراً target له.
 - عند وجود عدة أماكن مستهدفة، أضف عنصراً target مستقلاً لكل مكان واربط به حصيلته الصريحة وحدها إن وجدت.
 
 قواعد الأعداد:
+
 - استخرج الرقم فقط عندما يكون مكتوباً بشكل مباشر في النص.
 - لا تستنتج العدد من صياغة عامة مثل "ضحايا" أو "إصابات" أو "شهداء" إذا لم يوجد رقم صريح.
 - لا تحوّل الجمع إلى رقم.
@@ -60,27 +68,27 @@
 
 Schema الإخراج الوحيد المسموح:
 {
-  "is_relevant": true,
-  "village": null,
-  "village_roles": [],
-  "action_description": null,
-  "sub_events": [],
-  "casualties": {
-    "total_deaths": null,
-    "total_injuries": null,
-    "deaths": null,
-    "injuries": null,
-    "male_deaths": null,
-    "male_injuries": null,
-    "female_deaths": null,
-    "female_injuries": null,
-    "children_deaths": null,
-    "children_injuries": null
-  },
-  "casualty_evidence": [],
-  "casualty_scope": "unspecified",
-  "casualty_scope_evidence": null,
-  "casualty_transitions": []
+"is_relevant": true,
+"village": null,
+"village_roles": [],
+"action_description": null,
+"sub_events": [],
+"casualties": {
+"total_deaths": null,
+"total_injuries": null,
+"deaths": null,
+"injuries": null,
+"male_deaths": null,
+"male_injuries": null,
+"female_deaths": null,
+"female_injuries": null,
+"children_deaths": null,
+"children_injuries": null
+},
+"casualty_evidence": [],
+"casualty_scope": "unspecified",
+"casualty_scope_evidence": null,
+"casualty_transitions": []
 }
 
 قاعدة ربط الفئات الديموغرافية: عندما تأتي عبارة «من بينهم/من بين الجرحى» بعد عدد الجرحى مباشرة، انسب أعداد الأطفال والنساء والرجال التالية إلى injuries لا إلى deaths. الكلمات «سيدة/سيدات/امرأة/نساء» تعني female ويجب عدم تجاهل رقمها. مثال إلزامي: «4 شهداء و33 جريحا من بينهم 6 أطفال و4 سيدات» يعني deaths=4 وinjuries=33 وchildren_injuries=6 وfemale_injuries=4، مع إبقاء children_deaths وfemale_deaths null.

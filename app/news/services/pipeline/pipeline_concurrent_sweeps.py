@@ -28,6 +28,7 @@ from app.news.repositories.pipeline_claim_repository import PipelineClaimReposit
 from app.news.repositories.raw_message_repository import RawMessageRepository
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.dedup.fast_path_dedup import FastPathDedupService
+from app.news.services.dedup.segment_review_dedup import SegmentReviewDedupService
 from app.news.services.materialization.incident_materialization_service import (
     IncidentMaterializationService,
 )
@@ -128,7 +129,9 @@ def _tier2_extraction_worker_count() -> int:
     return max(1, settings.tier2_llm_max_concurrent_requests)
 
 
-def _claim_raw_message_id(claim_fn: Callable[[Session], RawMessage | None]) -> int | None:
+def _claim_raw_message_id(
+    claim_fn: Callable[[Session], RawMessage | None],
+) -> int | None:
     """Claim one row, persist the claim lease, and release the row lock."""
     with SessionLocal() as db:
         message = claim_fn(db)
@@ -502,6 +505,7 @@ async def _fast_path_worker(
             service = IncidentMaterializationService(
                 db,
                 dedup_service=DedupMatchingService(incident_repo),
+                segment_review_service=SegmentReviewDedupService(incident_repo),
             )
             fast_dedup = FastPathDedupService(incident_repo)
             try:

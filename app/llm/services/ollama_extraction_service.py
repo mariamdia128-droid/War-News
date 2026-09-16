@@ -40,6 +40,7 @@ from app.news.services.incident_details.casualty_count_backstop import (
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
+
 logger = logging.getLogger(__name__)
 
 _DASH_ROUTE_RE = re.compile(
@@ -47,6 +48,20 @@ _DASH_ROUTE_RE = re.compile(
     r"(?P<left>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
     r"\s*[-–—]\s*"
     r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
+    r"(?=$|[\n،؛.!؟])"
+)
+_BETWEEN_ROUTE_RE = re.compile(
+    r"\bبين\s+"
+    r"(?P<left>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
+    r"\s+و\s*"
+    r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
+    r"(?=$|[\n،؛.!؟])"
+)
+_DASH_QUALIFIER_RE = re.compile(
+    r"(?P<prefix>بلدة|مزرعة|خراج)\s+"
+    r"(?P<left>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
+    r"\s*[-–—]\s*"
+    r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,80}?)"
     r"(?=$|[\n،؛.!؟])"
 )
 _ROUTE_AREA_PREFIXES = terms_by_category(
@@ -285,18 +300,32 @@ COMBINED_TIER1_RESPONSE_SCHEMA: JsonObject = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "categories_present": PRESENCE_GATE_RESPONSE_SCHEMA["properties"]["categories_present"],  # type: ignore[index]
-        "category_evidence": PRESENCE_GATE_RESPONSE_SCHEMA["properties"]["category_evidence"],  # type: ignore[index]
+        "categories_present": PRESENCE_GATE_RESPONSE_SCHEMA["properties"][
+            "categories_present"
+        ],  # type: ignore[index]
+        "category_evidence": PRESENCE_GATE_RESPONSE_SCHEMA["properties"][
+            "category_evidence"
+        ],  # type: ignore[index]
         "is_relevant": {"type": "boolean"},
         "village": {"type": ["array", "null"], "items": {"type": "string"}},
-        "village_roles": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["village_roles"],  # type: ignore[index]
+        "village_roles": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"][
+            "village_roles"
+        ],  # type: ignore[index]
         "action_description": {"type": ["string", "null"]},
         "sub_events": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["sub_events"],  # type: ignore[index]
         "casualties": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualties"],  # type: ignore[index]
-        "casualty_transitions": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_transitions"],  # type: ignore[index]
-        "casualty_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_evidence"],  # type: ignore[index]
-        "casualty_scope": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_scope"],  # type: ignore[index]
-        "casualty_scope_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"]["casualty_scope_evidence"],  # type: ignore[index]
+        "casualty_transitions": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"][
+            "casualty_transitions"
+        ],  # type: ignore[index]
+        "casualty_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"][
+            "casualty_evidence"
+        ],  # type: ignore[index]
+        "casualty_scope": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"][
+            "casualty_scope"
+        ],  # type: ignore[index]
+        "casualty_scope_evidence": GENERAL_EXTRACTION_RESPONSE_SCHEMA["properties"][
+            "casualty_scope_evidence"
+        ],  # type: ignore[index]
     },
     "required": [
         "categories_present",
@@ -468,7 +497,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             general_response.village,
             raw_message_id=raw_message_id,
         )
-        villages, village_roles = self._apply_dash_route_village_backstop(
+        villages, village_roles = self._apply_dash_compound_location_rules(
             post_text,
             villages,
             village_roles,
@@ -719,59 +748,25 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 failed_categories,
                 list(category_details.keys()),
             )
+        result = self._build_tier1_result(
+            post_text=post_text,
+            categories_present=list(categories_present),
+            general_response=general_response,
+            raw_message_id=raw_message_id,
+        )
         categories = self._validated_categories(
             category_details,
             raw_message_id=raw_message_id,
         )
-        casualties, casualty_evidence = apply_casualty_count_backstop(
-            post_text,
-            general_response.casualties,
-            list(general_response.casualty_evidence),
-            raw_message_id=raw_message_id,
-        )
         self._inject_casualty_demographics_from_root(
             categories,
-            casualties,
+            result.casualties,
         )
-        village_roles = self._validated_village_roles(
-            general_response.village_roles,
-            post_text=post_text,
-            raw_message_id=raw_message_id,
-        )
-        scope, scope_evidence, scope_needs_review, scope_reason = (
-            self._validated_casualty_scope(
-                general_response,
-                village_roles=village_roles,
-                post_text=post_text,
-                raw_message_id=raw_message_id,
-            )
-        )
-
-        return ExtractionResult(
-            is_relevant=general_response.is_relevant,
-            village=self._validated_village_list(
-                general_response.village,
-                raw_message_id=raw_message_id,
-            ),
-            village_roles=village_roles,
-            action_description=self._validated_text(
-                general_response.action_description,
-                field_name="action_description",
-                raw_message_id=raw_message_id,
-            ),
-            sub_events=list(general_response.sub_events),
-            categories=categories,
-            casualties=casualties,
-            casualty_evidence=casualty_evidence,
-            casualty_transitions=list(general_response.casualty_transitions),
-            casualty_scope=scope,
-            casualty_scope_evidence=scope_evidence,
-            casualty_scope_needs_review=scope_needs_review,
-            casualty_scope_review_reason=scope_reason,
-            presence_category_keys=list(categories_present),
-            extraction_tier=2,
-            model=self.client.model,
-            extracted_at=datetime.now(timezone.utc),
+        return result.model_copy(
+            update={
+                "categories": categories,
+                "extraction_tier": 2,
+            }
         )
 
     def _extract_general_fields(
@@ -1010,6 +1005,11 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 post_text=post_text,
                 raw_message_id=raw_message_id,
             )
+            _location_names, locations = self._apply_dash_compound_location_rules(
+                sub_event.evidence_span or post_text,
+                [entry.village for entry in locations],
+                locations,
+            )
             if not locations:
                 logger.warning(
                     "Dropped locationless sub_event index=%s raw_message_id=%s",
@@ -1047,6 +1047,26 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             )
         return validated
 
+    @classmethod
+    def _apply_dash_compound_location_rules(
+        cls,
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        villages, village_roles = cls._apply_dash_route_village_backstop(
+            post_text,
+            villages,
+            village_roles,
+        )
+        for match in _DASH_QUALIFIER_RE.finditer(post_text):
+            villages, village_roles = cls._apply_dash_qualifier_backstop(
+                match,
+                villages,
+                village_roles,
+            )
+        return villages, village_roles
+
     @staticmethod
     def _apply_dash_route_village_backstop(
         post_text: str,
@@ -1054,7 +1074,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         village_roles: list[VillageRoleEntry],
     ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
         """Recover both endpoints when a model drops one dash-joined route place."""
-        match = _DASH_ROUTE_RE.search(post_text)
+        match = _DASH_ROUTE_RE.search(post_text) or _BETWEEN_ROUTE_RE.search(post_text)
         if match is None:
             return villages, village_roles
 
@@ -1106,6 +1126,100 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 )
                 role_norms.add(normalized)
         return merged_villages, merged_roles
+
+    @staticmethod
+    def _apply_dash_qualifier_backstop(
+        match: re.Match[str],
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Collapse a non-route dash phrase to one target plus qualifier."""
+        prefix = match.group("prefix").strip()
+        left = match.group("left").strip()
+        right = match.group("right").strip()
+        if not left or not right:
+            return villages, village_roles
+
+        target = f"{prefix} {left}" if prefix == "مزرعة" else left
+        target_norm = normalize_arabic_text(target)
+        left_norm = normalize_arabic_text(left)
+        right_norm = normalize_arabic_text(right)
+        right_parts = {
+            part.strip() for part in re.split(r"\s+و(?=\S)", right_norm) if part.strip()
+        }
+
+        def is_left(value: str) -> bool:
+            normalized = normalize_arabic_text(value)
+            return bool(
+                normalized
+                and (
+                    normalized in {left_norm, target_norm}
+                    or target_norm.endswith(f" {normalized}")
+                    or normalized.startswith(f"{target_norm} ")
+                )
+            )
+
+        def is_qualifier(value: str) -> bool:
+            normalized = normalize_arabic_text(value)
+            return bool(
+                normalized
+                and (
+                    normalized == right_norm
+                    or any(
+                        normalized == part
+                        or part.endswith(f" {normalized}")
+                        or normalized.endswith(f" {part}")
+                        for part in right_parts
+                    )
+                )
+            )
+
+        existing_names = list(villages or [])
+        existing_names.extend(entry.village for entry in village_roles)
+        if not any(is_left(name) or is_qualifier(name) for name in existing_names):
+            return villages, village_roles
+
+        merged_villages: list[str] = []
+        target_added = False
+        for name in villages or []:
+            if is_qualifier(name):
+                continue
+            if is_left(name):
+                if not target_added:
+                    merged_villages.append(target)
+                    target_added = True
+                continue
+            merged_villages.append(name)
+        if not target_added:
+            merged_villages.append(target)
+
+        merged_roles: list[VillageRoleEntry] = []
+        target_role_added = False
+        for entry in village_roles:
+            if is_qualifier(entry.village):
+                continue
+            if is_left(entry.village):
+                if not target_role_added:
+                    merged_roles.append(
+                        entry.model_copy(
+                            update={
+                                "village": target,
+                                "qualifier_text": right,
+                            }
+                        )
+                    )
+                    target_role_added = True
+                continue
+            merged_roles.append(entry)
+        if not target_role_added:
+            merged_roles.append(
+                VillageRoleEntry(
+                    village=target,
+                    role=VillageRole.target,
+                    qualifier_text=right,
+                )
+            )
+        return merged_villages or None, merged_roles
 
     def _validated_text(
         self,

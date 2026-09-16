@@ -16,6 +16,91 @@
   meaning: "قصف مدفعي"
   notes: "raw_message_ids=358"
 
+- term: "هاون"
+  category: condition_alias
+  meaning: "قصف مدفعي"
+  notes: "Mortar fire variant"
+
+- term: "قذائف هاون"
+  category: condition_alias
+  meaning: "قصف مدفعي"
+  notes: "Mortar shells variant"
+
+- term: "قصف بقذائف الهاون"
+  category: condition_alias
+  meaning: "قصف مدفعي"
+  notes: "Mortar shelling variant"
+
+- term: "تفكيك"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Dismantling/theft variant"
+
+- term: "سرقة"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Theft variant"
+
+- term: "نهب"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Looting variant"
+
+- term: "ألواح طاقة شمسية"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Solar panels theft variant"
+
+- term: "سرقة ألواح طاقة شمسية"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Solar panels theft variant"
+
+- term: "تفكيك ألواح الطاقة الشمسية"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Dismantling solar panels from homes"
+
+- term: "تفكيك أجهزة الإنترنت"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Dismantling internet equipment from homes"
+
+- term: "تفكيك معدات الإنترنت"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Dismantling internet equipment variant"
+
+- term: "سرقة معدات الإنترنت"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Internet equipment theft variant"
+
+- term: "سرقة معدات الاتصالات"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Telecommunications equipment theft variant"
+
+- term: "نهب محتويات المنازل"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Looting home contents variant"
+
+- term: "سرقة محتويات منازل"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Home contents theft variant"
+
+- term: "اقتحام منازل"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Home raiding variant"
+
+- term: "سرقة منازل"
+  category: condition_alias
+  meaning: "اقتحام/ سرقة منازل"
+  notes: "Home theft variant"
+
 - term: "ألقت محلقة قنبلة صوتية"
   category: condition_alias
   meaning: "قنابل صوتية"

@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # possible_duplicate within ≤30min at this elevated text similarity (recon
     # true-positive Nabatiyeh pair scored 0.875; same-village high is 0.80).
     dedup_cross_village_text_min: float = 0.87
+    # Cross-source sub-event matches are review-only. The initial 0.60 floor
+    # catches both recon fixtures after Arabic normalization; review outcomes
+    # should be used to calibrate this before any auto-handling is considered.
+    segment_dedup_review_similarity_threshold: float = 0.60
+    segment_dedup_review_window_days: int = 7
+    segment_dedup_review_max_candidates: int = 20
     bulletin_reconciliation_window_hours: int = 60
     bulletin_reconciliation_sweep_interval_seconds: int = 1800
     bulletin_reconciliation_village_set_min_overlap: float = 1.0

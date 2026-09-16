@@ -70,7 +70,9 @@ from app.news.services.incident_details.casualty_transition_merge import (
 from app.news.services.incident_details.casualty_transition_backstop import (
     detect_casualty_transition_backstop,
 )
-from app.news.services.incident_details.incident_detail_merge import merge_incident_detail_fields
+from app.news.services.incident_details.incident_detail_merge import (
+    merge_incident_detail_fields,
+)
 from app.news.services.dedup.text_similarity import event_token_similarity
 from app.news.services.materialization.verification_signals import (
     LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
@@ -109,6 +111,15 @@ class StoryCandidate:
     token_similarity: float | None = None
 
 
+@dataclass(frozen=True)
+class SegmentReviewSource:
+    """Materialized cross-source incident plus its persisted extraction shape."""
+
+    incident: Incident
+    extraction_result: dict[str, Any]
+    match_result: dict[str, Any]
+
+
 class IncidentRepository(IncidentRepositoryInterface):
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -142,7 +153,10 @@ class IncidentRepository(IncidentRepositoryInterface):
                     func.left(RawMessage.raw_text, 300),
                 ).label("khabar"),
                 case(
-                    (RawMessage.source_platform.is_not(None), func.initcap(RawMessage.source_platform)),
+                    (
+                        RawMessage.source_platform.is_not(None),
+                        func.initcap(RawMessage.source_platform),
+                    ),
                     (RawMessage.external_message_id.ilike("twitter:%"), "Twitter"),
                     (RawMessage.external_message_id.ilike("telegram:%"), "Telegram"),
                     (RawMessage.external_message_id.ilike("facebook:%"), "Facebook"),
@@ -169,9 +183,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                         Incident.verification_status == "needs_verification",
                         "auto_processed",
                     ),
-                    else_=func.coalesce(
-                        Incident.verification_status, "auto_processed"
-                    ),
+                    else_=func.coalesce(Incident.verification_status, "auto_processed"),
                 ).label("verification_status"),
                 case(
                     (needs_verification, Incident.verification_reason),
@@ -215,11 +227,10 @@ class IncidentRepository(IncidentRepositoryInterface):
         rows = self.db.execute(
             base_query.order_by(
                 *self._list_ordering(params),
-            )
-            .limit(params.limit + 1)
+            ).limit(params.limit + 1)
         ).all()
         has_next_page = len(rows) > params.limit
-        page_rows = rows[:params.limit]
+        page_rows = rows[: params.limit]
         total = self.db.scalar(
             select(func.count(Incident.id))
             .select_from(Incident)
@@ -357,7 +368,11 @@ class IncidentRepository(IncidentRepositoryInterface):
 
         def match_village_id(key: str) -> int | None:
             value = village_match.get(key)
-            return value if isinstance(value, int) and not isinstance(value, bool) else None
+            return (
+                value
+                if isinstance(value, int) and not isinstance(value, bool)
+                else None
+            )
 
         anchor_village_id = match_village_id("geo_context_anchor_village_id")
         alternate_village_id = match_village_id("alternate_candidate_village_id")
@@ -503,9 +518,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                 continue
             merged_from_value = new_values.get("merged_from")
             merged_from = (
-                merged_from_value
-                if isinstance(merged_from_value, dict)
-                else {}
+                merged_from_value if isinstance(merged_from_value, dict) else {}
             )
             revisions.append(
                 TollRevisionDTO(
@@ -577,7 +590,9 @@ class IncidentRepository(IncidentRepositoryInterface):
             )
         return related
 
-    def create_manual(self, payload: IncidentCreateDTO, created_by: UUID) -> IncidentDetailDTO:
+    def create_manual(
+        self, payload: IncidentCreateDTO, created_by: UUID
+    ) -> IncidentDetailDTO:
         village_name = payload.village.strip()
         condition_name = payload.condition.strip()
         sanitized_khabar = strip_emoji_and_pictographs(payload.khabar).strip()
@@ -605,7 +620,9 @@ class IncidentRepository(IncidentRepositoryInterface):
             )
         )
         if condition is None:
-            raise ValueError("Condition was not found. Enter an existing condition name.")
+            raise ValueError(
+                "Condition was not found. Enter an existing condition name."
+            )
         source = self._ensure_manual_source()
         incident = Incident(
             village_id=village.id,
@@ -626,18 +643,29 @@ class IncidentRepository(IncidentRepositoryInterface):
             raise RuntimeError("Created incident could not be loaded.")
         return detail
 
-    def update(self, incident_id: UUID, payload: IncidentUpdateDTO, user_id: UUID) -> IncidentDetailDTO | None:
+    def update(
+        self, incident_id: UUID, payload: IncidentUpdateDTO, user_id: UUID
+    ) -> IncidentDetailDTO | None:
         incident = self.db.scalar(
-            select(Incident).where(
+            select(Incident)
+            .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
                 Incident.version == payload.version,
                 Incident.locked_by_user_id == user_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if incident is None:
             self.db.rollback()
-            if self.db.scalar(select(Incident.id).where(Incident.id == incident_id, Incident.is_deleted.is_(False))) is None:
+            if (
+                self.db.scalar(
+                    select(Incident.id).where(
+                        Incident.id == incident_id, Incident.is_deleted.is_(False)
+                    )
+                )
+                is None
+            ):
                 return None
             raise StaleDataError("Incident version or edit lock is stale.")
         text_fields = {
@@ -667,16 +695,25 @@ class IncidentRepository(IncidentRepositoryInterface):
         version: int,
     ) -> IncidentDetailDTO | None:
         incident = self.db.scalar(
-            select(Incident).where(
+            select(Incident)
+            .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
                 Incident.version == version,
                 Incident.locked_by_user_id == performed_by,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if incident is None:
             self.db.rollback()
-            if self.db.scalar(select(Incident.id).where(Incident.id == incident_id, Incident.is_deleted.is_(False))) is None:
+            if (
+                self.db.scalar(
+                    select(Incident.id).where(
+                        Incident.id == incident_id, Incident.is_deleted.is_(False)
+                    )
+                )
+                is None
+            ):
                 return None
             raise StaleDataError("Incident version or edit lock is stale.")
 
@@ -717,23 +754,34 @@ class IncidentRepository(IncidentRepositoryInterface):
 
     def delete(self, incident_id: UUID, version: int, user_id: UUID) -> bool:
         incident = self.db.scalar(
-            select(Incident).where(
+            select(Incident)
+            .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
                 Incident.version == version,
                 Incident.locked_by_user_id == user_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if incident is None:
             self.db.rollback()
-            if self.db.scalar(select(Incident.id).where(Incident.id == incident_id, Incident.is_deleted.is_(False))) is None:
+            if (
+                self.db.scalar(
+                    select(Incident.id).where(
+                        Incident.id == incident_id, Incident.is_deleted.is_(False)
+                    )
+                )
+                is None
+            ):
                 return False
             raise StaleDataError("Incident version or edit lock is stale.")
         incident.is_deleted = True
         self.db.commit()
         return True
 
-    def acquire_edit_lock(self, incident_id: UUID, user_id: UUID) -> IncidentDetailDTO | None:
+    def acquire_edit_lock(
+        self, incident_id: UUID, user_id: UUID
+    ) -> IncidentDetailDTO | None:
         now = datetime.now(timezone.utc)
         result = self.db.execute(
             sa_update(Incident)
@@ -746,11 +794,21 @@ class IncidentRepository(IncidentRepositoryInterface):
                     | (Incident.locked_by_user_id == user_id)
                 ),
             )
-            .values(locked_by_user_id=user_id, edit_lock_expires_at=now + timedelta(minutes=5))
+            .values(
+                locked_by_user_id=user_id,
+                edit_lock_expires_at=now + timedelta(minutes=5),
+            )
         )
         if result.rowcount == 0:
             self.db.rollback()
-            if self.db.scalar(select(Incident.id).where(Incident.id == incident_id, Incident.is_deleted.is_(False))) is None:
+            if (
+                self.db.scalar(
+                    select(Incident.id).where(
+                        Incident.id == incident_id, Incident.is_deleted.is_(False)
+                    )
+                )
+                is None
+            ):
                 return None
             raise StaleDataError("Incident is being edited by another administrator.")
         self.db.commit()
@@ -765,21 +823,32 @@ class IncidentRepository(IncidentRepositoryInterface):
         user_id: UUID,
     ) -> IncidentDetailDTO | None:
         incident = self.db.scalar(
-            select(Incident).where(
+            select(Incident)
+            .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
                 Incident.version == version,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if incident is None:
             self.db.rollback()
-            if self.db.scalar(select(Incident.id).where(Incident.id == incident_id, Incident.is_deleted.is_(False))) is None:
+            if (
+                self.db.scalar(
+                    select(Incident.id).where(
+                        Incident.id == incident_id, Incident.is_deleted.is_(False)
+                    )
+                )
+                is None
+            ):
                 return None
             raise StaleDataError("Incident verification version is stale.")
         old_values = {
             "verification_status": incident.verification_status,
             "verification_reason": incident.verification_reason,
-            "verified_by_user_id": str(incident.verified_by_user_id) if incident.verified_by_user_id else None,
+            "verified_by_user_id": str(incident.verified_by_user_id)
+            if incident.verified_by_user_id
+            else None,
         }
         incident.verification_status = status
         incident.verification_reason = reason
@@ -804,13 +873,19 @@ class IncidentRepository(IncidentRepositoryInterface):
                 raw_message.filter_result = filter_result
                 raw_message.status = MessageStatus.rejected
                 raw_message.error_message = reason
-        self.db.add(IncidentUpdate(
-            incident_id=incident.id,
-            action=UpdateAction.status_change,
-            old_values=old_values,
-            new_values={"verification_status": status, "verification_reason": reason, "verified_by_user_id": str(user_id)},
-            performed_by=user_id,
-        ))
+        self.db.add(
+            IncidentUpdate(
+                incident_id=incident.id,
+                action=UpdateAction.status_change,
+                old_values=old_values,
+                new_values={
+                    "verification_status": status,
+                    "verification_reason": reason,
+                    "verified_by_user_id": str(user_id),
+                },
+                performed_by=user_id,
+            )
+        )
         self.db.commit()
         return self.get_by_id(incident_id)
 
@@ -858,26 +933,37 @@ class IncidentRepository(IncidentRepositoryInterface):
         user_id: UUID,
     ) -> IncidentDuplicateResolutionResultDTO | None:
         incident = self.db.scalar(
-            select(Incident).where(
+            select(Incident)
+            .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
                 Incident.version == version,
                 Incident.locked_by_user_id == user_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if incident is None:
             self.db.rollback()
-            if self.db.scalar(select(Incident.id).where(Incident.id == incident_id, Incident.is_deleted.is_(False))) is None:
+            if (
+                self.db.scalar(
+                    select(Incident.id).where(
+                        Incident.id == incident_id, Incident.is_deleted.is_(False)
+                    )
+                )
+                is None
+            ):
                 return None
             raise StaleDataError("Incident version or edit lock is stale.")
 
         match = self.db.scalar(
-            select(DuplicateMatch).where(
+            select(DuplicateMatch)
+            .where(
                 DuplicateMatch.id == match_id,
                 DuplicateMatch.incident_id == incident_id,
                 DuplicateMatch.status == MatchStatus.pending,
                 DuplicateMatch.matched_incident_id.is_not(None),
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if match is None or match.matched_incident_id is None:
             self.db.rollback()
@@ -897,14 +983,18 @@ class IncidentRepository(IncidentRepositoryInterface):
             match.status = MatchStatus.false_positive
         elif decision == MatchStatus.confirmed_duplicate.value:
             canonical = self.db.scalar(
-                select(Incident).where(
+                select(Incident)
+                .where(
                     Incident.id == canonical_id,
                     Incident.is_deleted.is_(False),
-                ).with_for_update()
+                )
+                .with_for_update()
             )
             if canonical is None:
                 self.db.rollback()
-                raise StaleDataError("The suggested main incident is no longer available.")
+                raise StaleDataError(
+                    "The suggested main incident is no longer available."
+                )
             if incident.village_id != canonical.village_id:
                 self.db.rollback()
                 raise ValueError(
@@ -913,15 +1003,27 @@ class IncidentRepository(IncidentRepositoryInterface):
 
             old_values = self._snapshot_merge_fields(canonical)
             for field in ("deaths", "injuries", "total_deaths", "total_injuries"):
-                setattr(canonical, field, self._max_preserving_empty(getattr(canonical, field), getattr(incident, field)))
+                setattr(
+                    canonical,
+                    field,
+                    self._max_preserving_empty(
+                        getattr(canonical, field), getattr(incident, field)
+                    ),
+                )
             if canonical.source_link is None:
                 canonical.source_link = incident.source_link
             if canonical.source_link_2 is None:
                 canonical.source_link_2 = incident.source_link_2 or incident.source_link
 
-            duplicate_detail = self.db.scalar(select(IncidentDetail).where(IncidentDetail.incident_id == incident.id))
+            duplicate_detail = self.db.scalar(
+                select(IncidentDetail).where(IncidentDetail.incident_id == incident.id)
+            )
             if duplicate_detail is not None:
-                canonical_detail = self.db.scalar(select(IncidentDetail).where(IncidentDetail.incident_id == canonical.id))
+                canonical_detail = self.db.scalar(
+                    select(IncidentDetail).where(
+                        IncidentDetail.incident_id == canonical.id
+                    )
+                )
                 if canonical_detail is None:
                     canonical_detail = IncidentDetail(incident_id=canonical.id)
                     self.db.add(canonical_detail)
@@ -942,13 +1044,15 @@ class IncidentRepository(IncidentRepositoryInterface):
                 "channel": None,
                 "khabar": incident.khabar,
             }
-            self.db.add(IncidentUpdate(
-                incident_id=canonical.id,
-                action=UpdateAction.pipeline_merge,
-                old_values=old_values,
-                new_values=new_values,
-                performed_by=user_id,
-            ))
+            self.db.add(
+                IncidentUpdate(
+                    incident_id=canonical.id,
+                    action=UpdateAction.pipeline_merge,
+                    old_values=old_values,
+                    new_values=new_values,
+                    performed_by=user_id,
+                )
+            )
             incident.is_deleted = True
             incident.duplicate_flag = False
             match.status = MatchStatus.confirmed_duplicate
@@ -968,18 +1072,22 @@ class IncidentRepository(IncidentRepositoryInterface):
         match.resolved_by = user_id
         incident.locked_by_user_id = None
         incident.edit_lock_expires_at = None
-        self.db.add(IncidentUpdate(
-            incident_id=incident.id,
-            action=UpdateAction.status_change,
-            old_values={"duplicate_flag": True, "duplicate_status": "pending"},
-            new_values={"duplicate_flag": False, "duplicate_status": decision},
-            performed_by=user_id,
-        ))
+        self.db.add(
+            IncidentUpdate(
+                incident_id=incident.id,
+                action=UpdateAction.status_change,
+                old_values={"duplicate_flag": True, "duplicate_status": "pending"},
+                new_values={"duplicate_flag": False, "duplicate_status": decision},
+                performed_by=user_id,
+            )
+        )
         self.db.commit()
         return IncidentDuplicateResolutionResultDTO(
             decision=decision,
             incident_id=incident_id,
-            canonical_incident_id=canonical_id if decision == MatchStatus.confirmed_duplicate.value else incident_id,
+            canonical_incident_id=canonical_id
+            if decision == MatchStatus.confirmed_duplicate.value
+            else incident_id,
         )
 
     def release_edit_lock(self, incident_id: UUID, user_id: UUID) -> bool:
@@ -1086,9 +1194,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         status: MatchStatus = MatchStatus.pending,
     ) -> None:
         if incident.village_id != matched_incident.village_id:
-            raise ValueError(
-                "Duplicate matches require the same canonical village."
-            )
+            raise ValueError("Duplicate matches require the same canonical village.")
         self.db.add(
             DuplicateMatch(
                 incident_id=incident.id,
@@ -1168,9 +1274,9 @@ class IncidentRepository(IncidentRepositoryInterface):
                     select(IncidentUpdate.id).where(
                         IncidentUpdate.incident_id == existing.id,
                         IncidentUpdate.action == UpdateAction.pipeline_merge,
-                        IncidentUpdate.new_values[
-                            "merged_from"
-                        ]["raw_message_id"].astext
+                        IncidentUpdate.new_values["merged_from"][
+                            "raw_message_id"
+                        ].astext
                         == str(raw_message_id),
                         IncidentUpdate.new_values.has_key(  # type: ignore[attr-defined]
                             "deaths_transitioned_from_injuries"
@@ -1251,10 +1357,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                 incoming_value = new_candidate_data.get(fallback_key)
             current_value = getattr(existing, field)
             merged_value = self._max_preserving_empty(current_value, incoming_value)
-            if (
-                isinstance(incoming_value, int)
-                and merged_value != incoming_value
-            ):
+            if isinstance(incoming_value, int) and merged_value != incoming_value:
                 suppressed[f"{field}_suppressed"] = {
                     "value": incoming_value,
                     "raw_message_id": raw_message_id,
@@ -1273,7 +1376,9 @@ class IncidentRepository(IncidentRepositoryInterface):
             merge_incident_detail_fields(detail, mapped_fields)
             self.db.add(detail)
 
-        origin_note = self._origin_village_note(new_candidate_data.get("origin_villages"))
+        origin_note = self._origin_village_note(
+            new_candidate_data.get("origin_villages")
+        )
         if origin_note:
             existing.note = self._append_unique_note(existing.note, origin_note)
 
@@ -1329,7 +1434,10 @@ class IncidentRepository(IncidentRepositoryInterface):
             incoming = new_candidate_data.get(field)
             if isinstance(incoming, int) and not isinstance(incoming, bool):
                 setattr(existing, field, incoming)
-        if isinstance(new_candidate_data.get("martyrs"), str) and new_candidate_data["martyrs"].strip():
+        if (
+            isinstance(new_candidate_data.get("martyrs"), str)
+            and new_candidate_data["martyrs"].strip()
+        ):
             existing.martyrs = new_candidate_data["martyrs"].strip()
 
         mapped_fields = new_candidate_data.get("mapped_fields") or {}
@@ -1467,8 +1575,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         if want_embedding:
             columns.append(
                 (
-                    1.0
-                    - Incident.khabar_embedding.cosine_distance(candidate_embedding)
+                    1.0 - Incident.khabar_embedding.cosine_distance(candidate_embedding)
                 ).label("embedding_similarity")
             )
 
@@ -1520,6 +1627,96 @@ class IncidentRepository(IncidentRepositoryInterface):
         candidates.sort(key=lambda c: c.time_gap_seconds)
         return candidates
 
+    def find_segment_review_sources(
+        self,
+        *,
+        village_id: int,
+        condition_id: int,
+        source_id: int,
+        source_name: str | None,
+        source_platform: str | None,
+        event_date: date,
+        window_days: int,
+        exclude_raw_message_id: int,
+        max_results: int,
+    ) -> list[SegmentReviewSource]:
+        """Return active, materialized, different-source segment containers."""
+        start_date = event_date - timedelta(days=window_days)
+        end_date = event_date + timedelta(days=window_days)
+        rows = self.db.execute(
+            select(
+                Incident,
+                RawMessage.extraction_result,
+                RawMessage.match_result,
+            )
+            .join(RawMessage, RawMessage.id == Incident.raw_message_id)
+            .where(
+                Incident.village_id == village_id,
+                Incident.condition_id == condition_id,
+                Incident.source_id.is_not(None),
+                or_(
+                    Incident.source_id != source_id,
+                    func.coalesce(RawMessage.source_name, "") != (source_name or ""),
+                    func.coalesce(RawMessage.source_platform, "")
+                    != (source_platform or ""),
+                ),
+                Incident.raw_message_id != exclude_raw_message_id,
+                Incident.is_deleted.is_(False),
+                Incident.event_date >= start_date,
+                Incident.event_date <= end_date,
+                RawMessage.status.in_(
+                    [MessageStatus.materialized, MessageStatus.duplicate]
+                ),
+                RawMessage.extraction_result.is_not(None),
+                RawMessage.match_result.is_not(None),
+            )
+            .order_by(Incident.event_date.desc(), Incident.created_at.desc())
+            .limit(max_results)
+        ).all()
+        return [
+            SegmentReviewSource(
+                incident=row[0],
+                extraction_result=row[1] if isinstance(row[1], dict) else {},
+                match_result=row[2] if isinstance(row[2], dict) else {},
+            )
+            for row in rows
+        ]
+
+    def segment_text_similarity(self, left: str, right: str) -> float:
+        score = self.db.scalar(
+            select(
+                func.greatest(
+                    func.word_similarity(
+                        normalize_arabic_sql(literal(left)),
+                        normalize_arabic_sql(literal(right)),
+                    ),
+                    func.word_similarity(
+                        normalize_arabic_sql(literal(right)),
+                        normalize_arabic_sql(literal(left)),
+                    ),
+                )
+            )
+        )
+        return float(score or 0.0)
+
+    def has_pending_segment_review_match(
+        self,
+        *,
+        incident_id: UUID,
+        matched_incident_id: UUID,
+    ) -> bool:
+        match_id = self.db.scalar(
+            select(DuplicateMatch.id)
+            .where(
+                DuplicateMatch.incident_id == incident_id,
+                DuplicateMatch.matched_incident_id == matched_incident_id,
+                DuplicateMatch.match_type == MatchType.soft,
+                DuplicateMatch.status == MatchStatus.pending,
+            )
+            .limit(1)
+        )
+        return match_id is not None
+
     def find_story_candidates(
         self,
         *,
@@ -1562,8 +1759,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         want_text = bool(candidate_text and candidate_text.strip())
         columns.append(
             (
-                1.0
-                - Incident.khabar_embedding.cosine_distance(candidate_embedding)
+                1.0 - Incident.khabar_embedding.cosine_distance(candidate_embedding)
             ).label("embedding_similarity")
         )
         if want_text:
@@ -1664,8 +1860,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         if want_embedding:
             columns.append(
                 (
-                    1.0
-                    - Incident.khabar_embedding.cosine_distance(candidate_embedding)
+                    1.0 - Incident.khabar_embedding.cosine_distance(candidate_embedding)
                 ).label("embedding_similarity")
             )
 
@@ -1734,9 +1929,11 @@ class IncidentRepository(IncidentRepositoryInterface):
         for incident in incidents:
             representative_incident: Incident | None = None
             if representative_raw_message_id is not None:
-                representative_incident = self.find_active_incident_for_raw_message_village(
-                    representative_raw_message_id,
-                    incident.village_id,
+                representative_incident = (
+                    self.find_active_incident_for_raw_message_village(
+                        representative_raw_message_id,
+                        incident.village_id,
+                    )
                 )
             self.redirect_pending_duplicate_matches(
                 retired_incident=incident,
@@ -1875,9 +2072,7 @@ class IncidentRepository(IncidentRepositoryInterface):
     def _is_casualty_review_reason(reason: str | None) -> bool:
         return bool(
             reason
-            and reason.startswith(
-                ("Category casualties", "Unsupported casualty_scope")
-            )
+            and reason.startswith(("Category casualties", "Unsupported casualty_scope"))
         )
 
     @classmethod
@@ -2020,13 +2215,19 @@ class IncidentRepository(IncidentRepositoryInterface):
             "sort_created_at": row["created_at"].isoformat(),
             "sort_event_date": row["event_date"].isoformat(),
             "sort_event_time_is_null": event_time is None,
-            "sort_event_time": event_time.isoformat() if event_time is not None else None,
+            "sort_event_time": event_time.isoformat()
+            if event_time is not None
+            else None,
             "raw_message_id": row["raw_message_id"],
             "incident_id": str(row["id"]) if row["id"] is not None else None,
         }
-        return base64.urlsafe_b64encode(
-            json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        ).decode("ascii").rstrip("=")
+        return (
+            base64.urlsafe_b64encode(
+                json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            )
+            .decode("ascii")
+            .rstrip("=")
+        )
 
     @staticmethod
     def _list_cursor_filter(
@@ -2043,7 +2244,11 @@ class IncidentRepository(IncidentRepositoryInterface):
         raw_message_sort_value = raw_message_id if raw_message_id is not None else 0
         incident_id = cursor["incident_id"]
         before = params.sort_order == "newest"
-        comparison = (lambda column, value: column < value) if before else (lambda column, value: column > value)
+        comparison = (
+            (lambda column, value: column < value)
+            if before
+            else (lambda column, value: column > value)
+        )
         created_equal = created_at == created_value
         event_date_equal = event_date == event_date_value
         event_time_equal = (
@@ -2052,9 +2257,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             else Incident.event_time == event_time_value
         )
         event_time_after = (
-            Incident.event_time.is_(None)
-            if event_time_value is not None
-            else false()
+            Incident.event_time.is_(None) if event_time_value is not None else false()
         )
         if event_time_value is not None:
             event_time_after = or_(

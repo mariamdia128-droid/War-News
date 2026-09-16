@@ -37,6 +37,7 @@ class VillageRepository(VillageRepositoryInterface):
             )
             .where(
                 VillageLocationAlias.is_active.is_(True),
+                VillageLocationAlias.requires_geo_context.is_(False),
                 VillageLocationAlias.alias_normalized == normalized,
                 Village.is_active.is_(True),
             )
@@ -45,6 +46,30 @@ class VillageRepository(VillageRepositoryInterface):
         if village is None:
             return None
         return village, 1.0
+
+    def find_geo_conditional_aliases(
+        self,
+        normalized_text: str,
+    ) -> list[tuple[Village, float]]:
+        """Return exact aliases that require same-message geographic support."""
+        normalized = normalize_arabic_text(normalized_text or "")
+        if not normalized:
+            return []
+        villages = self.db.scalars(
+            select(Village)
+            .join(
+                VillageLocationAlias,
+                VillageLocationAlias.village_id == Village.id,
+            )
+            .where(
+                VillageLocationAlias.is_active.is_(True),
+                VillageLocationAlias.requires_geo_context.is_(True),
+                VillageLocationAlias.alias_normalized == normalized,
+                Village.is_active.is_(True),
+            )
+            .order_by(Village.id.asc())
+        ).all()
+        return [(village, 1.0) for village in villages]
 
     def casualty_scope_aliases(self) -> dict[str, tuple[str, ...]]:
         rows = self.db.execute(
@@ -56,6 +81,7 @@ class VillageRepository(VillageRepositoryInterface):
             .where(
                 Village.is_active.is_(True),
                 VillageLocationAlias.is_active.is_(True),
+                VillageLocationAlias.requires_geo_context.is_(False),
             )
         ).all()
         aliases: dict[str, set[str]] = {}
@@ -67,17 +93,16 @@ class VillageRepository(VillageRepositoryInterface):
             ):
                 if canonical_name:
                     aliases.setdefault(canonical_name, set()).add(alias_text)
-        return {
-            name: tuple(sorted(values))
-            for name, values in aliases.items()
-        }
+        return {name: tuple(sorted(values)) for name, values in aliases.items()}
 
     def find_best_match_by_normalized_name(
         self,
         normalized_location: str,
     ) -> tuple[Village, float] | None:
         acs_similarity = func.similarity(Village.acs_name, literal(normalized_location))
-        ref_similarity = func.similarity(Village.ref_name_ar, literal(normalized_location))
+        ref_similarity = func.similarity(
+            Village.ref_name_ar, literal(normalized_location)
+        )
         best_similarity = func.greatest(acs_similarity, ref_similarity).label("score")
 
         row = self.db.execute(

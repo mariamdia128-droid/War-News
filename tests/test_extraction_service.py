@@ -4,6 +4,7 @@ import json
 import logging
 
 import httpx
+import pytest
 
 from app.core.ollama_client import OllamaChatClient
 from app.llm.dtos import (
@@ -12,6 +13,7 @@ from app.llm.dtos import (
     ExtractionCategory,
     ExtractionCategoryKey,
     ExtractionVehicleDetails,
+    VillageRoleEntry,
 )
 from app.llm.services.ollama_extraction_service import OllamaExtractionService
 from app.llm.services.ollama_presence_gate_service import OllamaPresenceGateService
@@ -92,9 +94,7 @@ def _general_response(*, village_value: object = _UNSET) -> str:
 
 
 def test_extract_tier1_skips_category_detail_calls() -> None:
-    presence_gate = _PresenceGateStub(
-        categories=[ExtractionCategoryKey.hospital]
-    )
+    presence_gate = _PresenceGateStub(categories=[ExtractionCategoryKey.hospital])
     category_detail = _CategoryDetailStub(details={})
     service = OllamaExtractionService(
         client=_client_for_model_contents([_general_response()]),
@@ -114,8 +114,7 @@ def test_extract_tier1_skips_category_detail_calls() -> None:
 
 def test_tier1_recovers_both_dash_joined_route_villages() -> None:
     post_text = (
-        "الطيران المسير المعادي استهدف دراجة نارية على طريق عام "
-        "مرج حاروف - زبدين"
+        "الطيران المسير المعادي استهدف دراجة نارية على طريق عام مرج حاروف - زبدين"
     )
     model_response = json.dumps(
         {
@@ -159,6 +158,75 @@ def test_tier1_recovers_both_dash_joined_route_villages() -> None:
         "زبدين",
     }
     assert all(entry.role.value == "target" for entry in result.village_roles)
+
+
+@pytest.mark.parametrize(
+    ("post_text", "model_villages", "expected_target", "expected_qualifier"),
+    [
+        (
+            "قصف في مزرعة حلتا – كفرشوبا.",
+            ["حلتا", "كفرشوبا"],
+            "مزرعة حلتا",
+            "كفرشوبا",
+        ),
+        (
+            "غارة على مزرعة الحمرا - زوطر وتلة علي الطاهر.",
+            ["الحمرا", "زوطر", "تلة علي الطاهر"],
+            "مزرعة الحمرا",
+            "زوطر وتلة علي الطاهر",
+        ),
+        (
+            "غارة على بلدة المنصوري - حي غزاله.",
+            ["المنصوري", "حي غزاله"],
+            "المنصوري",
+            "حي غزاله",
+        ),
+        (
+            "غارة على بلدة كفررمان - النبطية.",
+            ["كفررمان", "النبطية"],
+            "كفررمان",
+            "النبطية",
+        ),
+        (
+            "غارة على بلدة الرمادية - قضاء صور.",
+            ["الرمادية", "صور"],
+            "الرمادية",
+            "قضاء صور",
+        ),
+        (
+            "غارة على بلدة المنصوري - بيوت السياد.",
+            ["المنصوري", "بيوت السياد"],
+            "المنصوري",
+            "بيوت السياد",
+        ),
+    ],
+)
+def test_non_route_dash_phrases_collapse_to_target_and_qualifier(
+    post_text: str,
+    model_villages: list[str],
+    expected_target: str,
+    expected_qualifier: str,
+) -> None:
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        model_villages,
+        [VillageRoleEntry(village=name) for name in model_villages],
+    )
+
+    assert villages == [expected_target]
+    assert [entry.village for entry in roles] == [expected_target]
+    assert roles[0].qualifier_text == expected_qualifier
+
+
+def test_between_route_phrase_keeps_both_endpoints() -> None:
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        "غارة بين كفرتبنيت وزوطر الشرقية.",
+        ["كفرتبنيت"],
+        [VillageRoleEntry(village="كفرتبنيت")],
+    )
+
+    assert villages == ["كفرتبنيت", "زوطر الشرقية"]
+    assert [entry.village for entry in roles] == ["كفرتبنيت", "زوطر الشرقية"]
 
 
 def test_extract_tier1_backstops_per_village_casualties() -> None:
@@ -208,8 +276,7 @@ def test_extract_tier1_backstops_per_village_casualties() -> None:
     result = service.extract_tier1(post_text)
 
     assert [
-        (entry.village, entry.deaths, entry.injuries)
-        for entry in result.village_roles
+        (entry.village, entry.deaths, entry.injuries) for entry in result.village_roles
     ] == [
         ("الرمادية", 1, 15),
         ("كفرمان", 2, None),
@@ -279,10 +346,7 @@ def test_orchestration_extracts_detail_once_per_present_category() -> None:
     ]
     assert len(result.categories) == 3
     assert ExtractionCategoryKey.casualty_demographics in result.categories
-    assert (
-        result.categories[ExtractionCategoryKey.health_center].name
-        == "مركز صحي"
-    )
+    assert result.categories[ExtractionCategoryKey.health_center].name == "مركز صحي"
     assert result.categories[ExtractionCategoryKey.vehicles].casualties == (
         ExtractionCasualties(injuries=1)
     )
@@ -421,9 +485,7 @@ def test_null_village_from_model_is_preserved_as_none() -> None:
     presence_gate = _PresenceGateStub(categories=[])
     category_detail = _CategoryDetailStub(details={})
     service = OllamaExtractionService(
-        client=_client_for_model_contents(
-            [_general_response(village_value=None)]
-        ),
+        client=_client_for_model_contents([_general_response(village_value=None)]),
         presence_gate=presence_gate,
         category_detail=category_detail,
     )
@@ -441,17 +503,17 @@ def test_extract_tier1_parses_sub_events() -> None:
             "action_description": "غارات على منزل وسيارة",
             "sub_events": [
                 {
-                        "locations": [
-                            {
-                                "village": "كفررمان",
-                                "role": "target",
-                                "deaths": 8,
-                                "injuries": 11,
-                                "evidence_span": "8 شهداء و11 جريحاً",
-                                "qualifier_text": None,
-                            }
-                        ],
-                        "action_text": "غارة على منزل",
+                    "locations": [
+                        {
+                            "village": "كفررمان",
+                            "role": "target",
+                            "deaths": 8,
+                            "injuries": 11,
+                            "evidence_span": "8 شهداء و11 جريحاً",
+                            "qualifier_text": None,
+                        }
+                    ],
+                    "action_text": "غارة على منزل",
                     "casualties": {
                         "deaths": 8,
                         "injuries": 11,
@@ -459,25 +521,25 @@ def test_extract_tier1_parses_sub_events() -> None:
                         "total_injuries": 11,
                     },
                     "evidence_span": "غارة على منزل في كفررمان أدت إلى 8 شهداء و11 جريحاً",
-                        "casualty_evidence": [
-                            {"field": "deaths", "evidence_span": "8 شهداء"},
-                            {"field": "injuries", "evidence_span": "11 جريحاً"},
-                            {"field": "total_deaths", "evidence_span": "8 شهداء"},
-                            {"field": "total_injuries", "evidence_span": "11 جريحاً"},
-                        ],
+                    "casualty_evidence": [
+                        {"field": "deaths", "evidence_span": "8 شهداء"},
+                        {"field": "injuries", "evidence_span": "11 جريحاً"},
+                        {"field": "total_deaths", "evidence_span": "8 شهداء"},
+                        {"field": "total_injuries", "evidence_span": "11 جريحاً"},
+                    ],
                 },
                 {
-                        "locations": [
-                            {
-                                "village": "كفررمان",
-                                "role": "target",
-                                "deaths": 1,
-                                "injuries": 2,
-                                "evidence_span": "فسقط 1 شهيد وأصيب 2",
-                                "qualifier_text": None,
-                            }
-                        ],
-                        "action_text": "استهداف سيارة",
+                    "locations": [
+                        {
+                            "village": "كفررمان",
+                            "role": "target",
+                            "deaths": 1,
+                            "injuries": 2,
+                            "evidence_span": "فسقط 1 شهيد وأصيب 2",
+                            "qualifier_text": None,
+                        }
+                    ],
+                    "action_text": "استهداف سيارة",
                     "casualties": {
                         "deaths": 1,
                         "injuries": 2,
@@ -485,14 +547,14 @@ def test_extract_tier1_parses_sub_events() -> None:
                         "total_injuries": 2,
                         "male_deaths": 1,
                     },
-                        "evidence_span": "استُهدفت سيارة فسقط 1 شهيد وأصيب 2",
-                        "casualty_evidence": [
-                                {"field": "deaths", "evidence_span": "1 شهيد"},
-                            {"field": "injuries", "evidence_span": "أصيب 2"},
-                                {"field": "total_deaths", "evidence_span": "1 شهيد"},
-                            {"field": "total_injuries", "evidence_span": "أصيب 2"},
-                                {"field": "male_deaths", "evidence_span": "1 شهيد"},
-                        ],
+                    "evidence_span": "استُهدفت سيارة فسقط 1 شهيد وأصيب 2",
+                    "casualty_evidence": [
+                        {"field": "deaths", "evidence_span": "1 شهيد"},
+                        {"field": "injuries", "evidence_span": "أصيب 2"},
+                        {"field": "total_deaths", "evidence_span": "1 شهيد"},
+                        {"field": "total_injuries", "evidence_span": "أصيب 2"},
+                        {"field": "male_deaths", "evidence_span": "1 شهيد"},
+                    ],
                 },
             ],
             "casualties": {},

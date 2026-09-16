@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import (
     ExtractionCasualties,
     ExtractionResult,
@@ -127,7 +128,9 @@ def test_multi_village_produces_two_match_entries() -> None:
     assert result.village_matches[1].raw_village_text == "حرش عيتا الجبل"
     assert result.village_matches[0].matched_village_id == 11
     assert result.village_matches[1].matched_village_id == 11
-    assert all(item.village_role == VillageRole.target for item in result.village_matches)
+    assert all(
+        item.village_role == VillageRole.target for item in result.village_matches
+    )
 
 
 def test_village_roles_are_preserved_in_match_entries() -> None:
@@ -162,10 +165,7 @@ def test_village_roles_are_preserved_in_match_entries() -> None:
     ]
     assert result.village_matches[1].deaths == 1
     assert result.village_matches[1].injuries == 3
-    assert (
-        result.village_matches[1].evidence_span
-        == "المنصوري: شهيد و3 جرحى"
-    )
+    assert result.village_matches[1].evidence_span == "المنصوري: شهيد و3 جرحى"
 
 
 def test_message_10387_parenthetical_qualifier_is_not_a_second_village() -> None:
@@ -205,7 +205,9 @@ def test_any_village_low_confidence_flag_set_correctly() -> None:
     assert result2.any_village_low_confidence is False
 
 
-def test_generic_strike_does_not_match_warning_or_feigned_without_distinguishing_words() -> None:
+def test_generic_strike_does_not_match_warning_or_feigned_without_distinguishing_words() -> (
+    None
+):
     villages = _SimilarRepositoryStub(None, None)
     warning_conditions = _SimilarRepositoryStub(2, 0.4615)
     service = MatchingService(villages, warning_conditions)
@@ -250,17 +252,15 @@ def test_feigned_attacks_still_matches_when_distinguishing_word_present() -> Non
     assert result.condition_match_status == MatchResultStatus.matched
 
 
-def test_verbose_airstrike_uses_word_similarity_score_without_matching_artillery() -> None:
-    verbose_airstrike = (
-        "الطيران الحربي الإسرائيلي أغار مستهدفًا بلدة المنصوري بغارتين"
-    )
+def test_verbose_airstrike_uses_word_similarity_score_without_matching_artillery() -> (
+    None
+):
+    verbose_airstrike = "الطيران الحربي الإسرائيلي أغار مستهدفًا بلدة المنصوري بغارتين"
     villages = _SimilarRepositoryStub(None, None)
     airstrike_conditions = _SimilarRepositoryStub(35, 0.466667)
     service = MatchingService(villages, airstrike_conditions)
 
-    result = service.match(
-        _extraction(village=None, action=verbose_airstrike)
-    )
+    result = service.match(_extraction(village=None, action=verbose_airstrike))
 
     assert result.matched_condition_id == 35
     assert result.condition_match_status == MatchResultStatus.matched_low_confidence
@@ -439,9 +439,11 @@ class _GeoVillageRepositoryStub:
         self,
         candidates_by_text,
         aliases=None,
+        conditional_aliases=None,
     ) -> None:
         self.candidates_by_text = candidates_by_text
         self.aliases = aliases or {}
+        self.conditional_aliases = conditional_aliases or {}
 
     def resolve_alias(self, normalized_text: str):
         village = self.aliases.get(normalized_text)
@@ -449,6 +451,10 @@ class _GeoVillageRepositoryStub:
 
     def find_similar(self, text: str, limit: int = 5):
         return self.candidates_by_text.get(text, [])[:limit]
+
+    def find_geo_conditional_aliases(self, normalized_text: str):
+        village = self.conditional_aliases.get(normalized_text)
+        return [(village, 1.0)] if village is not None else []
 
 
 def _geo_village(
@@ -500,9 +506,7 @@ def test_geo_context_resolves_zibdine_near_harouf() -> None:
     )
     service = MatchingService(villages, _SimilarRepositoryStub(None, None))
 
-    result = service.match(
-        _extraction(village=["حاروف", "زبدين"], action=None)
-    )
+    result = service.match(_extraction(village=["حاروف", "زبدين"], action=None))
 
     assert result.village_matches[0].matched_village_id == harouf.id
     zibdine_match = result.village_matches[1]
@@ -511,10 +515,7 @@ def test_geo_context_resolves_zibdine_near_harouf() -> None:
     assert zibdine_match.resolved_by_geo_context is True
     assert zibdine_match.geo_context_anchor_village_id == harouf.id
     assert zibdine_match.original_top_candidate_id == zibdine_jbayl.id
-    assert (
-        zibdine_match.alternate_candidate_village_id
-        == zibdine_jbayl.id
-    )
+    assert zibdine_match.alternate_candidate_village_id == zibdine_jbayl.id
 
 
 def test_qada_hint_resolves_zibdine_to_nabatiyeh_candidate() -> None:
@@ -608,6 +609,96 @@ def test_message_10395_bare_qsair_uses_south_lebanon_geo_anchor() -> None:
     assert result.village_matches[1].resolved_by_geo_context is True
 
 
+@pytest.mark.parametrize("helta_mention", ["حلتا", "مزرعة حلتا"])
+def test_raw_11553_helta_uses_conditional_kfar_chouba_candidate(
+    helta_mention: str,
+) -> None:
+    zawtar = _geo_village(1519, "زوطر الشرقية", 724681, 3689717)
+    batroun_helta = _geo_village(675, "حلتا", 755897, 3792122)
+    kfar_chouba = _geo_village(813, "كفر شوبا", 750226, 3689888)
+    villages = _GeoVillageRepositoryStub(
+        {
+            "زوطر": [(zawtar, 1.0)],
+            normalize_arabic_text(helta_mention): [(batroun_helta, 1.0)],
+            "كفرشوبا": [(kfar_chouba, 1.0)],
+        },
+        conditional_aliases={
+            normalize_arabic_text(helta_mention): kfar_chouba,
+        },
+    )
+
+    result = MatchingService(
+        villages,
+        _SimilarRepositoryStub(None, None),
+    ).match(
+        _extraction(
+            village=["زوطر", helta_mention],
+            action=None,
+            village_roles=[
+                VillageRoleEntry(village="زوطر"),
+                VillageRoleEntry(
+                    village=helta_mention,
+                    qualifier_text="كفرشوبا",
+                ),
+            ],
+        )
+    )
+
+    helta_match = result.village_matches[1]
+    assert helta_match.matched_village_id == kfar_chouba.id
+    assert helta_match.resolved_by_geo_context is True
+    assert helta_match.geo_context_anchor_village_id == kfar_chouba.id
+    assert helta_match.original_top_candidate_id == batroun_helta.id
+    assert helta_match.alternate_candidate_village_id == batroun_helta.id
+
+
+def test_standalone_helta_without_southern_anchor_stays_batroun() -> None:
+    batroun_helta = _geo_village(675, "حلتا", 755897, 3792122)
+    kfar_chouba = _geo_village(813, "كفر شوبا", 750226, 3689888)
+    villages = _GeoVillageRepositoryStub(
+        {"حلتا": [(batroun_helta, 1.0)]},
+        conditional_aliases={"حلتا": kfar_chouba},
+    )
+
+    result = MatchingService(
+        villages,
+        _SimilarRepositoryStub(None, None),
+    ).match(_extraction(village=["حلتا"], action=None))
+
+    helta_match = result.village_matches[0]
+    assert helta_match.matched_village_id == batroun_helta.id
+    assert helta_match.village_match_status == MatchResultStatus.matched_low_confidence
+    assert helta_match.resolved_by_geo_context is False
+
+
+def test_conditional_helta_considers_only_default_and_configured_candidate() -> None:
+    anchor = _geo_village(900, "الهبارية", 748000, 3691000)
+    batroun_helta = _geo_village(675, "حلتا", 755897, 3792122)
+    unrelated_southern = _geo_village(1026, "مزرعة", 748100, 3691100)
+    kfar_chouba = _geo_village(813, "كفر شوبا", 750226, 3689888)
+    villages = _GeoVillageRepositoryStub(
+        {
+            "الهباريه": [(anchor, 1.0)],
+            "مزرعه حلتا": [
+                (batroun_helta, 0.55),
+                (unrelated_southern, 0.54),
+            ],
+        },
+        conditional_aliases={"مزرعه حلتا": kfar_chouba},
+    )
+
+    result = MatchingService(
+        villages,
+        _SimilarRepositoryStub(None, None),
+    ).match(_extraction(village=["الهبارية", "مزرعة حلتا"], action=None))
+
+    helta_match = result.village_matches[1]
+    assert helta_match.matched_village_id == kfar_chouba.id
+    assert helta_match.matched_village_id != unrelated_southern.id
+    assert helta_match.resolved_by_geo_context is True
+    assert helta_match.geo_context_anchor_village_id == anchor.id
+
+
 def test_sub_event_locations_receive_scoped_conditions() -> None:
     villages = _MultiSimilarRepositoryStub([(101, 1.0), (202, 1.0)])
     conditions = _MultiSimilarRepositoryStub([(5, 1.0)])
@@ -638,9 +729,7 @@ def test_sub_event_locations_receive_scoped_conditions() -> None:
 def test_exact_duplicate_without_anchor_keeps_low_confidence_winner() -> None:
     first = _geo_village(100, "كنيسة", 0, 0)
     second = _geo_village(200, "كنيسة", 100000, 100000)
-    villages = _GeoVillageRepositoryStub(
-        {"كنيسه": [(first, 1.0), (second, 1.0)]}
-    )
+    villages = _GeoVillageRepositoryStub({"كنيسه": [(first, 1.0), (second, 1.0)]})
     service = MatchingService(villages, _SimilarRepositoryStub(None, None))
 
     result = service.match(_extraction(village=["كنيسة"], action=None))
@@ -648,8 +737,7 @@ def test_exact_duplicate_without_anchor_keeps_low_confidence_winner() -> None:
     village_match = result.village_matches[0]
     assert village_match.matched_village_id == first.id
     assert (
-        village_match.village_match_status
-        == MatchResultStatus.matched_low_confidence
+        village_match.village_match_status == MatchResultStatus.matched_low_confidence
     )
     assert village_match.resolved_by_geo_context is False
     assert village_match.alternate_candidate_village_id == second.id
@@ -675,8 +763,7 @@ def test_region_suffixed_collision_without_anchor_is_reviewable() -> None:
     village_match = result.village_matches[0]
     assert village_match.matched_village_id == plain.id
     assert (
-        village_match.village_match_status
-        == MatchResultStatus.matched_low_confidence
+        village_match.village_match_status == MatchResultStatus.matched_low_confidence
     )
     assert village_match.village_review_required is True
     assert village_match.alternate_candidate_village_id == region_qualified.id
@@ -697,14 +784,11 @@ def test_geo_context_requires_meaningful_distance_advantage() -> None:
         geo_context_min_distance_advantage_meters=5000,
     )
 
-    result = service.match(
-        _extraction(village=["مرساة", "قرية"], action=None)
-    )
+    result = service.match(_extraction(village=["مرساة", "قرية"], action=None))
 
     village_match = result.village_matches[1]
     assert village_match.matched_village_id == original.id
     assert (
-        village_match.village_match_status
-        == MatchResultStatus.matched_low_confidence
+        village_match.village_match_status == MatchResultStatus.matched_low_confidence
     )
     assert village_match.resolved_by_geo_context is False
