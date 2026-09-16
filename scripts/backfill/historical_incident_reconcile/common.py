@@ -5,7 +5,8 @@ import json
 import os
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 from uuid import UUID, uuid4
@@ -28,8 +29,10 @@ def utc_now() -> str:
 def json_default(value: Any) -> Any:
     if isinstance(value, UUID):
         return str(value)
-    if isinstance(value, datetime):
+    if isinstance(value, (date, datetime, time)):
         return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     raise TypeError(f"Cannot JSON-serialize {type(value).__name__}")
@@ -38,7 +41,7 @@ def json_default(value: Any) -> Any:
 def open_read_only_session() -> Session:
     """Open a database session whose transaction cannot write."""
     url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-    if "@db:" in url:
+    if "@db:" in url and not Path("/.dockerenv").exists():
         url = url.replace("@db:", "@localhost:")
     db = sessionmaker(bind=create_engine(url))()
     db.execute(
