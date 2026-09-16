@@ -29,13 +29,14 @@ def seed_conditions(db: Session) -> tuple[int, int]:
             skipped += 1
             continue
 
-        db.add(
-            Condition(
-                action_en=row["action_en"],
-                action_ar=action_ar,
-                note=row.get("note"),
-            )
-        )
+        payload = {
+            "action_en": row["action_en"],
+            "action_ar": action_ar,
+            "note": row.get("note"),
+        }
+        if row.get("id") is not None:
+            payload["id"] = row["id"]
+        db.add(Condition(**payload))
         seen_actions_ar.add(action_ar)
         inserted += 1
 

@@ -31,6 +31,41 @@
   meaning: "تلغيم وتفجير"
   notes: "raw_message_ids=2889,3124"
 
+- term: "تفجير"
+  category: condition_alias
+  meaning: "تلغيم وتفجير"
+  notes: "recon 2026-09-16: standalone detonation variant"
+
+- term: "تفجيران"
+  category: condition_alias
+  meaning: "تلغيم وتفجير"
+  notes: "recon 2026-09-16: dual detonation variant"
+
+- term: "تفجيرات"
+  category: condition_alias
+  meaning: "تلغيم وتفجير"
+  notes: "recon 2026-09-16: plural detonation variant"
+
+- term: "تحرك للآليات"
+  category: condition_alias
+  meaning: "تحرك آليات"
+  notes: "recon 2026-09-16: Vehicle Movement condition"
+
+- term: "تحرك آليات"
+  category: condition_alias
+  meaning: "تحرك آليات"
+  notes: "recon 2026-09-16: Vehicle Movement condition"
+
+- term: "تحرك للدبابات"
+  category: condition_alias
+  meaning: "تحرك آليات"
+  notes: "recon 2026-09-16: Vehicle Movement condition"
+
+- term: "تحركات آليات العدو"
+  category: condition_alias
+  meaning: "تحرك آليات"
+  notes: "recon 2026-09-16: Vehicle Movement condition"
+
 - term: "ألقت مسيرة معادية قنبلة"
   category: condition_alias
   meaning: "قنابل"

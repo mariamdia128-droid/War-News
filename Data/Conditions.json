@@ -218,5 +218,11 @@
     "action_en": "Obstructing Duties",
     "action_ar": "عرقلة مهام",
     "note": "Including Lebanese Army, UNIFIL, Red Cross, Civil Defense, etc."
+  },
+  {
+    "id": 46,
+    "action_en": "Vehicle Movement",
+    "action_ar": "تحرك آليات",
+    "note": "Movement or maneuvering of enemy vehicles/equipment without direct fire."
   }
 ]
