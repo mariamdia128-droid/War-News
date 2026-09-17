@@ -1,4 +1,6 @@
 .env
+.env.main
+.env.dev
 app/core/seeds/seed
 venv/
 __pycache__/
