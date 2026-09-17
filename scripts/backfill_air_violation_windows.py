@@ -31,15 +31,18 @@ from app.news.services.air_violations.window_grouping_service import (
     AirViolationWindowInput,
     assign_air_violation_window_ids,
 )
+from app.core.config import settings
 
-DEFAULT_DATABASE_URL = "postgresql+psycopg2://postgres:secret@localhost:5432/war_news_dev"
 BATCH_SIZE = 100
 
 
 def _session() -> Session:
-    url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    url = os.environ.get("DATABASE_URL", settings.database_url)
     if "@db:" in url and not Path("/.dockerenv").exists():
-        url = url.replace("@db:", "@localhost:")
+        url = url.replace(
+            "@db:5432",
+            f"@localhost:{os.environ.get('POSTGRES_HOST_PORT', '5432')}",
+        )
     return sessionmaker(bind=create_engine(url))()
 
 

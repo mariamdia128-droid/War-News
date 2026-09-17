@@ -39,8 +39,7 @@ from app.news.services.materialization.incident_materialization_service import (
 from app.news.services.materialization.verification_signals import (
     _verification_reason,
 )
-
-DEFAULT_DATABASE_URL = "postgresql+psycopg2://postgres:secret@localhost:5432/war_news_dev"
+from app.core.config import settings
 
 Bucket = Literal[
     "hard_signal",
@@ -72,9 +71,12 @@ CASUALTY_REASON_MARKERS = (
 
 
 def _session() -> Session:
-    url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    url = os.environ.get("DATABASE_URL", settings.database_url)
     if "@db:" in url:
-        url = url.replace("@db:", "@localhost:")
+        url = url.replace(
+            "@db:5432",
+            f"@localhost:{os.environ.get('POSTGRES_HOST_PORT', '5432')}",
+        )
     return sessionmaker(bind=create_engine(url))()
 
 

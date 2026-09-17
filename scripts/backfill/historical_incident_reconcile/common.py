@@ -15,9 +15,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-DEFAULT_DATABASE_URL = (
-    "postgresql+psycopg2://postgres:secret@localhost:5432/war_news_dev"
-)
+from app.core.config import settings
+
 DEFAULT_OUTPUT_DIR = Path("scripts/output/historical_incident_reconcile")
 
 T = TypeVar("T")
@@ -41,9 +40,12 @@ def json_default(value: Any) -> Any:
 
 def open_read_only_session() -> Session:
     """Open a database session whose transaction cannot write."""
-    url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    url = os.environ.get("DATABASE_URL", settings.database_url)
     if "@db:" in url and not Path("/.dockerenv").exists():
-        url = url.replace("@db:", "@localhost:")
+        url = url.replace(
+            "@db:5432",
+            f"@localhost:{os.environ.get('POSTGRES_HOST_PORT', '5432')}",
+        )
     db = sessionmaker(bind=create_engine(url))()
     db.execute(
         text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
