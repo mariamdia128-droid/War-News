@@ -4,10 +4,11 @@ from typing import Any
 
 from sqlalchemy import TextClause, text
 
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
 from app.news.models import MessageStatus
 
 ELIGIBLE_MATCH_STATUSES = frozenset({"matched", "matched_low_confidence"})
-AIR_VIOLATION_CONDITION_IDS = frozenset({35, 36, 38})
+AIR_VIOLATION_CONDITION_SQL = ", ".join(str(value) for value in sorted(AIR_VIOLATION_CONDITION_IDS))
 
 ERROR_AIR_VIOLATION = "fast_path: routed to air_violations; not an incident"
 ERROR_UNMATCHED_CONDITION = "fast_path: unmatched or missing condition"
@@ -17,7 +18,7 @@ ERROR_UNMATERIALIZABLE = "fast_path: permanently unmaterializable"
 
 # Correlated to raw_messages in claim/update statements. Avoids SQLAlchemy `?`
 # bind placeholder by using jsonb_typeof instead of the jsonb `?` operator.
-FAST_PATH_MATERIALIZABLE_SQL = """
+FAST_PATH_MATERIALIZABLE_SQL = f"""
 (
   (
     (
@@ -26,7 +27,7 @@ FAST_PATH_MATERIALIZABLE_SQL = """
       )
       AND (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
       AND (raw_messages.match_result->>'matched_condition_id')::int
-          NOT IN (35, 36, 38)
+          NOT IN ({AIR_VIOLATION_CONDITION_SQL})
     )
     OR EXISTS (
       SELECT 1
@@ -38,7 +39,7 @@ FAST_PATH_MATERIALIZABLE_SQL = """
       )
         AND (conditioned_village.value->>'matched_condition_id') ~ '^[0-9]+$'
         AND (conditioned_village.value->>'matched_condition_id')::int
-            NOT IN (35, 36, 38)
+            NOT IN ({AIR_VIOLATION_CONDITION_SQL})
     )
   )
   AND (
@@ -157,14 +158,14 @@ def ineligible_fast_path_update_sql() -> TextClause:
             status = CASE
                 WHEN (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
                      AND (raw_messages.match_result->>'matched_condition_id')::int
-                         IN (35, 36, 38)
+                         IN ({AIR_VIOLATION_CONDITION_SQL})
                     THEN CAST(:routed_air_violation_status AS message_status)
                 ELSE CAST(:error_status AS message_status)
             END,
             error_message = CASE
                 WHEN (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
                      AND (raw_messages.match_result->>'matched_condition_id')::int
-                         IN (35, 36, 38)
+                         IN ({AIR_VIOLATION_CONDITION_SQL})
                     THEN :air_violation
                 WHEN (raw_messages.match_result->>'condition_match_status') NOT IN (
                         'matched', 'matched_low_confidence'

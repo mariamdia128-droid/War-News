@@ -3,10 +3,12 @@ export type AirViolation = {
   raw_message_id: number | null;
   condition_id: number;
   source_id: number;
+  village_id?: number | null;
   caza_en: string | null;
   caza_ar: string | null;
   village_en: string | null;
   village_ar: string | null;
+  villages?: string[];
   event_month: string | null;
   event_date: string;
   event_time: string | null;
@@ -29,6 +31,23 @@ export type AirViolation = {
 
 export type AirViolationListResponse = {
   items: AirViolation[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AirViolationWindow = {
+  id: string;
+  caza_en: string;
+  caza_ar: string | null;
+  window_start: string;
+  window_end: string;
+  violation_count: number;
+  villages: string[];
+};
+
+export type AirViolationWindowListResponse = {
+  items: AirViolationWindow[];
   total: number;
   limit: number;
   offset: number;

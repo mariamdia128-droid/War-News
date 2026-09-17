@@ -1,5 +1,5 @@
 from app.accounts.models import User
-from app.news.models.air_violation import AirViolation
+from app.news.models.air_violation import AirViolation, AirViolationLocation
 from app.news.models.bulletin_casualty_group import (
     BulletinBreakdownStatus,
     BulletinCasualtyGroup,
@@ -20,6 +20,7 @@ from app.news.models.village_location_alias import VillageLocationAlias
 
 __all__ = [
     "AirViolation",
+    "AirViolationLocation",
     "BulletinBreakdownStatus",
     "BulletinCasualtyGroup",
     "CasualtyScope",

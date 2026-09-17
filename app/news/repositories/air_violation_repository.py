@@ -9,22 +9,31 @@ from zoneinfo import ZoneInfo
 
 from app.core.text_sanitizer import strip_emoji_and_pictographs
 from app.core.cache import increment
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_ID_TUPLE, AIR_VIOLATION_CONDITION_IDS
 from app.news.dtos import (
     AirViolationCreateDTO,
     AirViolationDTO,
     AirViolationListParams,
     AirViolationListResponse,
     AirViolationSummaryDTO,
+    AirViolationWindowDTO,
+    AirViolationWindowListResponse,
     AirViolationUpdateDTO,
     MatchResultDTO,
 )
 from app.news.interfaces import AirViolationRepositoryInterface
 from app.news.models import (
     AirViolation,
+    AirViolationLocation,
     Condition,
     RawMessage,
     Village,
 )
+from app.news.services.air_violations.window_grouping_service import (
+    AirViolationWindowInput,
+    group_air_violation_windows,
+)
+from app.news.services.air_violations.caza_alias_resolver import canonicalize_caza
 from app.sources.models import Source, SourceType
 
 
@@ -107,7 +116,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
     def _with_village_labels(self, rows: list[object]) -> list[dict[str, object]]:
         data = [dict(row._mapping) for row in rows]
         village_ids: set[int] = set()
+        air_violation_ids: set[int] = set()
         for item in data:
+            if item.get("id") is not None:
+                air_violation_ids.add(int(item["id"]))
             payload = item.pop("import_payload", None) or {}
             item["is_imported"] = payload.get("import") == "khabar"
             item["import_filename"] = payload.get("filename") if item["is_imported"] else None
@@ -123,8 +135,20 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             )
             if matched_village_id is not None:
                 village_id = int(matched_village_id)
-                item["matched_village_id"] = village_id
+                item.setdefault("matched_village_id", village_id)
                 village_ids.add(village_id)
+            if item.get("village_id") is not None:
+                village_ids.add(int(item["village_id"]))
+
+        location_rows = self.db.execute(
+            select(AirViolationLocation.air_violation_id, AirViolationLocation.village_id)
+            .where(AirViolationLocation.air_violation_id.in_(air_violation_ids))
+            .order_by(AirViolationLocation.id.asc())
+        ).all() if air_violation_ids else []
+        location_ids_by_air: dict[int, list[int]] = {}
+        for air_violation_id, village_id in location_rows:
+            location_ids_by_air.setdefault(int(air_violation_id), []).append(int(village_id))
+            village_ids.add(int(village_id))
 
         villages = {
             village.id: village
@@ -133,15 +157,52 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             )
         } if village_ids else {}
         for item in data:
-            village = villages.get(item.pop("matched_village_id", None))
+            location_ids = location_ids_by_air.get(int(item["id"]), []) if item.get("id") is not None else []
+            location_villages = [villages[village_id] for village_id in location_ids if village_id in villages]
+            primary_village_id = item.get("village_id") or item.pop("matched_village_id", None)
+            village = villages.get(primary_village_id)
+            if village:
+                item["caza_en"] = village.caza_en or item.get("caza_en")
+                item["caza_ar"] = village.caza_ar or item.get("caza_ar")
             item["village_en"] = (
                 village.ref_name_en or village.acs_name or village.cad_name
                 if village
                 else item.get("caza_en")
             )
             item["village_ar"] = village.ref_name_ar if village else item.get("caza_ar") or item.get("import_location_text")
+            item["villages"] = [
+                village.ref_name_en or village.ref_name_ar or village.acs_name or village.cad_name
+                for village in location_villages
+                if village.ref_name_en or village.ref_name_ar or village.acs_name or village.cad_name
+            ] or ([item["village_en"]] if item.get("village_en") else [])
             item.pop("import_location_text", None)
         return data
+
+    @staticmethod
+    def _location_entries_from_match(result: MatchResultDTO) -> list[dict[str, object]]:
+        entries: list[dict[str, object]] = []
+        seen: set[int] = set()
+        for match in result.village_matches:
+            if match.matched_village_id is None or match.matched_village_id in seen:
+                continue
+            seen.add(match.matched_village_id)
+            entries.append({
+                "village_id": match.matched_village_id,
+                "raw_location_text": match.raw_village_text,
+                "evidence_span": match.evidence_span,
+            })
+        return entries
+
+    def _sync_locations(self, record: AirViolation, entries: list[dict[str, object]]) -> None:
+        record.village_id = int(entries[0]["village_id"]) if entries else None
+        record.locations = [
+            AirViolationLocation(
+                village_id=int(entry["village_id"]),
+                raw_location_text=entry.get("raw_location_text"),
+                evidence_span=entry.get("evidence_span"),
+            )
+            for entry in entries
+        ]
 
     def create(self, payload: AirViolationCreateDTO) -> AirViolationDTO:
         source = self.db.scalar(
@@ -279,6 +340,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.raw_message_id,
                 AirViolation.condition_id,
                 AirViolation.source_id,
+                AirViolation.village_id,
                 AirViolation.caza_en,
                 AirViolation.caza_ar,
                 AirViolation.event_month,
@@ -361,6 +423,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.raw_message_id,
                 AirViolation.condition_id,
                 AirViolation.source_id,
+                AirViolation.village_id,
                 AirViolation.caza_en,
                 AirViolation.caza_ar,
                 AirViolation.event_month,
@@ -401,7 +464,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         return AirViolationDTO.model_validate(self._with_village_labels([row])[0])
 
     def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
-        if result.matched_condition_id not in {35, 36, 38}:
+        if result.matched_condition_id not in AIR_VIOLATION_CONDITION_IDS:
             return False
         matched_village_id: int | None = next(
             (
@@ -444,17 +507,20 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             "source_link": str(link) if link else None,
         }
         if existing is None:
-            self.db.add(AirViolation(raw_message_id=message.id, **values))
+            existing = AirViolation(raw_message_id=message.id, **values)
+            self._sync_locations(existing, self._location_entries_from_match(result))
+            self.db.add(existing)
         else:
             for field, value in values.items():
                 setattr(existing, field, value)
+            self._sync_locations(existing, self._location_entries_from_match(result))
         self.db.commit()
         increment(AIR_VIOLATION_CACHE_VERSION_KEY)
         return True
 
     @staticmethod
     def _filters(params: AirViolationListParams) -> list[object]:
-        filters: list[object] = [AirViolation.condition_id.in_((35, 36, 38))]
+        filters: list[object] = [AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_ID_TUPLE)]
         if params.imported_only:
             filters.append(AirViolation.raw_message_id.in_(
                 select(RawMessage.id).where(RawMessage.raw_payload['import'].as_string() == 'khabar')
@@ -476,8 +542,75 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 )
             )
         if params.caza_en:
-            filters.append(AirViolation.caza_en.ilike(f"%{params.caza_en}%"))
+            caza = canonicalize_caza(params.caza_en) or params.caza_en
+            filters.append(AirViolation.caza_en.ilike(f"%{caza}%"))
         return filters
+
+    def list_windows(self, params: AirViolationListParams) -> AirViolationWindowListResponse:
+        filters = self._filters(params.model_copy(update={"limit": 100, "offset": 0}))
+        rows = self.db.execute(
+            select(
+                AirViolation.id,
+                AirViolation.raw_message_id,
+                AirViolation.condition_id,
+                AirViolation.source_id,
+                AirViolation.village_id,
+                AirViolation.caza_en,
+                AirViolation.caza_ar,
+                AirViolation.event_month,
+                AirViolation.event_date,
+                AirViolation.event_time,
+                AirViolation.khabar,
+                AirViolation.note_1,
+                AirViolation.note_2,
+                AirViolation.source_link,
+                AirViolation.version,
+                AirViolation.locked_by_user_id,
+                AirViolation.edit_lock_expires_at,
+                AirViolation.created_at,
+                RawMessage.match_result.label("raw_match_result"),
+                RawMessage.raw_payload.label("import_payload"),
+                Condition.action_en,
+                Condition.action_ar,
+                Source.name.label("source_name"),
+            )
+            .join(Condition, Condition.id == AirViolation.condition_id)
+            .join(Source, Source.id == AirViolation.source_id)
+            .outerjoin(RawMessage, RawMessage.id == AirViolation.raw_message_id)
+            .where(*filters)
+            .order_by(AirViolation.event_date.asc(), AirViolation.event_time.asc().nullsfirst(), AirViolation.id.asc())
+        ).all()
+        items = self._with_village_labels(rows)
+        grouped = group_air_violation_windows(
+            AirViolationWindowInput(
+                id=int(item["id"]),
+                caza_en=item.get("caza_en"),
+                caza_ar=item.get("caza_ar"),
+                event_date=item["event_date"],
+                event_time=item.get("event_time"),
+                villages=tuple(item.get("villages") or []),
+            )
+            for item in items
+        )
+        total = len(grouped)
+        paged = grouped[params.offset: params.offset + params.limit]
+        return AirViolationWindowListResponse(
+            items=[
+                AirViolationWindowDTO(
+                    id=item.id,
+                    caza_en=item.caza_en,
+                    caza_ar=item.caza_ar,
+                    window_start=item.window_start,
+                    window_end=item.window_end,
+                    violation_count=item.violation_count,
+                    villages=list(item.villages),
+                )
+                for item in paged
+            ],
+            total=total,
+            limit=params.limit,
+            offset=params.offset,
+        )
     def discard_for_message(self, message: RawMessage) -> None:
         existing = self.db.scalar(
             select(AirViolation).where(AirViolation.raw_message_id == message.id)

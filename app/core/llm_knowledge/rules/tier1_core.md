@@ -12,6 +12,12 @@ Extract general fields only from one Arabic security/military incident bulletin 
 
 If the text is not about a security/military incident in Lebanon, set `is_relevant` false and null out other fields.
 
+Air-violation exclusions:
+
+- Do not treat UNIFIL/UN-affiliated aircraft activity as a Lebanese air violation. If the aircraft is described as belonging to UNIFIL/UN, set `is_relevant` false unless a separate qualifying Lebanese security incident is stated.
+- Do not treat aircraft route/origin wording from Palestine toward Lebanon as an air violation by itself. A phrase like "من فلسطين باتجاه لبنان" is route context, not a logged violation, unless the same text also states a concrete violation over a named Lebanese village or caza.
+- Preserve sector phrases such as "القطاع الشرقي", "القطاع الغربي", and "القطاع الأوسط" in the extracted location/action text when present; downstream caza alias resolution maps them deterministically.
+
 ## Villages and roles
 
 - `village`: array of place names, or null — never a single string.

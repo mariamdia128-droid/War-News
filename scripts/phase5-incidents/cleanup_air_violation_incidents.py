@@ -14,9 +14,10 @@ import app.accounts.models  # noqa: F401
 import app.logs.models  # noqa: F401
 import app.sources.models  # noqa: F401
 from app.core.database import SessionLocal
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_ID_TUPLE
 from app.news.models import AirViolation, Incident
 
-AIR_VIOLATION_CONDITION_IDS = (35, 36, 38)
+AIR_VIOLATION_CONDITION_IDS = AIR_VIOLATION_CONDITION_ID_TUPLE
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

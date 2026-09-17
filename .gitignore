@@ -14,5 +14,6 @@ dist/
 *.session
 *.session-journal
 Data/*.dump
+war_news_dev.dump
 Data/pgadmin4-*.db
 scripts/output/historical_incident_reconcile/

@@ -23,6 +23,9 @@ Presence rules (same precision as the standalone presence gate):
 General field rules:
 
 - If the text is not about a security/military incident in Lebanon: is_relevant=false and set village/action_description null and casualties numeric fields null.
+- Exclude UNIFIL/UN-affiliated aircraft activity from air-violation extraction. If the only aircraft activity belongs to UNIFIL/UN, set is_relevant=false and do not emit an air-violation action.
+- Exclude aircraft route/origin wording from Palestine toward Lebanon, such as "من فلسطين باتجاه لبنان", unless the same text also states a concrete violation over a named Lebanese village or caza.
+- Preserve sector phrases such as "القطاع الشرقي", "القطاع الغربي", and "القطاع الأوسط" in village/location or action text when present; downstream caza alias resolution maps them deterministically.
 - village: array of place names mentioned, or null. Never a single string.
 - village_roles: array of objects shaped like `{"village":"name","role":"origin|target","deaths":null,"injuries":null,"evidence_span":null,"qualifier_text":null}`. Use `origin` only for the attacking position / launch site / tank position / staging point. Use `target` for the place actually struck or damaged.
 - Only explicit route/path wording (`طريق X - Y`, `طريق عام X - Y`, or `بين X و Y`) names two endpoints. Capture both endpoints as separate target entries and in the same `sub_events.locations`. Example: «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"].

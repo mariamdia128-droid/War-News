@@ -6,6 +6,7 @@ from app.news.dtos import MatchResultDTO, MatchResultStatus
 from app.news.dtos.match_result_dto import VillageMatchResult
 from app.news.interfaces import AirViolationRepositoryInterface
 from app.news.models import MessageStatus, RawMessage, Village
+from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
 
 ConditionClassifier = Callable[[str], int | None]
 VillageMatcher = Callable[[str, list[Village]], tuple[Village, str] | None]
@@ -26,6 +27,16 @@ class RedAlertAirViolationService:
 
     def process(self, message: RawMessage, villages: list[Village]) -> bool:
         text = message.raw_text or ""
+        exclusion = air_violation_exclusion(text)
+        if exclusion is not None:
+            self.air_violations.discard_for_message(message)
+            self._reject(
+                message,
+                exclusion.reason,
+                error=exclusion.evidence_span,
+            )
+            return False
+
         condition_id = self.classify_condition(text)
         if condition_id is None:
             self.air_violations.discard_for_message(message)

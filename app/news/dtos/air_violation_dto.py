@@ -11,10 +11,12 @@ class AirViolationDTO(BaseModel):
     raw_message_id: int | None
     condition_id: int
     source_id: int
+    village_id: int | None = None
     caza_en: str | None
     caza_ar: str | None
     village_en: str | None = None
     village_ar: str | None = None
+    villages: list[str] = Field(default_factory=list)
     event_month: str | None
     event_date: date
     event_time: time | None
@@ -68,6 +70,27 @@ class AirViolationListResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     items: list[AirViolationDTO]
+    total: int
+    limit: int
+    offset: int
+
+
+class AirViolationWindowDTO(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    caza_en: str
+    caza_ar: str | None = None
+    window_start: datetime
+    window_end: datetime
+    violation_count: int
+    villages: list[str] = Field(default_factory=list)
+
+
+class AirViolationWindowListResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    items: list[AirViolationWindowDTO]
     total: int
     limit: int
     offset: int

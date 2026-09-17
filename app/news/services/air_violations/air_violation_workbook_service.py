@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from app.accounts import models as account_models  # noqa: F401
 from app.logs import models as log_models  # noqa: F401
 from app.news.dtos import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
 from app.news.models import AirViolation, Condition
 from app.sources.models import Source, SourceType
 
 HEADERS = ["Caza", "Month", "Action_E", "Action_A", "Khabar", "Source", "Time", "Date", "Note 1", "Note 2", "Link"]
-AIR_CONDITION_IDS = {35, 36, 38}
+AIR_CONDITION_IDS = AIR_VIOLATION_CONDITION_IDS
 
 
 class AirViolationWorkbookService:

@@ -9,7 +9,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.news.dtos import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
 from app.news.models import AirViolation, Condition, MessageStatus, RawMessage, Village
+from app.news.models.air_violation import AirViolationLocation
+from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
 from app.news.services.air_violations.red_alert_air_violation_service import RedAlertAirViolationService
 from app.news.services.air_violations.air_violation_workbook_service import AirViolationWorkbookService
 from app.sources.models import Source, SourceType
@@ -95,10 +98,16 @@ class AirViolationKhabarImportService:
                 if not isinstance(text, str) or not text.strip():
                     raise ValueError('Khabar must contain news text.')
                 text = text.strip()
+                exclusion = air_violation_exclusion(text)
+                if exclusion is not None:
+                    raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
                 enrichment = source_lookup.lookup(AirViolationWorkbookService._optional(row.get('link'))).copy()
                 source_text = enrichment.get('text') or ''
+                exclusion = air_violation_exclusion(source_text)
+                if exclusion is not None:
+                    raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
                 condition_id = classify_condition(text) or classify_condition(source_text)
-                if condition_id not in {35, 36, 38}:
+                if condition_id not in AIR_VIOLATION_CONDITION_IDS:
                     raise ValueError('No supported aircraft action found in Khabar.')
                 supplied_village = AirViolationWorkbookService._optional(row.get('village'))
                 matched = match_import_village(supplied_village or text, villages, row.get('link'))
@@ -173,15 +182,25 @@ class AirViolationKhabarImportService:
                 )
                 self.db.add(message)
                 self.db.flush()
-                self.db.add(AirViolation(
+                air_violation = AirViolation(
                     raw_message_id=message.id, source_id=source.id, condition_id=condition_id,
+                    village_id=village.id if village is not None else None,
                     caza_en=caza_en, caza_ar=caza_ar,
                     event_date=event_date, event_month=event_date.strftime('%B'),
                     event_time=event_time, khabar=text,
                     note_1=AirViolationWorkbookService._optional(row.get('note 1')),
                     note_2=AirViolationWorkbookService._optional(row.get('note 2')),
                     source_link=AirViolationWorkbookService._optional(row.get('link')),
-                ))
+                )
+                if village is not None:
+                    air_violation.locations = [
+                        AirViolationLocation(
+                            village_id=village.id,
+                            raw_location_text=location,
+                            evidence_span=location,
+                        )
+                    ]
+                self.db.add(air_violation)
                 self.db.commit()
                 succeeded += 1
             except (ValueError, TypeError) as exc:

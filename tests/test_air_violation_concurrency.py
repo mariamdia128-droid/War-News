@@ -3,7 +3,7 @@ import os
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
@@ -66,6 +66,9 @@ def test_repository_atomically_rejects_a_stale_version() -> None:
         condition = db.get(Condition, 35)
         if condition is None:
             pytest.skip("Air-violation condition 35 is unavailable.")
+        columns = {column["name"] for column in inspect(connection).get_columns("air_violations")}
+        if "village_id" not in columns:
+            pytest.skip("Air-violation location migration has not been applied.")
         user = db.query(User).first()
         if user is None:
             pytest.skip("An administrator account is required for edit-lock coverage.")

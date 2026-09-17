@@ -8,6 +8,7 @@ from app.news.dtos import (
     AirViolationListResponse,
     AirViolationSummaryDTO,
     AirViolationUpdateDTO,
+    AirViolationWindowListResponse,
 )
 from app.news.dtos import MatchResultDTO
 from app.news.models import RawMessage
@@ -36,6 +37,10 @@ class AirViolationRepositoryInterface(ABC):
 
     @abstractmethod
     def list_all(self, params: AirViolationListParams) -> AirViolationListResponse:
+        pass
+
+    @abstractmethod
+    def list_windows(self, params: AirViolationListParams) -> AirViolationWindowListResponse:
         pass
 
     @abstractmethod

@@ -14,6 +14,7 @@ from app.news.dtos import (
     AirViolationListResponse,
     AirViolationSummaryDTO,
     AirViolationUpdateDTO,
+    AirViolationWindowListResponse,
     WorkbookImportSummaryDTO,
 )
 from app.accounts.models import User
@@ -172,6 +173,32 @@ def summarize_air_violations(
     result = AirViolationService(AirViolationRepository(db)).get_summary(params)
     set_json(key, result.model_dump(mode="json"), 15)
     return result
+
+
+@router.get("/windows", response_model=AirViolationWindowListResponse)
+def list_air_violation_windows(
+    imported_only: bool = Query(default=False),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    condition_id: int | None = Query(default=None),
+    event_date_from: date | None = Query(default=None),
+    event_date_to: date | None = Query(default=None),
+    caza_en: str | None = Query(default=None),
+    last_hours: int | None = Query(default=None, ge=1, le=8760),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_admin),
+) -> AirViolationWindowListResponse:
+    params = AirViolationListParams(
+        limit=limit,
+        offset=offset,
+        condition_id=condition_id,
+        imported_only=imported_only,
+        event_date_from=event_date_from,
+        event_date_to=event_date_to,
+        caza_en=caza_en,
+        last_hours=last_hours,
+    )
+    return AirViolationService(AirViolationRepository(db)).list_windows(params)
 
 
 @router.post("/import", response_model=WorkbookImportSummaryDTO)
