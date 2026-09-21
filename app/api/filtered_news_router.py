@@ -2,13 +2,13 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.accounts.models import User
 from app.api.deps import require_admin
 from app.core.database import get_db
-from app.news.models import Condition, Incident, RawMessage, Village
+from app.news.models import AirViolation, Condition, Incident, RawMessage, Village
 
 
 router = APIRouter(prefix="/api/filtered-news", tags=["filtered-news"])
@@ -19,6 +19,7 @@ class FilteredNewsItem(BaseModel):
 
     id: int
     incident_id: str | None
+    air_violation_id: int | None
     status: str
     khabar: str
     message_datetime: datetime | None
@@ -50,6 +51,7 @@ def _item(row) -> FilteredNewsItem:
     return FilteredNewsItem(
         id=message.id,
         incident_id=str(row.incident_id) if row.incident_id is not None else None,
+        air_violation_id=row.air_violation_id,
         status=message.status.value,
         khabar=message.raw_text or "",
         message_datetime=message.message_datetime,
@@ -90,10 +92,16 @@ def list_filtered_news(
         or_(
             RawMessage.filter_result["verdict"].as_string() == "relevant",
             Incident.id.is_not(None),
+            AirViolation.id.is_not(None),
         ),
     ]
     if related_only:
-        filters.append(Incident.id.is_not(None))
+        filters.append(
+            or_(
+                Incident.id.is_not(None),
+                AirViolation.id.is_not(None),
+            )
+        )
     if event_date_from is not None:
         filters.append(func.date(event_at) >= event_date_from)
     if event_date_to is not None:
@@ -113,6 +121,8 @@ def list_filtered_news(
                 Village.ref_name_en.ilike(pattern),
                 Condition.action_ar.ilike(pattern),
                 Condition.action_en.ilike(pattern),
+                AirViolation.caza_ar.ilike(pattern),
+                AirViolation.caza_en.ilike(pattern),
             )
         )
 
@@ -121,19 +131,25 @@ def list_filtered_news(
         Village.ref_name_en,
         Village.acs_name,
         Village.cad_name,
+        AirViolation.caza_ar,
+        AirViolation.caza_en,
     )
     condition_label = func.coalesce(
         Condition.action_ar,
         Condition.action_en,
+        case((AirViolation.id.is_not(None), "خرق جوي"), else_=None),
     )
+    resolved_condition_id = func.coalesce(Incident.condition_id, AirViolation.condition_id)
+    resolved_village_id = func.coalesce(Incident.village_id, AirViolation.village_id)
 
     base = (
         select(
             RawMessage,
             event_at.label("event_at"),
             Incident.id.label("incident_id"),
-            Incident.condition_id.label("condition_id"),
-            Incident.village_id.label("village_id"),
+            AirViolation.id.label("air_violation_id"),
+            resolved_condition_id.label("condition_id"),
+            resolved_village_id.label("village_id"),
             village_label.label("village_name"),
             condition_label.label("condition_name"),
         )
@@ -142,8 +158,9 @@ def list_filtered_news(
             (Incident.raw_message_id == RawMessage.id)
             & (Incident.is_deleted.is_(False)),
         )
-        .outerjoin(Village, Village.id == Incident.village_id)
-        .outerjoin(Condition, Condition.id == Incident.condition_id)
+        .outerjoin(AirViolation, AirViolation.raw_message_id == RawMessage.id)
+        .outerjoin(Village, Village.id == resolved_village_id)
+        .outerjoin(Condition, Condition.id == resolved_condition_id)
         .where(*filters)
     )
     rows = db.execute(
@@ -157,8 +174,9 @@ def list_filtered_news(
             (Incident.raw_message_id == RawMessage.id)
             & (Incident.is_deleted.is_(False)),
         )
-        .outerjoin(Village, Village.id == Incident.village_id)
-        .outerjoin(Condition, Condition.id == Incident.condition_id)
+        .outerjoin(AirViolation, AirViolation.raw_message_id == RawMessage.id)
+        .outerjoin(Village, Village.id == resolved_village_id)
+        .outerjoin(Condition, Condition.id == resolved_condition_id)
         .where(*filters)
     )
     return FilteredNewsList(
