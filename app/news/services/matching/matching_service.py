@@ -479,6 +479,7 @@ class MatchingService(MatchingServiceInterface):
                 (candidate, max(score, MATCH_THRESHOLD + 0.1))
                 for candidate, score in lexical_candidates
                 if self._candidate_matches_district(candidate, district_hint)
+                and self._has_lexical_overlap(search_text, candidate)
             )
             if district_candidates:
                 candidates = tuple(
@@ -521,6 +522,59 @@ class MatchingService(MatchingServiceInterface):
             (candidate, max(0.0, min(float(score), 1.0)))
             for candidate, score in find_aliases(normalized_mention)
         )
+
+    @staticmethod
+    def _has_lexical_overlap(
+        normalized_mention: str,
+        candidate: Village,
+    ) -> bool:
+        """Guard against a trigram-only match with no textual relationship.
+
+        When the gazetteer has no real entry for a place name (e.g. no ACS
+        row and no alias), pure similarity scoring can still clear
+        MATCH_THRESHOLD against an unrelated village purely by n-gram
+        coincidence (recon: "بيوت السياد" -> "المنصوري"). Require the mention
+        to share at least one meaningful token, or a substring relationship,
+        with one of the candidate's known name fields before trusting a
+        "matched" verdict. Candidates with no comparable name data (test
+        stubs, or a mention too short to tokenize) are left unaffected.
+        """
+        mention_normalized = normalize_arabic_text(normalized_mention)
+        mention_compact = normalize_arabic_text(normalized_mention, compact=True)
+        mention_tokens = [
+            token for token in mention_normalized.split() if len(token) >= 3
+        ]
+        references = [
+            normalize_arabic_text(value or "")
+            for value in (
+                getattr(candidate, "ref_name_ar", None),
+                getattr(candidate, "acs_name", None),
+                getattr(candidate, "cad_name", None),
+            )
+        ]
+        references = [reference for reference in references if reference]
+        if not mention_tokens or not references:
+            return True
+        for reference in references:
+            reference_tokens = [
+                token for token in reference.split() if len(token) >= 3
+            ]
+            if any(token in reference_tokens for token in mention_tokens):
+                return True
+            if any(
+                token in reference or reference in token for token in mention_tokens
+            ):
+                return True
+            # Compact-form comparison catches legitimate spacing variants
+            # ("كفرشوبا" vs "كفر شوبا") that a whitespace-token split misses.
+            reference_compact = reference.replace(" ", "")
+            if mention_compact and (
+                mention_compact == reference_compact
+                or mention_compact in reference_compact
+                or reference_compact in mention_compact
+            ):
+                return True
+        return False
 
     @staticmethod
     def _has_collision_like_alternative(
