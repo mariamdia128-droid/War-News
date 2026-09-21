@@ -232,6 +232,74 @@ def test_any_village_low_confidence_flag_set_correctly() -> None:
     assert result2.any_village_low_confidence is False
 
 
+def test_ungazetteered_place_does_not_silently_match_unrelated_village() -> None:
+    """Recon: "بيوت السياد" has no ACS row and no alias; pure trigram
+    similarity landed on "المنصوري" (an unrelated South Lebanon village)
+    with a clear score margin, so the old tie-margin-only check let it
+    through as a confident match. There must be no lexical relationship
+    between the two names, so this should downgrade instead of matching.
+    """
+    mansouri = SimpleNamespace(
+        id=42,
+        ref_name_ar="المنصوري",
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    villages = _GeoVillageRepositoryStub({"بيوت السياد": [(mansouri, 0.62)]})
+    conditions = _SimilarRepositoryStub(None, None)
+    service = MatchingService(villages, conditions)
+
+    result = service.match(_extraction(village=["بيوت السياد"], action=None))
+
+    vm = result.village_matches[0]
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
+def test_village_exception_overrides_alias_and_similarity() -> None:
+    mansouri = SimpleNamespace(
+        id=42,
+        ref_name_ar="المنصوري",
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    villages = _GeoVillageRepositoryStub(
+        {"بيوت السياد": [(mansouri, 0.99)]},
+        aliases={"بيوت السياد": mansouri},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["بيوت السياد"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id is None
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
+def test_qada_hint_does_not_force_unrelated_candidate_without_name_overlap() -> None:
+    abbasiyeh = _geo_village(9001, "العباسية", 0, 0, caza_ar="صور")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "تل النحاس": [(abbasiyeh, 0.4)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["تل النحاس قضاء صور"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == abbasiyeh.id
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
 def test_generic_strike_does_not_match_warning_or_feigned_without_distinguishing_words() -> (
     None
 ):
@@ -288,6 +356,11 @@ def test_feigned_attacks_still_matches_when_distinguishing_word_present() -> Non
             "إطلاق نار معاد من موقع للعدو الإسرائيلي باتجاه البلدة",
         ),
         (
+            21,
+            "النيران تلتهم سيارة في العباسية... حريق كبير شرق صور",
+            "تفجير عبوة ناسفة زرعتها قوات العدو الإسرائيلي خلال توغل بري",
+        ),
+        (
             24,
             "قطع طريق بسبب حادث سير وزحمة خانقة",
             "قطع طريق بعد قصف مدفعي إسرائيلي استهدف الطريق العام",
@@ -342,6 +415,21 @@ def test_effect_defined_canonical_cnrs_override_can_still_match() -> None:
 
     assert result.matched_condition_id == 27
     assert result.condition_match_status == MatchResultStatus.matched
+
+
+def test_condition_exception_blocks_even_with_conflict_attribution() -> None:
+    result = MatchingService(
+        _SimilarRepositoryStub(None, None),
+        _SimilarRepositoryStub(21, 1.0),
+    ).match(
+        _extraction(
+            village=[],
+            action="النيران تلتهم سيارة في العباسية بعد قصف",
+        )
+    )
+
+    assert result.matched_condition_id is None
+    assert result.condition_match_status == MatchResultStatus.unmatched
 
 
 def test_verbose_airstrike_uses_word_similarity_score_without_matching_artillery() -> (
