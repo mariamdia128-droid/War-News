@@ -1,0 +1,48 @@
+services:
+  db:
+    env_file:
+      - .env.dev
+    environment: !reset []
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+
+  backend:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
+
+  pipeline-worker:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+
+  live-sweep-worker:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+
+  backlog-relevance-worker:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+
+  bulletin-reconciliation-worker:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+
+  cnrs-poll-worker:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+
+  red-alert-collector:
+    env_file:
+      - .env.dev
+    volumes: !reset []
+
+  frontend:
+    env_file:
+      - .env.dev
+    volumes: !reset []
