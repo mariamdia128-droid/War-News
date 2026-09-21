@@ -25,6 +25,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.core.text_normalization import normalize_arabic_sql
 from app.core.text_sanitizer import strip_emoji_and_pictographs
 from app.llm.dtos import ExtractedCandidate
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_ID_TUPLE
 from app.news.dtos import (
     CasualtyDemographicsDTO,
     DuplicateCandidateIncidentDTO,
@@ -343,6 +344,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
+                Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
             )
         ).one_or_none()
         if row is None:
@@ -2094,6 +2096,7 @@ class IncidentRepository(IncidentRepositoryInterface):
     def _list_filters(cls, params: IncidentListParams) -> list[object]:
         filters: list[object] = [
             Incident.is_deleted.is_(False),
+            Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
             RawMessage.id.is_not(None),
             RawMessage.status == MessageStatus.materialized,
             ~RawMessage.raw_payload.op("?")("ocr_text"),

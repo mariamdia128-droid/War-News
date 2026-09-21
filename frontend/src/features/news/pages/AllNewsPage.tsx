@@ -45,7 +45,7 @@ export const AllNewsPage = () => {
   const [eventDateTo, setEventDateTo] = useState(getBeirutDate());
   const [sourceName, setSourceName] = useState("");
   const [status, setStatus] = useState("");
-  const [relatedOnly, setRelatedOnly] = useState(false);
+  const [relatedOnly, setRelatedOnly] = useState(true);
   const [search, setSearch] = useState("");
   const offset = (page - 1) * PAGE_SIZE;
 

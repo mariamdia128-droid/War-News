@@ -156,12 +156,6 @@ const navItems: NavItem[] = [
     hiddenFrom: [],
   },
   {
-    label: "Filtered News",
-    path: "filtered-news",
-    icon: IncidentsIcon,
-    hiddenFrom: [],
-  },
-  {
     label: "Rejected News",
     path: "rejected-news",
     icon: IncidentsIcon,

@@ -31,6 +31,7 @@ from app.news.models import (
 )
 from app.news.services.air_violations.window_grouping_service import (
     AirViolationWindowInput,
+    assign_air_violation_window_ids,
     group_air_violation_windows,
 )
 from app.news.services.air_violations.caza_alias_resolver import canonicalize_caza
@@ -232,6 +233,51 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         return data
 
     @staticmethod
+    def _air_violation_window_input(item: dict[str, object]) -> AirViolationWindowInput:
+        return AirViolationWindowInput(
+            id=int(item["id"]),
+            caza_en=item.get("caza_en"),
+            caza_ar=item.get("caza_ar"),
+            event_date=item["event_date"],
+            event_time=item.get("event_time"),
+            villages=tuple(item.get("villages") or []),
+        )
+
+    @staticmethod
+    def _attach_window_metadata(
+        items: list[dict[str, object]],
+        all_items: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        assignments = assign_air_violation_window_ids(
+            AirViolationRepository._air_violation_window_input(item)
+            for item in all_items
+        )
+        window_stats: dict[str, dict[str, object]] = {}
+        for item in all_items:
+            item_id = int(item["id"])
+            window_id = assignments.get(item_id) or item.get("window_id")
+            if not window_id:
+                continue
+            item_dt = datetime.combine(item["event_date"], item.get("event_time") or time.min)
+            stats = window_stats.setdefault(
+                str(window_id),
+                {"start": item_dt, "end": item_dt, "count": 0},
+            )
+            stats["start"] = min(stats["start"], item_dt)
+            stats["end"] = max(stats["end"], item_dt)
+            stats["count"] = int(stats["count"]) + 1
+
+        for item in items:
+            item_id = int(item["id"])
+            window_id = assignments.get(item_id) or item.get("window_id")
+            item["window_id"] = window_id
+            stats = window_stats.get(str(window_id)) if window_id else None
+            item["window_start"] = stats["start"] if stats else None
+            item["window_end"] = stats["end"] if stats else None
+            item["window_violation_count"] = stats["count"] if stats else None
+        return items
+
+    @staticmethod
     def _location_entries_from_match(result: MatchResultDTO) -> list[dict[str, object]]:
         entries: list[dict[str, object]] = []
         seen: set[int] = set()
@@ -399,6 +445,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
+                AirViolation.window_id,
                 AirViolation.khabar,
                 AirViolation.note_1,
                 AirViolation.note_2,
@@ -446,10 +493,20 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             .where(*filters)
         )
 
+        all_rows = self.db.execute(
+            base_query.order_by(
+                AirViolation.event_date.asc(),
+                AirViolation.event_time.asc().nullsfirst(),
+                AirViolation.id.asc(),
+            )
+        ).all()
+        page_items = self._with_village_labels(rows)
+        all_items = self._with_village_labels(all_rows)
+
         return AirViolationListResponse(
             items=[
                 AirViolationDTO.model_validate(item)
-                for item in self._with_village_labels(rows)
+                for item in self._attach_window_metadata(page_items, all_items)
             ],
             total=int(total or 0),
             limit=params.limit,
@@ -482,6 +539,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
+                AirViolation.window_id,
                 AirViolation.khabar,
                 AirViolation.note_1,
                 AirViolation.note_2,
@@ -641,6 +699,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
+                AirViolation.window_id,
                 AirViolation.khabar,
                 AirViolation.note_1,
                 AirViolation.note_2,

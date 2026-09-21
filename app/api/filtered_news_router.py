@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.accounts.models import User
 from app.api.deps import require_admin
 from app.core.database import get_db
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_ID_TUPLE
 from app.news.models import AirViolation, Condition, Incident, RawMessage, Village
 
 
@@ -96,12 +97,7 @@ def list_filtered_news(
         ),
     ]
     if related_only:
-        filters.append(
-            or_(
-                Incident.id.is_not(None),
-                AirViolation.id.is_not(None),
-            )
-        )
+        filters.append(Incident.id.is_not(None))
     if event_date_from is not None:
         filters.append(func.date(event_at) >= event_date_from)
     if event_date_to is not None:
@@ -156,7 +152,8 @@ def list_filtered_news(
         .outerjoin(
             Incident,
             (Incident.raw_message_id == RawMessage.id)
-            & (Incident.is_deleted.is_(False)),
+            & (Incident.is_deleted.is_(False))
+            & (Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE)),
         )
         .outerjoin(AirViolation, AirViolation.raw_message_id == RawMessage.id)
         .outerjoin(Village, Village.id == resolved_village_id)
@@ -172,7 +169,8 @@ def list_filtered_news(
         .outerjoin(
             Incident,
             (Incident.raw_message_id == RawMessage.id)
-            & (Incident.is_deleted.is_(False)),
+            & (Incident.is_deleted.is_(False))
+            & (Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE)),
         )
         .outerjoin(AirViolation, AirViolation.raw_message_id == RawMessage.id)
         .outerjoin(Village, Village.id == resolved_village_id)

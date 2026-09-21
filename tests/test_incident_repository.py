@@ -471,6 +471,16 @@ def test_list_filters_hide_rejected_but_keep_needs_verification_by_default() -> 
     ).lower()
 
 
+def test_list_filters_exclude_air_violation_conditions() -> None:
+    filters = IncidentRepository._list_filters(IncidentListParams())
+    compiled = _compiled_filters(filters)
+
+    assert "incidents.condition_id" in compiled
+    assert "35" in compiled
+    assert "36" in compiled
+    assert "38" in compiled
+
+
 def test_user_visible_needs_verification_requires_duplicate_flag() -> None:
     incident = Incident()
     incident.verification_status = "needs_verification"
