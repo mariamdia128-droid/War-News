@@ -83,6 +83,49 @@ CONDITION_DISTINGUISHING_TOKENS: dict[int, tuple[str, ...]] = {
     39: _distinguishing_tokens("Feigned Attacks") or ("وهميه",),
 }
 
+EFFECT_DEFINED_CONDITION_IDS = frozenset({17, 24, 25, 26, 27, 40})
+EFFECT_DEFINED_CANONICAL_ACTIONS = {
+    17: "shooting",
+    24: "road blockage",
+    25: "bulldozing",
+    26: "cutting trees",
+    27: "burning properties",
+    40: "unexploded shells",
+}
+CONFLICT_ATTRIBUTION_TOKENS = (
+    "غار",
+    "قصف",
+    "قذيف",
+    "صاروخ",
+    "صواريخ",
+    "مسير",
+    "مسير",
+    "طيران",
+    "حربي",
+    "مروحي",
+    "مدفع",
+    "دباب",
+    "ميركافا",
+    "عدو",
+    "اسرائيل",
+    "اسرائيلي",
+    "احتلال",
+    "جيش العدو",
+    "استهدف",
+    "استهداف",
+    "اعتداء",
+    "حزام ناري",
+    "فوسفور",
+    "تفجير",
+    "مفخخ",
+    "عبوه",
+    "اشتباك",
+    "توغل",
+    "تمشيط",
+    "رشاش",
+    "معادي",
+)
+
 
 @dataclass(frozen=True)
 class _ClassifiedMatch:
@@ -138,6 +181,7 @@ class MatchingService(MatchingServiceInterface):
         root_condition = self._match_mention(
             extraction_result.action_description,
             self.conditions.find_similar,
+            guard_condition_tokens=True,
         )
         sub_event_matches = [
             self._match_sub_event(index, sub_event)
@@ -240,6 +284,7 @@ class MatchingService(MatchingServiceInterface):
         condition = self._match_mention(
             sub_event.action_description,
             self.conditions.find_similar,
+            guard_condition_tokens=True,
         )
         return SubEventMatchResult(
             index=index,
@@ -637,6 +682,7 @@ class MatchingService(MatchingServiceInterface):
         ],
         *,
         allow_alias: bool = False,
+        guard_condition_tokens: bool = False,
     ) -> _ClassifiedMatch:
         normalized = normalize_arabic_text(mention or "")
         if not normalized:
@@ -661,7 +707,11 @@ class MatchingService(MatchingServiceInterface):
                 self.candidate_limit,
             )
         )
-        return self._classify_candidates(candidates, normalized)
+        return self._classify_candidates(
+            candidates,
+            normalized,
+            guard_condition_tokens=guard_condition_tokens,
+        )
 
     def _classify_candidates(
         self,
@@ -670,12 +720,17 @@ class MatchingService(MatchingServiceInterface):
             ...,
         ],
         normalized: str,
+        *,
+        guard_condition_tokens: bool = False,
     ) -> _ClassifiedMatch:
         if not candidates:
             return _ClassifiedMatch(None, None, MatchResultStatus.unmatched)
         allowed: list[tuple[Village | Condition, float]] = []
         for candidate, score in candidates:
-            if not self._condition_match_allowed(candidate.id, normalized):
+            if guard_condition_tokens and not self._condition_match_allowed(
+                candidate.id,
+                normalized,
+            ):
                 continue
             allowed.append((candidate, score))
         if not allowed:
@@ -710,5 +765,9 @@ class MatchingService(MatchingServiceInterface):
     def _condition_match_allowed(condition_id: int, normalized_text: str) -> bool:
         required_tokens = CONDITION_DISTINGUISHING_TOKENS.get(condition_id)
         if required_tokens is None:
-            return True
+            if condition_id not in EFFECT_DEFINED_CONDITION_IDS:
+                return True
+            if normalized_text == EFFECT_DEFINED_CANONICAL_ACTIONS.get(condition_id):
+                return True
+            return any(token in normalized_text for token in CONFLICT_ATTRIBUTION_TOKENS)
         return any(token in normalized_text for token in required_tokens)

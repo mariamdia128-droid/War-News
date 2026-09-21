@@ -88,6 +88,15 @@ const HomeRedirect = () => {
   return <Navigate to={role === ROLES.SUPER_ADMIN ? "/superadmin/dashboard" : "/admin/dashboard"} replace />;
 };
 
+const RouteRepairRedirect = ({ fallback }: { fallback: string }) => {
+  const location = useLocation();
+  const malformedUrlMatch = location.pathname.match(/https?:\/+[^/]+(\/(?:superadmin|admin)\/[^?#]*)/i);
+  if (malformedUrlMatch?.[1]) {
+    return <Navigate to={malformedUrlMatch[1]} replace />;
+  }
+  return <Navigate to={fallback} replace />;
+};
+
 export const createRoutes = (): RouteObject[] => [
     // Role-scoped operational routes.
     { path: "/login", element: <LoginPage /> },
@@ -106,7 +115,7 @@ export const createRoutes = (): RouteObject[] => [
         { path: "logs", element: <Navigate to="audit" replace /> },
         { path: "logs/:logType", element: <LogsPage /> },
         { path: "settings", element: <SettingsPage /> },
-        { path: "*", element: <Navigate to="dashboard" replace /> },
+        { path: "*", element: <RouteRepairRedirect fallback="/admin/dashboard" /> },
       ],
     },
     {
@@ -125,7 +134,7 @@ export const createRoutes = (): RouteObject[] => [
         { path: "logs/:logType", element: <LogsPage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "accounts", element: <AccountsPage /> },
-        { path: "*", element: <Navigate to="dashboard" replace /> },
+        { path: "*", element: <RouteRepairRedirect fallback="/superadmin/dashboard" /> },
       ],
     },
     { path: "/", element: <HomeRedirect /> },

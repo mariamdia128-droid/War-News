@@ -32,6 +32,8 @@ Use verdict "not_relevant" when the text describes:
 - natural disasters
 - political statements, diplomacy, threats, analysis, or commentary with no physical incident
 - general or unrelated news, including shipping, economics, entertainment, or politics unrelated to Lebanon security
+- ordinary civilian or accidental fires (such as car/vehicle fires from traffic or mechanical faults, electrical fires, trash fires, or domestic house fires) with no stated conflict/military action or Israeli strike
+- civilian traffic accidents, internal civil protests, routine municipal works, tree trimming, or agricultural clearing with no stated military/conflict actor
 - UNIFIL/UN-affiliated aircraft activity, such as "طائرة تابعة لليونيفيل", even if it mentions flying over or near Lebanon
 - aircraft route/origin descriptions from Palestine toward Lebanon, such as "من فلسطين باتجاه لبنان", unless the same text also states a concrete violation over a named Lebanese village or caza
 

@@ -82,10 +82,8 @@ def has_conflict_attribution(
     if classification:
         if classification.get("mentions_israeli_actor") is True:
             return True
-        domain = str(classification.get("event_domain") or "").strip().lower()
-        if domain == "conflict":
-            return True
-    return any(marker in post_text for marker in _CONFLICT_ACTION_MARKERS)
+    normalized_text = normalize_arabic_text(post_text or "")
+    return any(marker in normalized_text for marker in _CONFLICT_ACTION_MARKERS)
 
 
 def trusted_cnrs_action(

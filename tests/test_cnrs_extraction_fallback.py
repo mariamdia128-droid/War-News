@@ -244,6 +244,15 @@ def test_cnrs_fire_incident_without_conflict_attribution_rejects_override() -> N
     assert trusted_cnrs_action(classification, "احتراق سيارة على أوتوستراد المدفون باتجاه بيروت") is None
     assert trusted_cnrs_action(classification, "حريق داخل منزل في البحصة – طرابلس") is None
 
+    broad_conflict_domain = dict(classification, event_domain="conflict")
+    assert (
+        trusted_cnrs_action(
+            broad_conflict_domain,
+            "احتراق سيارة على أوتوستراد المدفون باتجاه بيروت",
+        )
+        is None
+    )
+
 
 def test_cnrs_fire_incident_with_conflict_attribution_accepts_override() -> None:
     from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action

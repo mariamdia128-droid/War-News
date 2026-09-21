@@ -252,6 +252,71 @@ def test_feigned_attacks_still_matches_when_distinguishing_word_present() -> Non
     assert result.condition_match_status == MatchResultStatus.matched
 
 
+@pytest.mark.parametrize(
+    ("condition_id", "negative_action", "positive_action"),
+    [
+        (
+            17,
+            "إطلاق نار خلال إشكال فردي في أحد الأحياء",
+            "إطلاق نار معاد من موقع للعدو الإسرائيلي باتجاه البلدة",
+        ),
+        (
+            24,
+            "قطع طريق بسبب حادث سير وزحمة خانقة",
+            "قطع طريق بعد قصف مدفعي إسرائيلي استهدف الطريق العام",
+        ),
+        (
+            25,
+            "حفر وجرف ضمن أشغال بلدية لتأهيل الطريق",
+            "حفر وجرف نفذته جرافات العدو الإسرائيلي قرب الحدود",
+        ),
+        (
+            26,
+            "قطع أشجار ضمن أعمال تنظيف زراعية",
+            "قطع أشجار نفذته قوات العدو خلال توغل بري",
+        ),
+        (
+            27,
+            "حريق داخل منزل في البحصة - طرابلس",
+            "اندلاع حريق في منزل إثر قصف مدفعي إسرائيلي",
+        ),
+        (
+            40,
+            "العثور على جسم مشبوه غير منفجر قرب مكب نفايات",
+            "العثور على قذائف لم تنفجر من مخلفات قصف إسرائيلي",
+        ),
+    ],
+)
+def test_effect_defined_conditions_require_conflict_attribution(
+    condition_id: int,
+    negative_action: str,
+    positive_action: str,
+) -> None:
+    villages = _SimilarRepositoryStub(None, None)
+    conditions = _SimilarRepositoryStub(condition_id, 1.0)
+    service = MatchingService(villages, conditions)
+
+    negative = service.match(_extraction(village=[], action=negative_action))
+
+    assert negative.matched_condition_id is None
+    assert negative.condition_match_status == MatchResultStatus.unmatched
+
+    positive = service.match(_extraction(village=[], action=positive_action))
+
+    assert positive.matched_condition_id == condition_id
+    assert positive.condition_match_status == MatchResultStatus.matched
+
+
+def test_effect_defined_canonical_cnrs_override_can_still_match() -> None:
+    result = MatchingService(
+        _SimilarRepositoryStub(None, None),
+        _SimilarRepositoryStub(27, 1.0),
+    ).match(_extraction(village=[], action="Burning Properties"))
+
+    assert result.matched_condition_id == 27
+    assert result.condition_match_status == MatchResultStatus.matched
+
+
 def test_verbose_airstrike_uses_word_similarity_score_without_matching_artillery() -> (
     None
 ):
