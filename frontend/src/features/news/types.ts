@@ -234,6 +234,7 @@ export type RejectedNewsListResponse = {
 export type FilteredNewsItem = {
   id: number;
   incident_id: string | null;
+  air_violation_id: number | null;
   status: string;
   khabar: string;
   message_datetime: string | null;
