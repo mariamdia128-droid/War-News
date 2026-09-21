@@ -18,7 +18,7 @@ from app.sources.services.cnrs_source import CNRSSourceProvider
 
 logger = logging.getLogger(__name__)
 
-SOURCE_ID = 3
+CNRS_SOURCE_EXTERNAL_ID = "cnrs_webhook"
 PAGE_LIMIT = 2000
 
 
@@ -143,8 +143,16 @@ def _effective_next_cursor(
     return current_cursor
 
 
+def _resolve_cnrs_source(repo: SourceRepository):
+    source = repo.get_active_by_external_id(CNRS_SOURCE_EXTERNAL_ID)
+    if source is None:
+        raise RuntimeError(
+            f"Active CNRS source external_id={CNRS_SOURCE_EXTERNAL_ID!r} was not found."
+        )
+    return source
+
+
 def run_poll_pass(
-    source_id: int = SOURCE_ID,
     page_limit: int = PAGE_LIMIT,
     after_id: str | None = None,
     hours: int | None = None,
@@ -152,11 +160,8 @@ def run_poll_pass(
     db = SessionLocal()
     try:
         repo = SourceRepository(db)
-        source = repo.get_by_id(source_id)
-        if source is None:
-            raise RuntimeError(f"Source id={source_id} was not found.")
-        if not source.is_active:
-            raise RuntimeError(f"Source id={source_id} is inactive.")
+        source = _resolve_cnrs_source(repo)
+        source_id = source.id
 
         provider = CNRSSourceProvider(
             config=source.config,

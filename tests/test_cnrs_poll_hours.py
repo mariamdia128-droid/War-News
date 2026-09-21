@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,7 @@ from scripts.cnrs_poll_worker import (
     build_parser,
     main,
     min_datetime_from_hours,
+    run_poll_pass,
     _resolve_resume_cursor,
 )
 
@@ -89,3 +91,84 @@ def test_main_exits_quietly_when_bootstrap_required(monkeypatch) -> None:
 
     monkeypatch.setattr("scripts.cnrs_poll_worker.run_poll_pass", _raise_bootstrap)
     main([])
+
+
+def test_run_poll_pass_resolves_cnrs_source_by_external_id(monkeypatch) -> None:
+    source = SimpleNamespace(
+        id=44,
+        name="CNRS Webhook",
+        external_id="cnrs_webhook",
+        config={"delivery_method": "webhook"},
+    )
+    added_messages = []
+    logs = []
+
+    class _FakeDb:
+        def close(self) -> None:
+            return
+
+    class _FakeRepo:
+        def __init__(self, db):
+            self.db = db
+
+        def get_active_by_external_id(self, external_id: str):
+            assert external_id == "cnrs_webhook"
+            return source
+
+        def is_content_source_blocked(self, source_platform, origin_account) -> bool:
+            return False
+
+        def add_raw_message(self, raw_message) -> None:
+            added_messages.append(raw_message)
+
+        def is_duplicate_raw_message_error(self, exc) -> bool:
+            return False
+
+        def rollback(self) -> None:
+            return
+
+        def update_last_cursor(self, resolved_source, cursor) -> None:
+            assert resolved_source is source
+            source.last_cursor = cursor
+
+        def write_ingestion_log(self, **kwargs) -> None:
+            logs.append(kwargs)
+
+    class _FakeProvider:
+        def __init__(self, config, api_key):
+            assert config == source.config
+            assert api_key == "cnrs-api-key"
+
+        def fetch_batch(self, cursor, limit):
+            assert cursor == "731000"
+            return (
+                [
+                    {
+                        "external_message_id": "731001",
+                        "source_platform": "telegram",
+                        "source_name": "field-channel",
+                        "raw_text": "message",
+                        "raw_payload": {"id": 731001},
+                        "message_datetime": "2026-08-24T10:00:00+00:00",
+                        "cnrs_classification": {"include": True},
+                    }
+                ],
+                "731001",
+                False,
+            )
+
+    monkeypatch.setattr("scripts.cnrs_poll_worker.SessionLocal", _FakeDb)
+    monkeypatch.setattr("scripts.cnrs_poll_worker.SourceRepository", _FakeRepo)
+    monkeypatch.setattr("scripts.cnrs_poll_worker.CNRSSourceProvider", _FakeProvider)
+    monkeypatch.setattr(
+        "scripts.cnrs_poll_worker._resolve_cnrs_api_key",
+        lambda: "cnrs-api-key",
+    )
+
+    summary = run_poll_pass(after_id="731000")
+
+    assert summary["source_id"] == 44
+    assert summary["inserted"] == 1
+    assert summary["resume_cursor"] == "731001"
+    assert added_messages[0].source_id == 44
+    assert logs[0]["source_id"] == 44
