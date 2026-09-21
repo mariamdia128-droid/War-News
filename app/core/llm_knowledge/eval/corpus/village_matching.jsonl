@@ -7,3 +7,5 @@
 {"input": "وادي الحجير / الحجير", "expected_output": {"match": null, "reason": "ambiguous_or_unresolved"}, "source": "real_bug", "bug_ref": "uncertain-village-alias"}
 {"input": "الفوقا", "expected_output": {"match": null, "reason": "ambiguous_or_unresolved", "note": "bare الفوقا three-way tie"}, "source": "real_bug", "bug_ref": "bare-fouqa-collision"}
 {"input": "كفره", "expected_output": {"resolved_parent_acs": 72257}, "source": "real_bug", "bug_ref": "import-alias-kafra"}
+{"input": "بيوت السياد", "expected_output": {"match": null, "status": "matched_low_confidence", "reason": "curated_exception_needs_review", "note": "Must not silently resolve to المنصوري or any other village without a confirmed ACS/alias entry"}, "source": "real_bug", "bug_ref": "bouyout-sayyad-village-exception"}
+{"input": "تل النحاس قضاء صور", "expected_output": {"match": null, "status": "matched_low_confidence", "reason": "district_hint_without_lexical_overlap", "note": "District membership alone must not force-match an unrelated candidate"}, "source": "synthetic", "bug_ref": "district-hint-no-reference-overlap"}
