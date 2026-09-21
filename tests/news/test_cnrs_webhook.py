@@ -195,6 +195,22 @@ def test_valid_secret_single_post_returns_202_and_writes_raw_message() -> None:
     assert message.message_datetime == TEST_MESSAGE_DATETIME
 
 
+def test_webhook_accepts_historical_catch_up_posts() -> None:
+    client = _client()
+    payload = _payload("historical-catch-up")
+    payload["message_datetime"] = "2026-01-01T10:20:30+00:00"
+
+    response = client.post(
+        "/webhooks/cnrs-posts?source_id=44",
+        headers=_headers(),
+        json=payload,
+    )
+
+    assert response.status_code == 202
+    assert response.json()["saved"] == 1
+    assert _WebhookSourceRepository.messages[0].external_message_id == "historical-catch-up"
+
+
 def test_stale_source_id_falls_back_to_active_cnrs_source() -> None:
     client = _client()
     _WebhookSourceRepository.missing_source_ids = {5}
@@ -325,7 +341,7 @@ def test_duplicate_external_message_id_is_noop_not_error() -> None:
         "skipped_before_cutoff": 0,
     }
     assert len(_WebhookSourceRepository.messages) == 1
-    assert len(_WebhookSourceRepository.ingestion_logs) == 1
+    assert len(_WebhookSourceRepository.ingestion_logs) == 2
 
 
 def test_blocked_content_source_webhook_skips_raw_message_insert() -> None:
@@ -354,7 +370,8 @@ def test_blocked_content_source_webhook_skips_raw_message_insert() -> None:
         "skipped_before_cutoff": 0,
     }
     assert _WebhookSourceRepository.messages == []
-    assert _WebhookSourceRepository.ingestion_logs == []
+    assert len(_WebhookSourceRepository.ingestion_logs) == 1
+    assert _WebhookSourceRepository.ingestion_logs[0]["messages_blocked"] == 1
 
 
 def test_malformed_payload_missing_external_message_id_returns_422() -> None:
@@ -373,7 +390,7 @@ def test_malformed_payload_missing_external_message_id_returns_422() -> None:
     assert _WebhookSourceRepository.messages == []
 
 
-def test_payload_missing_source_name_returns_422_instead_of_generic_fallback() -> None:
+def test_payload_missing_source_name_falls_back_to_webhook_source() -> None:
     client = _client()
 
     response = client.post(
@@ -387,5 +404,8 @@ def test_payload_missing_source_name_returns_422_instead_of_generic_fallback() -
         },
     )
 
-    assert response.status_code == 422
-    assert _WebhookSourceRepository.messages == []
+    assert response.status_code == 202
+    assert len(_WebhookSourceRepository.messages) == 1
+    message = _WebhookSourceRepository.messages[0]
+    assert message.source_name == "CNRS Webhook"
+    assert message.origin_account == "CNRS Webhook"

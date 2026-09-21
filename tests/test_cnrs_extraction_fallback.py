@@ -13,7 +13,10 @@ from app.llm.dtos import (
     VillageRole,
     VillageRoleEntry,
 )
-from app.llm.services.cnrs_extraction_fallback import CnrsExtractionFallback
+from app.llm.services.cnrs_extraction_fallback import (
+    CnrsExtractionFallback,
+    trusted_cnrs_action,
+)
 
 
 def _llm_result(**updates) -> ExtractionResult:
@@ -65,6 +68,20 @@ def test_uses_full_llm_details_with_cnrs_location_and_subtype(monkeypatch) -> No
     assert result.model == "qwen-test"
     assert result.extraction_tier == 2
     ollama.extract.assert_called_once_with("text", 42)
+
+
+def test_cnrs_civilian_fire_is_not_trusted_as_war_action() -> None:
+    action = trusted_cnrs_action(
+        {
+            "include": True,
+            "event_domain": "fire",
+            "event_subtype": "fire_incident",
+            "mentions_israeli_actor": False,
+        },
+        "car fire on highway",
+    )
+
+    assert action is None
 
 
 def test_cnrs_motorcycle_attack_preserves_vehicle_category(monkeypatch) -> None:

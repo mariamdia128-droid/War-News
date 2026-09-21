@@ -297,3 +297,7 @@
   category: condition_id_label
   meaning: "Unclassified air violation"
   notes: "condition_id=45 (UNCLASSIFIED_AIR_CONDITION_ID). Fallback when air phrases do not map to 35/36/38; ID stays in Python."
+- term: "civilian fire / car fire / property fire"
+  category: exclusion_note
+  meaning: "Burning Properties"
+  notes: "Do not classify ordinary civilian fires, car fires, electrical faults, traffic accidents, or property fires as Burning Properties unless the text explicitly ties the damage to Israeli, military, or security action."

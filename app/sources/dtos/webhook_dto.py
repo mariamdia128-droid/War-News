@@ -10,7 +10,7 @@ class CnrsWebhookPostDTO(BaseModel):
     message_datetime: datetime
     raw_text: str | None = None
     source_platform: str | None = None
-    source_name: str = Field(min_length=1)
+    source_name: str | None = Field(default=None, min_length=1)
     origin_account: str | None = None
 
 

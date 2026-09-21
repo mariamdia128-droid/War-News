@@ -1,19 +1,20 @@
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete as sa_delete, func, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 import app.accounts.models  # noqa: F401
 import app.logs.models  # noqa: F401
-from app.news.dtos import AirViolationListParams
-from app.news.models import AirViolation, Condition, MessageStatus, RawMessage
+from app.news.dtos import AirViolationListParams, MatchResultDTO, MatchResultStatus, VillageMatchResult
+from app.news.models import AirViolation, Condition, MessageStatus, RawMessage, Village
 from app.news.repositories.air_violation_repository import (
     AirViolationRepository,
     air_violation_caza_labels,
+    air_violation_caza_window_hours,
     air_violation_news_text,
     as_beirut_datetime,
     clean_air_violation_news,
@@ -69,6 +70,156 @@ def test_multi_region_bulletin_does_not_get_a_false_single_caza() -> None:
     )
 
     assert labels == ("Multiple regions", "مناطق متعددة")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("drone activity over hermel", ("Hermel", "الهرمل")),
+        ("warplanes over baalbeck", ("Baalbek", "بعلبك")),
+        ("surveillance aircraft over saida", ("Saida", "صيدا")),
+        ("drone patrol over west beqaa", ("West Bekaa", "البقاع الغربي")),
+    ],
+)
+def test_air_violation_caza_aliases_include_requested_kadaa(text, expected) -> None:
+    labels = air_violation_caza_labels(
+        text,
+        None,
+        None,
+        [
+            ("Hermel", "الهرمل"),
+            ("Baalbek", "بعلبك"),
+            ("Saida", "صيدا"),
+            ("West Bekaa", "البقاع الغربي"),
+        ],
+    )
+
+    assert labels == expected
+
+
+@pytest.mark.parametrize(
+    ("caza_en", "expected_hours"),
+    [
+        ("Nabatiye", 1),
+        ("Marjaayoun", 1),
+        ("Bint Jbeil", 1),
+        ("Tyre", 1),
+        ("Sour", 1),
+        ("Baabda", 1),
+        ("Hermel", 1),
+        ("Baalbeck", 1),
+        ("Saida", 1),
+        ("West Beqaa", 1),
+        ("Akkar", 4),
+        (None, 4),
+    ],
+)
+def test_air_violation_caza_window_hours(caza_en, expected_hours) -> None:
+    assert air_violation_caza_window_hours(caza_en) == expected_hours
+
+
+def test_priority_caza_air_violations_are_limited_to_one_per_hour() -> None:
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for repository integration coverage.")
+
+    engine = create_engine(database_url)
+    try:
+        connection = engine.connect()
+    except OperationalError as exc:
+        pytest.skip(f"Database is unavailable: {exc}")
+
+    transaction = connection.begin()
+    db = Session(bind=connection, join_transaction_mode="create_savepoint")
+    marker = uuid4().hex
+    try:
+        condition = db.get(Condition, 36)
+        if condition is None:
+            pytest.skip("Air-violation condition 36 is unavailable.")
+
+        source = Source(
+            type=SourceType.api,
+            name="Red Alert Lebanon",
+            external_id=f"air-window-source-{marker}",
+            config={},
+        )
+        village = Village(
+            acs_code=int(marker[:6], 16),
+            ref_name_en=f"Arnoun Test {marker}",
+            ref_name_ar=f"Arnoun Test {marker}",
+            caza_en="Nabatiye",
+            caza_ar="Nabatiye",
+        )
+        db.add_all([source, village])
+        db.flush()
+
+        def result() -> MatchResultDTO:
+            return MatchResultDTO(
+                village_matches=[
+                    VillageMatchResult(
+                        matched_village_id=village.id,
+                        village_confidence=1.0,
+                        village_match_status=MatchResultStatus.matched,
+                        village_review_required=False,
+                        raw_village_text=village.ref_name_en,
+                    )
+                ],
+                any_village_low_confidence=False,
+                matched_condition_id=condition.id,
+                condition_confidence=1.0,
+                condition_match_status=MatchResultStatus.matched,
+                condition_review_required=False,
+                raw_condition_text="drone over Nabatiye",
+            )
+
+        def message(suffix: str, occurred_at: datetime) -> RawMessage:
+            item = RawMessage(
+                source_id=source.id,
+                external_message_id=f"air-window-message-{marker}-{suffix}",
+                source_platform="telegram",
+                source_name="red-alert",
+                raw_text=f"drone over {village.ref_name_en}",
+                raw_payload={},
+                status=MessageStatus.parsed,
+                message_datetime=occurred_at,
+            )
+            db.add(item)
+            db.flush()
+            return item
+
+        repository = AirViolationRepository(db)
+        first_at = datetime(2026, 9, 21, 8, 0, tzinfo=timezone.utc)
+        db.execute(
+            sa_delete(AirViolation).where(
+                AirViolation.caza_en == "Nabatiye",
+                AirViolation.event_date == first_at.astimezone().date(),
+            )
+        )
+        db.flush()
+
+        assert repository.route_from_match(message("first", first_at), result()) is True
+        assert repository.route_from_match(
+            message("inside-window", first_at + timedelta(minutes=59)),
+            result(),
+        ) is False
+        assert repository.route_from_match(
+            message("after-window", first_at + timedelta(hours=1, minutes=1)),
+            result(),
+        ) is True
+
+        total = db.scalar(
+            select(func.count(AirViolation.id)).where(
+                AirViolation.caza_en == "Nabatiye",
+                AirViolation.source_id == source.id,
+            )
+        )
+        assert total == 2
+    except (OperationalError, ProgrammingError) as exc:
+        pytest.skip(f"Air-violation schema is unavailable: {exc}")
+    finally:
+        db.close()
+        transaction.rollback()
+        connection.close()
 
 
 def test_air_violation_uses_original_message_source_name() -> None:

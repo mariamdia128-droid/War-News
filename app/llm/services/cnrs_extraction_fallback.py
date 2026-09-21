@@ -15,6 +15,8 @@ from app.llm.dtos import (
     VillageRoleEntry,
 )
 from app.llm.interfaces import ExtractionClassifierInterface
+from app.llm.services.cnrs_relevance_classifier import verdict_from_cnrs_classification
+from app.llm.dtos import ClassificationVerdict
 from app.news.models import RawMessage
 
 
@@ -42,6 +44,8 @@ def trusted_cnrs_action(
 ) -> str | None:
     """Map a supported CNRS subtype to its trusted incident condition."""
     if not classification or classification.get("include") is not True:
+        return None
+    if verdict_from_cnrs_classification(classification) != ClassificationVerdict.relevant:
         return None
     subtype = str(classification.get("event_subtype") or "").strip().lower()
     if subtype == "direct_attack":

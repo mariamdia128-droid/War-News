@@ -13,6 +13,7 @@ from scripts.cnrs_poll_worker import (
     min_datetime_from_hours,
     run_poll_pass,
     _resolve_resume_cursor,
+    _resolve_source,
 )
 
 
@@ -57,7 +58,20 @@ def test_omitted_hours_does_not_apply_cutoff() -> None:
 
 
 class _FakeRepo:
-    pass
+    def __init__(self) -> None:
+        self.by_id = {}
+        self.active_by_external_id = {}
+
+    def get_by_id(self, source_id: int):
+        return self.by_id.get(source_id)
+
+    def get_active_by_external_id(self, external_id: str):
+        return self.active_by_external_id.get(external_id)
+
+
+class _FakeSource:
+    def __init__(self, source_id: int) -> None:
+        self.id = source_id
 
 
 def test_resolve_resume_cursor_uses_db_max_when_no_override(monkeypatch) -> None:
@@ -83,6 +97,21 @@ def test_resolve_resume_cursor_raises_when_no_numeric_rows(monkeypatch) -> None:
     )
     with pytest.raises(CnrsPollBootstrapRequired, match="--after-id"):
         _resolve_resume_cursor(_FakeRepo(), 3, None)
+
+
+def test_resolve_source_uses_active_cnrs_external_id_by_default() -> None:
+    repo = _FakeRepo()
+    repo.active_by_external_id["cnrs_webhook"] = _FakeSource(2)
+
+    assert _resolve_source(repo, None).id == 2
+
+
+def test_resolve_source_keeps_explicit_source_id_override() -> None:
+    repo = _FakeRepo()
+    repo.by_id[7] = _FakeSource(7)
+    repo.active_by_external_id["cnrs_webhook"] = _FakeSource(2)
+
+    assert _resolve_source(repo, 7).id == 7
 
 
 def test_main_exits_quietly_when_bootstrap_required(monkeypatch) -> None:

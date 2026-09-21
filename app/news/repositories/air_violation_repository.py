@@ -39,6 +39,48 @@ from app.sources.models import Source, SourceType
 
 BEIRUT_TIMEZONE = ZoneInfo("Asia/Beirut")
 AIR_VIOLATION_CACHE_VERSION_KEY = "air-violations:cache-version"
+AIR_VIOLATION_CAZA_ALIASES: dict[str, tuple[str, str | None]] = {
+    "hermel": ("Hermel", "\u0627\u0644\u0647\u0631\u0645\u0644"),
+    "baalbeck": ("Baalbek", "\u0628\u0639\u0644\u0628\u0643"),
+    "baalbek": ("Baalbek", "\u0628\u0639\u0644\u0628\u0643"),
+    "saida": ("Saida", "\u0635\u064a\u062f\u0627"),
+    "sidon": ("Saida", "\u0635\u064a\u062f\u0627"),
+    "west beqaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+    "west bekaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+}
+AIR_VIOLATION_PRIORITY_CAZAS = {
+    "nabatiye",
+    "nabatieh",
+    "marjaayoun",
+    "marjayoun",
+    "bint jbeil",
+    "tyre",
+    "sour",
+    "baabda",
+    "hermel",
+    "baalbeck",
+    "baalbek",
+    "saida",
+    "sidon",
+    "west beqaa",
+    "west bekaa",
+}
+AIR_VIOLATION_PRIORITY_CAZA_HOURS = 1
+AIR_VIOLATION_DEFAULT_CAZA_HOURS = 4
+
+
+def _normalize_caza_token(value: str) -> str:
+    return re.sub(r"[\W_]+", " ", value.casefold()).strip()
+
+
+def air_violation_caza_window_hours(caza_en: str | None) -> int:
+    if caza_en and _normalize_caza_token(caza_en) in AIR_VIOLATION_PRIORITY_CAZAS:
+        return AIR_VIOLATION_PRIORITY_CAZA_HOURS
+    return AIR_VIOLATION_DEFAULT_CAZA_HOURS
+
+
+def _air_violation_event_datetime(record: AirViolation) -> datetime:
+    return datetime.combine(record.event_date, record.event_time or time.min)
 
 
 def as_beirut_datetime(value):
@@ -97,11 +139,22 @@ def air_violation_caza_labels(
 ) -> tuple[str | None, str | None]:
     """Label bulletins naming several cazas without choosing a false locality."""
     normalized_text = text.casefold()
+    normalized_token_text = _normalize_caza_token(text)
     mentioned: set[tuple[str | None, str | None]] = set()
+    known_by_english = {
+        _normalize_caza_token(caza_en): (caza_en, caza_ar)
+        for caza_en, caza_ar in known_cazas
+        if caza_en
+    }
     for caza_en, caza_ar in known_cazas:
         names = [name.casefold() for name in (caza_en, caza_ar) if name and len(name) >= 4]
         if any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", normalized_text) for name in names):
             mentioned.add((caza_en, caza_ar))
+    for alias, canonical in AIR_VIOLATION_CAZA_ALIASES.items():
+        if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", normalized_token_text):
+            mentioned.add(
+                known_by_english.get(_normalize_caza_token(canonical[0]), canonical)
+            )
     if len(mentioned) > 1:
         return "Multiple regions", "مناطق متعددة"
     if len(mentioned) == 1:
@@ -462,8 +515,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         if row is None:
             return None
         return AirViolationDTO.model_validate(self._with_village_labels([row])[0])
-
-    def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
+    def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
         if result.matched_condition_id not in AIR_VIOLATION_CONDITION_IDS:
             return False
         matched_village_id: int | None = next(
@@ -493,6 +545,8 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             village.caza_ar if village else None,
             known_cazas,
         )
+        if existing is None and self._has_recent_air_violation(caza_en, caza_ar, occurred_at):
+            return False
         values = {
             "condition_id": result.matched_condition_id,
             "source_id": message.source_id,
@@ -518,6 +572,33 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         increment(AIR_VIOLATION_CACHE_VERSION_KEY)
         return True
 
+    def _has_recent_air_violation(
+        self,
+        caza_en: str | None,
+        caza_ar: str | None,
+        occurred_at: datetime,
+    ) -> bool:
+        window_hours = air_violation_caza_window_hours(caza_en)
+        cutoff = occurred_at - timedelta(hours=window_hours)
+        filters = [
+            AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_IDS),
+            AirViolation.event_date >= cutoff.date(),
+            AirViolation.event_date <= occurred_at.date(),
+        ]
+        if caza_en:
+            filters.append(AirViolation.caza_en == caza_en)
+        elif caza_ar:
+            filters.append(AirViolation.caza_ar == caza_ar)
+        else:
+            filters.append(AirViolation.caza_en.is_(None))
+            filters.append(AirViolation.caza_ar.is_(None))
+        existing_records = self.db.scalars(select(AirViolation).where(*filters)).all()
+        occurred_naive = occurred_at.replace(tzinfo=None)
+        cutoff_naive = cutoff.replace(tzinfo=None)
+        return any(
+            cutoff_naive <= _air_violation_event_datetime(record) <= occurred_naive
+            for record in existing_records
+        )
     @staticmethod
     def _filters(params: AirViolationListParams) -> list[object]:
         filters: list[object] = [AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_ID_TUPLE)]

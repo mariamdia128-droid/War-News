@@ -13,6 +13,7 @@ from app.api.sources_router import router as sources_router
 from app.api.webhooks_router import router as webhooks_router
 from app.api.map_router import router as map_router
 from app.api.rejected_news_router import router as rejected_news_router
+from app.api.filtered_news_router import router as filtered_news_router
 
 router = APIRouter()
 router.include_router(accounts_router)
@@ -28,3 +29,4 @@ router.include_router(logs_router)
 router.include_router(pipeline_router)
 router.include_router(map_router)
 router.include_router(rejected_news_router)
+router.include_router(filtered_news_router)

@@ -11,6 +11,7 @@ Extract general fields only from one Arabic security/military incident bulletin 
 ## Relevance
 
 If the text is not about a security/military incident in Lebanon, set `is_relevant` false and null out other fields.
+Ordinary civilian fires, car fires, traffic accidents, electrical faults, or property fires are not relevant unless the text explicitly ties the damage to Israeli/military/security action.
 
 Air-violation exclusions:
 

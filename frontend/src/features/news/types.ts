@@ -231,6 +231,31 @@ export type RejectedNewsListResponse = {
   offset: number;
 };
 
+export type FilteredNewsItem = {
+  id: number;
+  incident_id: string | null;
+  status: string;
+  khabar: string;
+  message_datetime: string | null;
+  received_at: string;
+  event_at: string;
+  source_name: string | null;
+  source_platform: string | null;
+  external_message_id: string | null;
+  verdict: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+  condition_id: number | null;
+  village_id: number | null;
+};
+
+export type FilteredNewsListResponse = {
+  items: FilteredNewsItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export type DuplicateCandidateIncident = {
   id: string;
   village: string | null;

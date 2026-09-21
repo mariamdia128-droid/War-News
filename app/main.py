@@ -12,6 +12,7 @@ from app.core.database import SessionLocal
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logging_config import configure_logging
 from app.core.scheduler import start_scheduler, stop_scheduler
+from app.core.seeds.seed_cnrs_source import ensure_cnrs_source
 from app.core.seeds.seed_super_admin import ensure_super_admin
 from app.news.services.realtime.incident_event_stream import incident_event_stream
 
@@ -54,6 +55,13 @@ async def startup() -> None:
     db = SessionLocal()
     try:
         ensure_super_admin(db)
+        cnrs_source, cnrs_inserted = ensure_cnrs_source(db)
+        logger.info(
+            "CNRS webhook source ready id=%s inserted=%s active=%s",
+            cnrs_source.id,
+            cnrs_inserted,
+            cnrs_source.is_active,
+        )
         from app.news.services.pipeline.pipeline_advisory_lock import (
             reclaim_stale_pipeline_advisory_locks,
         )
