@@ -36,6 +36,58 @@ _TANK_MARKERS = tuple(
 ) or ("دبابة",)
 
 
+_CONFLICT_ACTION_MARKERS = (
+    "غار",
+    "قصف",
+    "قذيف",
+    "صاروخ",
+    "صواريخ",
+    "مسير",
+    "مسيّر",
+    "طيران",
+    "حربي",
+    "مروحي",
+    "مدفع",
+    "دباب",
+    "ميركافا",
+    "عدو",
+    "إسرائيل",
+    "اسرائيل",
+    "احتلال",
+    "جيش العدو",
+    "استهدف",
+    "استهداف",
+    "اعتداء",
+    "حزام ناري",
+    "فوسفور",
+    "فوسفوري",
+    "حارق",
+    "حارقة",
+    "تفجير",
+    "تفجيرات",
+    "مفخخ",
+    "عبوة",
+    "اشتباك",
+    "توغل",
+    "رصاص",
+    "تمشيط",
+)
+
+
+def has_conflict_attribution(
+    classification: dict[str, Any] | None,
+    post_text: str,
+) -> bool:
+    """Return True if text or metadata explicitly attributes the event to war/conflict action."""
+    if classification:
+        if classification.get("mentions_israeli_actor") is True:
+            return True
+        domain = str(classification.get("event_domain") or "").strip().lower()
+        if domain == "conflict":
+            return True
+    return any(marker in post_text for marker in _CONFLICT_ACTION_MARKERS)
+
+
 def trusted_cnrs_action(
     classification: dict[str, Any] | None,
     post_text: str,
@@ -50,6 +102,10 @@ def trusted_cnrs_action(
             if any(marker in post_text for marker in _TANK_MARKERS)
             else "Bombs"
         )
+    if subtype == "fire_incident":
+        # Fires require explicit war/conflict causal attribution to avoid civilian/traffic false positives.
+        if not has_conflict_attribution(classification, post_text):
+            return None
     return SUBTYPE_ACTIONS.get(subtype)
 
 
