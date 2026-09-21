@@ -1,0 +1,13 @@
+{
+  "bug_ref": "genuine-multi-village-route-harouf-zibdine",
+  "description": "Explicit road route between two named endpoints must keep both villages, not collapse to one.",
+  "source": "existing multi-village regression, raw message 8788",
+  "check": "dash_route_recovery",
+  "input": {
+    "post_text": "الطيران المسير المعادي استهدف دراجة نارية على طريق عام مرج حاروف - زبدين",
+    "villages": ["زبدين"]
+  },
+  "expected": {
+    "villages": ["حاروف", "زبدين"]
+  }
+}

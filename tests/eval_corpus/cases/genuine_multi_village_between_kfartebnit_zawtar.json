@@ -1,0 +1,13 @@
+{
+  "bug_ref": "genuine-multi-village-between-kfartebnit-zawtar",
+  "description": "\"غارة بين X وY\" with an explicit طريق/مسار route marker keeps both endpoints as targets.",
+  "source": "existing multi-village regression",
+  "check": "dash_route_recovery",
+  "input": {
+    "post_text": "غارة على طريق بين كفرتبنيت وزوطر الشرقية.",
+    "villages": ["كفرتبنيت"]
+  },
+  "expected": {
+    "villages": ["كفرتبنيت", "زوطر الشرقية"]
+  }
+}

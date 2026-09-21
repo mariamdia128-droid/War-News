@@ -488,6 +488,18 @@ class MatchingService(MatchingServiceInterface):
                 lexical_candidates = candidates
                 district_resolved = True
         classified = self._classify_candidates(lexical_candidates, search_text)
+        no_reference_overlap = (
+            not district_resolved
+            and classified.status == MatchResultStatus.matched
+            and bool(lexical_candidates)
+            and not self._has_lexical_overlap(search_text, lexical_candidates[0][0])
+        )
+        if no_reference_overlap:
+            classified = _ClassifiedMatch(
+                classified.matched_id,
+                classified.confidence,
+                MatchResultStatus.matched_low_confidence,
+            )
         collision_like = (
             False
             if district_resolved

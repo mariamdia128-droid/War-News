@@ -16,6 +16,7 @@ from app.llm.interfaces import (
 )
 from app.news.models import RawMessage
 from app.llm.services.cnrs_relevance_classifier import classification_from_cnrs
+from app.llm.services.lebanon_scope_filter import is_non_lebanon_location
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
 from app.llm.services.relevance_filter_service import (
     policy_for_result,
@@ -29,6 +30,7 @@ KEYWORD_PREFILTER_REASONING = "no keyword match (village/action)"
 KEYWORD_PREFILTER_MODEL = "keyword_prefilter"
 TRUSTED_SOURCE_REASONING = "skipped relevance check: trusted source"
 TRUSTED_SOURCE_BACKEND = "trusted_source"
+NON_LEBANON_LOCATION_BACKEND = "lebanon_scope_filter"
 
 
 def _format_exception(exc: Exception) -> str:
@@ -74,6 +76,37 @@ class FilterRelevanceAction:
 
         candidates: list[RawMessage] = []
         for message in messages:
+            non_lebanon_marker = is_non_lebanon_location(message.raw_text)
+            if non_lebanon_marker is not None:
+                try:
+                    result = ClassificationResultDTO(
+                        raw_message_id=message.id,
+                        verdict=ClassificationVerdict.not_relevant,
+                        confidence=1.0,
+                        reasoning=(
+                            "explicit non-Lebanon location marker: "
+                            f"{non_lebanon_marker!r}"
+                        ),
+                        backend=NON_LEBANON_LOCATION_BACKEND,
+                    )
+                    policy = policy_for_result(result)
+                    self.raw_messages.save_filter_result(
+                        message=message,
+                        result=result,
+                        new_status=status_for_result(result),
+                        needs_review=policy.needs_review,
+                    )
+                    rejected += 1
+                except Exception as exc:
+                    self.raw_messages.rollback()
+                    errored += 1
+                    logger.error(
+                        "raw_message_id=%s non-Lebanon location reject save failed: %s",
+                        message.id,
+                        _format_exception(exc),
+                    )
+                continue
+
             source = getattr(message, "source", None)
             source_config = getattr(source, "config", None) or {}
             if source_config.get("trusted") is True:

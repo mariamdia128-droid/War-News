@@ -1,0 +1,12 @@
+{
+  "bug_ref": "lebanon-scope-control-positive",
+  "description": "A genuine South Lebanon bulletin must not be caught by the non-Lebanon location guard.",
+  "source": "control case for Bug 1",
+  "check": "lebanon_scope",
+  "input": {
+    "post_text": "غارة إسرائيلية استهدفت أطراف بلدة عيتا الشعب في قضاء بنت جبيل"
+  },
+  "expected": {
+    "is_non_lebanon": false
+  }
+}

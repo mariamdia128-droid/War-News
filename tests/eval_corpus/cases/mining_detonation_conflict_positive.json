@@ -1,0 +1,14 @@
+{
+  "bug_ref": "mining-detonation-conflict-positive",
+  "description": "A detonation explicitly attributed to enemy forces during a ground incursion must still match Mining & Detonation (condition_id 21).",
+  "source": "control case for Bug 2",
+  "check": "condition_attribution",
+  "input": {
+    "condition_id": 21,
+    "action_description": "تفجير عبوة ناسفة زرعتها قوات العدو الإسرائيلي خلال توغل بري"
+  },
+  "expected": {
+    "matched_condition_id": 21,
+    "condition_match_status": "matched"
+  }
+}

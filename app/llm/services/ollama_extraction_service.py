@@ -64,6 +64,13 @@ _DASH_QUALIFIER_RE = re.compile(
     r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,80}?)"
     r"(?=$|[\n،؛.!؟])"
 )
+_SECONDARY_STRIKE_RE = re.compile(
+    r"كما\s+طال(?:ت)?\s+(?:القصف|الغارة|الاستهداف)\s+"
+    r"(?:حرج|خراج|أطراف|محيط)?\s*"
+    r"بلدة\s+"
+    r"(?P<village>[؀-ۿ][؀-ۿ\s]{1,40}?)"
+    r"(?=\s+(?:في\s+)?قضاء|[\n،؛.!؟]|$)"
+)
 _ROUTE_AREA_PREFIXES = terms_by_category(
     "terminology/role_terms.yaml",
     "route_area_prefix",
@@ -1103,7 +1110,51 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 villages,
                 village_roles,
             )
+        villages, village_roles = cls._recover_secondary_strike_location(
+            post_text,
+            villages,
+            village_roles,
+        )
         return villages, village_roles
+
+    @staticmethod
+    def _recover_secondary_strike_location(
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Recover a second target dropped after a distinct-event connector.
+
+        "كما طال القصف ... بلدة X" explicitly introduces a separately scoped
+        strike location, unlike a محيط/بين vicinity phrase describing one
+        fuzzy place — this must never be collapsed the way
+        ``_collapse_fuzzy_area_locations`` collapses those.
+        """
+        match = _SECONDARY_STRIKE_RE.search(post_text)
+        if match is None:
+            return villages, village_roles
+
+        village = match.group("village").strip()
+        if not village:
+            return villages, village_roles
+
+        existing_names = list(villages or [])
+        existing_names.extend(entry.village for entry in village_roles)
+        existing_norms = {
+            normalize_arabic_text(name)
+            for name in existing_names
+            if normalize_arabic_text(name)
+        }
+        if normalize_arabic_text(village) in existing_norms:
+            return villages, village_roles
+
+        merged_villages = list(villages or [])
+        merged_villages.append(village)
+        merged_roles = list(village_roles)
+        merged_roles.append(
+            VillageRoleEntry(village=village, role=VillageRole.target)
+        )
+        return merged_villages, merged_roles
 
     @staticmethod
     def _collapse_fuzzy_area_locations(
@@ -1151,7 +1202,15 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 or f"fuzzy area; alternate: {', '.join(alternatives)}",
             }
         )
-        return [primary.village], [collapsed], alternatives, evidence
+        # Only replace the fuzzy group itself — other, unrelated locations
+        # already extracted (e.g. a distinct second strike introduced by a
+        # "كما طال القصف" connector elsewhere in the same bulletin) must
+        # survive the collapse rather than being silently dropped.
+        collapsed_ids = {id(entry) for entry in ordered}
+        unaffected = [entry for entry in entries if id(entry) not in collapsed_ids]
+        new_roles = [collapsed] + unaffected
+        new_villages = [primary.village] + [entry.village for entry in unaffected]
+        return new_villages, new_roles, alternatives, evidence
 
     @staticmethod
     def _apply_dash_route_village_backstop(

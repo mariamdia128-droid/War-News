@@ -6,6 +6,7 @@ import pytest
 
 import app.sources.models  # noqa: F401
 from app.llm.actions.filter_relevance_action import (
+    NON_LEBANON_LOCATION_BACKEND,
     TRUSTED_SOURCE_BACKEND,
     TRUSTED_SOURCE_REASONING,
     FilterRelevanceAction,
@@ -141,6 +142,67 @@ async def test_untrusted_source_without_keywords_is_rejected() -> None:
     assert summary.auto_rejected_by_keyword == 1
     assert classifier.calls == []
     assert repo.saved[0]["new_status"] == MessageStatus.rejected
+
+
+@pytest.mark.asyncio
+async def test_west_bank_bulletin_is_rejected_even_with_matching_village_name() -> None:
+    """Recon: "منطقة العين، غربي رام الله" (Ramallah, West Bank) was
+    materialized as a Lebanon incident because "العين" also happens to be a
+    real Lebanese village name. The stated location must reject it before
+    extraction ever sees the text, regardless of what village name matches.
+    """
+    message = _message(
+        15,
+        text=(
+            "شاهد | لحظة فرار المستوطنين واختبائهم عقب إطلاق نار في منطقة "
+            "العين، غربي رام الله. #الميادين"
+        ),
+    )
+    repo = _RepoStub([message])
+    keyword = _KeywordStub(has_keywords=True)
+    classifier = _ClassifierStub()
+    action = FilterRelevanceAction(repo, classifier, keyword)
+
+    summary = await action.execute_async(FilterPendingMessagesData(batch_size=10))
+
+    assert summary.rejected == 1
+    assert classifier.calls == []
+    assert keyword.calls == []
+    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+    assert repo.saved[0]["result"].verdict == ClassificationVerdict.not_relevant
+
+
+@pytest.mark.asyncio
+async def test_west_bank_bulletin_overrides_trusted_source() -> None:
+    message = _message(
+        16,
+        trusted=True,
+        text="اشتباكات في الضفة الغربية عقب مداهمة قوات الاحتلال لمخيم جنين.",
+    )
+    repo = _RepoStub([message])
+    action = FilterRelevanceAction(repo, _ClassifierStub(), _KeywordStub())
+
+    summary = await action.execute_async(FilterPendingMessagesData(batch_size=10))
+
+    assert summary.rejected == 1
+    assert summary.relevant == 0
+    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+
+
+@pytest.mark.asyncio
+async def test_west_bank_bulletin_overrides_cnrs_include_true() -> None:
+    message = _message(
+        17,
+        cnrs_classification={"include": True},
+        text="قوات الاحتلال تعتقل شابا من مدينة نابلس خلال مداهمة فجرية.",
+    )
+    repo = _RepoStub([message])
+    action = FilterRelevanceAction(repo, _ClassifierStub(), _KeywordStub())
+
+    summary = await action.execute_async(FilterPendingMessagesData(batch_size=10))
+
+    assert summary.rejected == 1
+    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
 
 
 @pytest.mark.asyncio
