@@ -11,6 +11,30 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-21 - Curated matching exceptions and district-hint guard
+
+**Bugs:** Real/confirmed matching-layer failures:
+- `بيوت السياد` had no confirmed ACS row or alias and could still silently resolve through fuzzy village matching to `المنصوري`.
+- `النيران تلتهم سيارة في العباسية... حريق كبير شرق صور` could resolve to condition_id 21 / "Mining & Detonation" despite no conflict attribution.
+- A mention with a `قضاء ...` qualifier could bypass the no-reference-overlap village guard because district membership artificially raised a weak lexical candidate above `MATCH_THRESHOLD`.
+
+**Knowledge files added:**
+- `terminology/village_match_exceptions.yaml` - `بيوت السياد` as `village_do_not_fuzzy_match` / `needs_review`.
+- `terminology/condition_match_exceptions.yaml` - Abbasiyeh car-fire phrasing as `condition_do_not_match_without_attribution` / `needs_review`.
+
+**Matching-code wiring:**
+- `matching_service.py` now loads both exception files through `load_terminology()` and short-circuits village exceptions before alias, trigram, or district-hint matching; condition exceptions block effect-defined condition matches in `_condition_match_allowed()`.
+- District-hint boosting now requires lexical overlap with the candidate name fields; district membership alone cannot manufacture a confident village match.
+- The duplicated conflict marker tuple was consolidated into `app/news/services/matching/conflict_attribution.py`; both `matching_service.py` and `cnrs_extraction_fallback.py` use the shared helper.
+
+**Regression coverage:**
+- `tests/test_matching_service.py::test_village_exception_overrides_alias_and_similarity`
+- `tests/test_matching_service.py::test_qada_hint_does_not_force_unrelated_candidate_without_name_overlap`
+- `tests/test_matching_service.py::test_condition_exception_blocks_even_with_conflict_attribution`
+- `eval/corpus/village_matching.jsonl`: `bouyout-sayyad-village-exception` and `district-hint-no-reference-overlap`
+
+**Eval gap:** `llm_knowledge/eval/` still has no dedicated condition-matching corpus file, so the Abbasiyeh condition exception is locked by unit test rather than a corpus row.
+
 ## 2026-09-21 — Fuzzy-area "محيط X وY" false multi-village split
 
 **Bug:** بلاغ real bulletin — «القوات الإسرائيلية أحرقت حقول الزيتون
@@ -75,17 +99,7 @@ close the gap and connect the two fixes.
 Found while cross-checking `rules/` against code-side accuracy guards —
 candidates for a future documentation pass, not fixed in this entry:
 
-- `matching_service.py::CONFLICT_ATTRIBUTION_TOKENS` +
-  `EFFECT_DEFINED_CONDITION_IDS`/`_condition_match_allowed()` gate
-  effect-defined conditions (shooting, road blockage, bulldozing, cutting
-  trees, **burning properties**, unexploded shells) behind the same
-  conflict-marker word list duplicated in
-  `cnrs_extraction_fallback.py::_CONFLICT_ACTION_MARKERS`. Two
-  independent Python token lists doing the same job with no shared
-  terminology YAML and no prompt rule referencing the *matching-layer*
-  guard (only the CNRS fallback path and the Tier 1 general-extraction
-  prompt document it) — risk of the lists drifting apart on the next
-  edit.
+- Closed 2026-09-21: duplicated conflict-attribution token lists were consolidated into `app/news/services/matching/conflict_attribution.py`; `matching_service.py` and `cnrs_extraction_fallback.py` now share the same helper.
 - `CONDITION_DISTINGUISHING_TOKENS` (`تحذيريه` for Warning Raid, `وهميه`
   for Feigned Attacks) — numeric IDs are intentionally code-only per the
   2026-09-14 B.3 decision below, but there's no eval-corpus entry
