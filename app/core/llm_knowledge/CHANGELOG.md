@@ -1,5 +1,97 @@
 # llm_knowledge CHANGELOG
 
+## Policy
+
+Any fix to an extraction, classification, or matching **accuracy bug**
+must add an entry here naming: the real bulletin/example that triggered
+it, the rule file(s) changed (with a short excerpt of the new rule), and
+the regression test(s) that lock the fix in. A code-only guard (a
+Python-side keyword list, gate, or override check) does not close this
+class of bug on its own — it only patches the one instance found. Flag
+any such code-only fix as incomplete until a corresponding prompt/rule
+update or a documented rationale for staying code-only is added.
+
+## 2026-09-21 — Fuzzy-area "محيط X وY" false multi-village split
+
+**Bug:** بلاغ real bulletin — «القوات الإسرائيلية أحرقت حقول الزيتون
+وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية» —
+was extracted as two separate target villages/incidents (مجدل زون +
+بيوت السياد) instead of one fuzzy-area mention, because the existing
+"بين X وY" two-endpoint rule didn't distinguish a real road/route from a
+vague "vicinity of X and Y" phrase.
+
+**Rule files changed:**
+- `rules/tier1_general_prompt.md` — narrowed the route rule to require an
+  explicit path marker (`طريق بين X و Y`, not bare `بين X و Y`), and added:
+  *"عبارات المساحة التقريبية «في محيط X وY» ... من دون طريق أو مسار صريح
+  تصف موقعاً ضبابياً واحداً، وليست حادثين أو هدفين. احتفظ بأول بلدة
+  مذكورة فقط ... وضعها في حالة مراجعة منخفضة الثقة."*
+- `rules/tier1_multi_village.md` — added a "Fuzzy area references are one
+  location, not a village list" detection signal + worked example for
+  `محيط`/`قرب`/`بالقرب من`/plain `بين` without a named route.
+
+**Code guard:** `matching_service.py::match()` now reads
+`extraction_result.location_ambiguity` and forces all village matches to
+`matched_low_confidence` + `village_review_required=True` when set, and
+`MatchResultDTO` carries `location_ambiguity_evidence`/
+`location_alternatives` through to materialization.
+
+**Regression tests:**
+- `tests/test_extraction_service.py::test_fuzzy_area_phrase_collapses_to_first_village_with_alternate`
+- `tests/test_extraction_service.py::test_plain_between_phrase_collapses_without_route`
+- `tests/test_matching_service.py::test_fuzzy_area_village_is_one_low_confidence_match`
+- `tests/test_village_role_materialization.py::test_fuzzy_area_materializes_one_reviewable_incident_with_alternate_note`
+
+## 2026-09-21 — CNRS "Burning Properties" over-classification without war attribution
+
+**Bug:** CNRS fallback extraction was materializing plain civilian/traffic
+fires as war incidents ("Burning Properties") with no stated military
+cause. Real false positives: «احتراق سيارة عند جسر المدفون ... اندلع
+حريق بسيارة», «احتراق سيارة على أوتوستراد المدفون باتجاه بيروت», «حريق
+داخل منزل في البحصة – طرابلس».
+
+**Code guard (committed e682d3a):** `app/llm/services/cnrs_extraction_fallback.py`
+adds `has_conflict_attribution()` and requires it for `event_subtype ==
+"fire_incident"` before `trusted_cnrs_action()` returns "Burning
+Properties" — checks `mentions_israeli_actor`/`event_domain == "conflict"`
+metadata or an explicit conflict-action marker (قصف، غارة، مسيّرة، دبابة،
+فوسفور...) in the post text.
+
+**Prompt-level status:** this fix is currently **code-only** — there is
+no corresponding Tier 1/Tier 2 prompt rule stating the war-attribution
+requirement for fire/property-damage actions. `rules/tier1_general_prompt.md`
+does carry an adjacent, independently-added rule ("الأفعال المعرّفة
+بالأثر تحتاج إسناداً صريحاً للنزاع...") covering حريق/قطع طريق/قطع أشجار/
+حفر وجرف/إطلاق نار/قذائف لم تنفجر for the *general extraction* stage, but
+no changelog entry previously linked it to this incident. Logged here to
+close the gap and connect the two fixes.
+
+**Regression tests:**
+- `tests/test_cnrs_extraction_fallback.py::test_cnrs_fire_incident_without_conflict_attribution_rejects_override`
+- `tests/test_cnrs_extraction_fallback.py::test_cnrs_fire_incident_with_conflict_attribution_accepts_override`
+
+## Open gaps (logged, not fixed)
+
+Found while cross-checking `rules/` against code-side accuracy guards —
+candidates for a future documentation pass, not fixed in this entry:
+
+- `matching_service.py::CONFLICT_ATTRIBUTION_TOKENS` +
+  `EFFECT_DEFINED_CONDITION_IDS`/`_condition_match_allowed()` gate
+  effect-defined conditions (shooting, road blockage, bulldozing, cutting
+  trees, **burning properties**, unexploded shells) behind the same
+  conflict-marker word list duplicated in
+  `cnrs_extraction_fallback.py::_CONFLICT_ACTION_MARKERS`. Two
+  independent Python token lists doing the same job with no shared
+  terminology YAML and no prompt rule referencing the *matching-layer*
+  guard (only the CNRS fallback path and the Tier 1 general-extraction
+  prompt document it) — risk of the lists drifting apart on the next
+  edit.
+- `CONDITION_DISTINGUISHING_TOKENS` (`تحذيريه` for Warning Raid, `وهميه`
+  for Feigned Attacks) — numeric IDs are intentionally code-only per the
+  2026-09-14 B.3 decision below, but there's no eval-corpus entry
+  exercising the *false-negative* case (a warning/feigned raid missing
+  its distinguishing token and falling through to no match).
+
 ## 2026-09-14 — B.3 confirm air-violation / special condition IDs
 
 **Decision (reconfirmed):** condition IDs `2`, `35`, `36`, `38`, `39`, `45` remain Python/SQL constants for deterministic routing, distinguishing-token gates, fast-path exclusion, and unclassified fallback. They must not move into PromptBuilder as authoritative IDs.
