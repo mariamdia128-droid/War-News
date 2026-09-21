@@ -481,6 +481,29 @@ def test_list_filters_exclude_air_violation_conditions() -> None:
     assert "38" in compiled
 
 
+def test_list_filters_hide_ordinary_burning_properties_incidents() -> None:
+    filters = IncidentRepository._list_filters(IncidentListParams())
+    compiled = _compiled_filters(filters)
+
+    assert "burning properties" in compiled
+    assert "incidents.khabar" in compiled
+    assert "raw_messages.raw_text" in compiled
+    assert "israel" in compiled
+    assert "قصف" in compiled
+
+
+def test_list_filters_hide_palestine_only_incidents() -> None:
+    filters = IncidentRepository._list_filters(IncidentListParams())
+    compiled = _compiled_filters(filters)
+
+    assert "ramallah" in compiled
+    assert "gaza" in compiled
+    assert "رام الله" in compiled
+    assert "غزة" in compiled
+    assert "lebanon" in compiled
+    assert "لبنان" in compiled
+
+
 def test_user_visible_needs_verification_requires_duplicate_flag() -> None:
     incident = Incident()
     incident.verification_status = "needs_verification"

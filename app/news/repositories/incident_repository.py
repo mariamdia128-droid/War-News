@@ -125,6 +125,92 @@ class IncidentRepository(IncidentRepositoryInterface):
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    @staticmethod
+    def _war_context_text_filter(text_expr) -> object:
+        patterns = (
+            "%israel%",
+            "%israeli%",
+            "%idf%",
+            "%enemy%",
+            "%war%",
+            "%military%",
+            "%security%",
+            "%strike%",
+            "%airstrike%",
+            "%shelling%",
+            "%bombardment%",
+            "%missile%",
+            "%rocket%",
+            "%drone%",
+            "%raid%",
+            "%targeted%",
+            "%إسرائيل%",
+            "%اسرائيل%",
+            "%إسرائيلي%",
+            "%اسرائيلي%",
+            "%العدو%",
+            "%حرب%",
+            "%حربي%",
+            "%أمني%",
+            "%امني%",
+            "%عسكري%",
+            "%غارة%",
+            "%غارات%",
+            "%قصف%",
+            "%استهداف%",
+            "%استهدف%",
+            "%صاروخ%",
+            "%صواريخ%",
+            "%مسيرة%",
+        )
+        return or_(*(text_expr.ilike(pattern) for pattern in patterns))
+
+    @staticmethod
+    def _palestine_scope_text_filter(text_expr) -> object:
+        patterns = (
+            "%palestine%",
+            "%gaza%",
+            "%ramallah%",
+            "%west bank%",
+            "%nablus%",
+            "%jenin%",
+            "%khan younis%",
+            "%rafah%",
+            "%فلسطين%",
+            "%غزة%",
+            "%رام الله%",
+            "%رامالله%",
+            "%الضفة الغربية%",
+            "%نابلس%",
+            "%جنين%",
+            "%خان يونس%",
+            "%رفح%",
+        )
+        return or_(*(text_expr.ilike(pattern) for pattern in patterns))
+
+    @staticmethod
+    def _lebanon_scope_text_filter(text_expr) -> object:
+        patterns = (
+            "%lebanon%",
+            "%lebanese%",
+            "%لبنان%",
+            "%لبناني%",
+        )
+        return or_(*(text_expr.ilike(pattern) for pattern in patterns))
+
+    @classmethod
+    def _visible_incident_scope_filter(cls) -> object:
+        text_expr = func.coalesce(Incident.khabar, RawMessage.raw_text, "")
+        ordinary_burning_properties = and_(
+            Condition.action_en == "Burning Properties",
+            ~cls._war_context_text_filter(text_expr),
+        )
+        palestine_only = and_(
+            cls._palestine_scope_text_filter(text_expr),
+            ~cls._lebanon_scope_text_filter(text_expr),
+        )
+        return ~or_(ordinary_burning_properties, palestine_only)
+
     def list_all(self, params: IncidentListParams) -> IncidentListResponse:
         filters = self._list_filters(params)
         needs_verification = self._needs_verification_column()
@@ -345,6 +431,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
                 Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
+                self._visible_incident_scope_filter(),
             )
         ).one_or_none()
         if row is None:
@@ -2097,6 +2184,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         filters: list[object] = [
             Incident.is_deleted.is_(False),
             Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
+            cls._visible_incident_scope_filter(),
             RawMessage.id.is_not(None),
             RawMessage.status == MessageStatus.materialized,
             ~RawMessage.raw_payload.op("?")("ocr_text"),

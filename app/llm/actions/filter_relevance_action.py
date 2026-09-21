@@ -21,6 +21,10 @@ from app.llm.services.relevance_filter_service import (
     policy_for_result,
     status_for_result,
 )
+from app.llm.services.relevance_guardrails import (
+    apply_relevance_guardrails,
+    relevance_guardrail_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +78,30 @@ class FilterRelevanceAction:
 
         candidates: list[RawMessage] = []
         for message in messages:
+            guardrail_result = relevance_guardrail_result(
+                raw_message_id=message.id,
+                text=message.raw_text,
+            )
+            if guardrail_result is not None:
+                try:
+                    policy = policy_for_result(guardrail_result)
+                    self.raw_messages.save_filter_result(
+                        message=message,
+                        result=guardrail_result,
+                        new_status=status_for_result(guardrail_result),
+                        needs_review=policy.needs_review,
+                    )
+                    rejected += 1
+                except Exception as exc:
+                    self.raw_messages.rollback()
+                    errored += 1
+                    logger.error(
+                        "raw_message_id=%s relevance guardrail save failed: %s",
+                        message.id,
+                        _format_exception(exc),
+                    )
+                continue
+
             source = getattr(message, "source", None)
             source_config = getattr(source, "config", None) or {}
             if source_config.get("trusted") is True:
@@ -113,6 +141,7 @@ class FilterRelevanceAction:
             cnrs_result = classification_from_cnrs(message)
             if cnrs_result is not None:
                 try:
+                    cnrs_result = apply_relevance_guardrails(message, cnrs_result)
                     policy = policy_for_result(cnrs_result)
                     self.raw_messages.save_filter_result(
                         message=message,
@@ -210,6 +239,7 @@ class FilterRelevanceAction:
 
             for message, result in zip(chunk, results, strict=True):
                 try:
+                    result = apply_relevance_guardrails(message, result)
                     policy = policy_for_result(result)
                     # Future reviewer classifiers can be invoked here for uncertain
                     # primary results; the optional dependency is intentionally idle now.

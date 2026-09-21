@@ -24,6 +24,10 @@ from app.llm.services.local_llm_relevance_classifier import (
     is_valid_reason_text,
 )
 from app.llm.services.relevance_filter_service import policy_for_result
+from app.llm.services.relevance_guardrails import (
+    apply_relevance_guardrails,
+    relevance_guardrail_result,
+)
 
 
 def _message(message_id: int, text: str = "غارة إسرائيلية على أطراف بلدة.") -> RawMessage:
@@ -273,3 +277,51 @@ def test_policy_rejects_uncertain_but_marks_review_needed() -> None:
 
     assert policy.status == MessageStatus.rejected.value
     assert policy.needs_review is True
+
+
+def test_guardrail_rejects_ordinary_property_fire_without_war_context() -> None:
+    result = relevance_guardrail_result(
+        raw_message_id=10,
+        text="اندلاع حريق داخل منزل في النبطية بسبب ماس كهربائي",
+    )
+
+    assert result is not None
+    assert result.verdict == ClassificationVerdict.not_relevant
+    assert "ordinary fire" in (result.reasoning or "").lower()
+
+
+def test_guardrail_keeps_fire_with_israeli_war_context_for_classifier() -> None:
+    result = relevance_guardrail_result(
+        raw_message_id=11,
+        text="اندلاع حريق في منزل في النبطية جراء قصف إسرائيلي",
+    )
+
+    assert result is None
+
+
+def test_guardrail_rejects_palestine_only_locations() -> None:
+    result = relevance_guardrail_result(
+        raw_message_id=12,
+        text="إصابات جراء قصف في رام الله وغزة",
+    )
+
+    assert result is not None
+    assert result.verdict == ClassificationVerdict.not_relevant
+    assert "palestine" in (result.reasoning or "").lower()
+
+
+def test_guardrail_overrides_false_positive_model_result() -> None:
+    model_result = ClassificationResultDTO(
+        raw_message_id=13,
+        verdict=ClassificationVerdict.relevant,
+        confidence=0.9,
+        reasoning="Fire in a known village.",
+        backend="test",
+    )
+
+    result = apply_relevance_guardrails(
+        _message(13, "حريق سيارة في النبطية بسبب عطل كهربائي"),
+        model_result,
+    )
+
+    assert result.verdict == ClassificationVerdict.not_relevant

@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.accounts.models import User
@@ -13,6 +13,92 @@ from app.news.models import AirViolation, Condition, Incident, RawMessage, Villa
 
 
 router = APIRouter(prefix="/api/filtered-news", tags=["filtered-news"])
+
+
+def _war_context_text_filter(text_expr) -> object:
+    patterns = (
+        "%israel%",
+        "%israeli%",
+        "%idf%",
+        "%enemy%",
+        "%war%",
+        "%military%",
+        "%security%",
+        "%strike%",
+        "%airstrike%",
+        "%shelling%",
+        "%bombardment%",
+        "%missile%",
+        "%rocket%",
+        "%drone%",
+        "%raid%",
+        "%targeted%",
+        "%إسرائيل%",
+        "%اسرائيل%",
+        "%إسرائيلي%",
+        "%اسرائيلي%",
+        "%العدو%",
+        "%حرب%",
+        "%حربي%",
+        "%أمني%",
+        "%امني%",
+        "%عسكري%",
+        "%غارة%",
+        "%غارات%",
+        "%قصف%",
+        "%استهداف%",
+        "%استهدف%",
+        "%صاروخ%",
+        "%صواريخ%",
+        "%مسيرة%",
+    )
+    return or_(*(text_expr.ilike(pattern) for pattern in patterns))
+
+
+def _palestine_scope_text_filter(text_expr) -> object:
+    patterns = (
+        "%palestine%",
+        "%gaza%",
+        "%ramallah%",
+        "%west bank%",
+        "%nablus%",
+        "%jenin%",
+        "%khan younis%",
+        "%rafah%",
+        "%فلسطين%",
+        "%غزة%",
+        "%رام الله%",
+        "%رامالله%",
+        "%الضفة الغربية%",
+        "%نابلس%",
+        "%جنين%",
+        "%خان يونس%",
+        "%رفح%",
+    )
+    return or_(*(text_expr.ilike(pattern) for pattern in patterns))
+
+
+def _lebanon_scope_text_filter(text_expr) -> object:
+    patterns = (
+        "%lebanon%",
+        "%lebanese%",
+        "%لبنان%",
+        "%لبناني%",
+    )
+    return or_(*(text_expr.ilike(pattern) for pattern in patterns))
+
+
+def _visible_incident_scope_filter() -> object:
+    text_expr = func.coalesce(Incident.khabar, RawMessage.raw_text, "")
+    ordinary_burning_properties = and_(
+        Condition.action_en == "Burning Properties",
+        ~_war_context_text_filter(text_expr),
+    )
+    palestine_only = and_(
+        _palestine_scope_text_filter(text_expr),
+        ~_lebanon_scope_text_filter(text_expr),
+    )
+    return ~or_(ordinary_burning_properties, palestine_only)
 
 
 class FilteredNewsItem(BaseModel):
@@ -98,6 +184,7 @@ def list_filtered_news(
     ]
     if related_only:
         filters.append(Incident.id.is_not(None))
+        filters.append(_visible_incident_scope_filter())
     if event_date_from is not None:
         filters.append(func.date(event_at) >= event_date_from)
     if event_date_to is not None:

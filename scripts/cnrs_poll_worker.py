@@ -101,9 +101,16 @@ def min_datetime_from_hours(
     return current - timedelta(hours=hours)
 
 
+def _numeric_cursor(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized if normalized.isdigit() else None
+
+
 def _resolve_resume_cursor(
     repo: SourceRepository,
-    source_id: int,
+    source,
     override_after_id: str | None,
 ) -> str:
     if override_after_id is not None:
@@ -113,7 +120,11 @@ def _resolve_resume_cursor(
         )
         return override_after_id
 
-    current_cursor = _last_ingested_cursor(repo, source_id)
+    source_cursor = _numeric_cursor(getattr(source, "last_cursor", None))
+    if source_cursor is not None:
+        return source_cursor
+
+    current_cursor = _last_ingested_cursor(repo, source.id)
     if current_cursor is not None:
         return current_cursor
 
@@ -121,7 +132,7 @@ def _resolve_resume_cursor(
         "No numeric CNRS resume cursor found for source_id=%s; refusing to "
         "default to after_id=0. Pass --after-id <numeric_cnrs_post_id> for "
         "the first poll-worker run.",
-        source_id,
+        source.id,
     )
     raise CnrsPollBootstrapRequired(
         "CNRS poll worker requires --after-id <numeric_cnrs_post_id> on the "
@@ -180,7 +191,7 @@ def run_poll_pass(
             api_key=_resolve_cnrs_api_key(),
         )
         started_at = datetime.now(timezone.utc)
-        current_cursor = _resolve_resume_cursor(repo, resolved_source_id, after_id)
+        current_cursor = _resolve_resume_cursor(repo, source, after_id)
         min_message_datetime = min_datetime_from_hours(hours, now=started_at)
         fetched = 0
         inserted = 0
@@ -230,6 +241,10 @@ def run_poll_pass(
 
                         source_name = item.get("source_name") or source.name
                         origin_account = item.get("origin_account") or source_name
+                        source_platform_id = repo.get_or_create_source_platform_id(
+                            source_platform,
+                            source_name,
+                        )
                         if repo.is_content_source_blocked(
                             source_platform,
                             origin_account,
@@ -244,6 +259,7 @@ def run_poll_pass(
                                 external_message_id=external_message_id,
                                 source_platform=source_platform,
                                 source_name=source_name,
+                                source_platform_id=source_platform_id,
                                 origin_platform=item.get("origin_platform")
                                 or source_platform,
                                 origin_account=origin_account,

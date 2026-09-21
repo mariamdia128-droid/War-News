@@ -70,16 +70,28 @@ class _FakeRepo:
 
 
 class _FakeSource:
-    def __init__(self, source_id: int) -> None:
+    def __init__(self, source_id: int, last_cursor: str | None = None) -> None:
         self.id = source_id
+        self.last_cursor = last_cursor
 
 
-def test_resolve_resume_cursor_uses_db_max_when_no_override(monkeypatch) -> None:
+def test_resolve_resume_cursor_uses_source_last_cursor_before_db_max(monkeypatch) -> None:
     monkeypatch.setattr(
         "scripts.cnrs_poll_worker._last_ingested_cursor",
         lambda repo, source_id: "730500",
     )
-    assert _resolve_resume_cursor(_FakeRepo(), 3, None) == "730500"
+    assert (
+        _resolve_resume_cursor(_FakeRepo(), _FakeSource(3, "730400"), None)
+        == "730400"
+    )
+
+
+def test_resolve_resume_cursor_uses_db_max_when_source_cursor_missing(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "scripts.cnrs_poll_worker._last_ingested_cursor",
+        lambda repo, source_id: "730500",
+    )
+    assert _resolve_resume_cursor(_FakeRepo(), _FakeSource(3), None) == "730500"
 
 
 def test_resolve_resume_cursor_honors_explicit_override(monkeypatch) -> None:
@@ -87,7 +99,10 @@ def test_resolve_resume_cursor_honors_explicit_override(monkeypatch) -> None:
         "scripts.cnrs_poll_worker._last_ingested_cursor",
         lambda repo, source_id: "730500",
     )
-    assert _resolve_resume_cursor(_FakeRepo(), 3, "731000") == "731000"
+    assert (
+        _resolve_resume_cursor(_FakeRepo(), _FakeSource(3, "730400"), "731000")
+        == "731000"
+    )
 
 
 def test_resolve_resume_cursor_raises_when_no_numeric_rows(monkeypatch) -> None:
@@ -96,7 +111,7 @@ def test_resolve_resume_cursor_raises_when_no_numeric_rows(monkeypatch) -> None:
         lambda repo, source_id: None,
     )
     with pytest.raises(CnrsPollBootstrapRequired, match="--after-id"):
-        _resolve_resume_cursor(_FakeRepo(), 3, None)
+        _resolve_resume_cursor(_FakeRepo(), _FakeSource(3), None)
 
 
 def test_resolve_source_uses_active_cnrs_external_id_by_default() -> None:
@@ -146,6 +161,9 @@ def test_run_poll_pass_resolves_cnrs_source_by_external_id(monkeypatch) -> None:
 
         def is_content_source_blocked(self, source_platform, origin_account) -> bool:
             return False
+
+        def get_or_create_source_platform_id(self, source_platform, source_name):
+            return 99
 
         def add_raw_message(self, raw_message) -> None:
             added_messages.append(raw_message)
@@ -200,4 +218,5 @@ def test_run_poll_pass_resolves_cnrs_source_by_external_id(monkeypatch) -> None:
     assert summary["inserted"] == 1
     assert summary["resume_cursor"] == "731001"
     assert added_messages[0].source_id == 44
+    assert added_messages[0].source_platform_id == 99
     assert logs[0]["source_id"] == 44
