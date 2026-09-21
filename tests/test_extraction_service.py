@@ -220,13 +220,42 @@ def test_non_route_dash_phrases_collapse_to_target_and_qualifier(
 
 def test_between_route_phrase_keeps_both_endpoints() -> None:
     villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
-        "غارة بين كفرتبنيت وزوطر الشرقية.",
+        "غارة على طريق بين كفرتبنيت وزوطر الشرقية.",
         ["كفرتبنيت"],
         [VillageRoleEntry(village="كفرتبنيت")],
     )
 
     assert villages == ["كفرتبنيت", "زوطر الشرقية"]
     assert [entry.village for entry in roles] == ["كفرتبنيت", "زوطر الشرقية"]
+
+
+def test_fuzzy_area_phrase_collapses_to_first_village_with_alternate() -> None:
+    villages, roles, alternatives, evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            "القوات الإسرائيلية أحرقت حقول الزيتون وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية",
+            ["مجدل زون", "بيوت السياد"],
+            [],
+        )
+    )
+
+    assert villages == ["مجدل زون"]
+    assert [entry.village for entry in roles] == ["مجدل زون"]
+    assert alternatives == ["بيوت السياد"]
+    assert "محيط مجدل زون وبيوت السياد" in (evidence or "")
+
+
+def test_plain_between_phrase_collapses_without_route() -> None:
+    villages, roles, alternatives, _evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            "قصف بين كفرتبنيت وزوطر الشرقية.",
+            ["كفرتبنيت", "زوطر الشرقية"],
+            [],
+        )
+    )
+
+    assert villages == ["كفرتبنيت"]
+    assert [entry.village for entry in roles] == ["كفرتبنيت"]
+    assert alternatives == ["زوطر الشرقية"]
 
 
 def test_extract_tier1_backstops_per_village_casualties() -> None:

@@ -181,6 +181,32 @@ def test_genuine_multi_target_strike_still_materializes_multiple_incidents() -> 
     assert all(incident.note is None for incident in result)
 
 
+def test_fuzzy_area_materializes_one_reviewable_incident_with_alternate_note() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    extraction = _extraction_result()
+    extraction["village"] = ["مجدل زون"]
+    extraction["village_roles"] = [{"village": "مجدل زون", "role": "target"}]
+    extraction["location_ambiguity"] = True
+    extraction["location_alternatives"] = ["بيوت السياد"]
+    extraction["location_ambiguity_evidence"] = "محيط مجدل زون وبيوت السياد"
+    match = _multi_target_match_result()
+    match["village_matches"] = [match["village_matches"][1]]
+    match["village_matches"][0]["raw_village_text"] = "مجدل زون"
+    match["village_matches"][0]["matched_village_id"] = 976
+    match["village_matches"][0]["village_match_status"] = "matched_low_confidence"
+    match["village_matches"][0]["village_review_required"] = True
+
+    result = service.materialize(
+        _representative(match, extraction_result=extraction)
+    )
+
+    assert len(result) == 1
+    assert result[0].village_id == 976
+    assert result[0].verification_status == "needs_verification"
+    assert "بيوت السياد" in (result[0].note or "")
+
+
 def test_fast_path_ignores_origin_only_village_when_materializing() -> None:
     db = _SessionStub()
     service = IncidentMaterializationService(db)  # type: ignore[arg-type]

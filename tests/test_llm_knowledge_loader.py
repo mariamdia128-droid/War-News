@@ -48,6 +48,17 @@ def test_is_multi_village_candidate_dash_route() -> None:
     assert is_multi_village_candidate(text) is True
 
 
+def test_is_multi_village_candidate_fuzzy_area_is_false() -> None:
+    assert (
+        is_multi_village_candidate("قصف في محيط مجدل زون وبيوت السياد") is False
+    )
+    assert is_multi_village_candidate("غارة بين كفرتبنيت وزوطر الشرقية") is False
+
+
+def test_is_multi_village_candidate_between_route_is_true() -> None:
+    assert is_multi_village_candidate("غارة على طريق بين كفرتبنيت وزوطر الشرقية") is True
+
+
 def test_is_multi_village_candidate_single_village_false() -> None:
     assert is_multi_village_candidate("غارة على عيتا الشعب") is False
 

@@ -267,10 +267,25 @@ class MatchingService(MatchingServiceInterface):
             vm.village_match_status == MatchResultStatus.matched_low_confidence
             for vm in village_matches
         )
+        location_ambiguity = bool(extraction_result.location_ambiguity)
+        if location_ambiguity:
+            village_matches = [
+                vm.model_copy(
+                    update={
+                        "village_match_status": MatchResultStatus.matched_low_confidence,
+                        "village_review_required": True,
+                    }
+                )
+                for vm in village_matches
+            ]
+            any_village_low_confidence = True
 
         return MatchResultDTO(
             village_matches=village_matches,
             any_village_low_confidence=any_village_low_confidence,
+            location_ambiguity=location_ambiguity,
+            location_alternatives=list(extraction_result.location_alternatives),
+            location_ambiguity_evidence=extraction_result.location_ambiguity_evidence,
             matched_condition_id=root_condition.matched_id,
             condition_confidence=root_condition.confidence,
             condition_match_status=root_condition.status,

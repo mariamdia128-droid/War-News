@@ -488,6 +488,7 @@ class IncidentMaterializationService:
                     event_datetime=event_datetime,
                     origin_villages=origin_villages,
                     location_qualifier=village_match.get("qualifier_text"),
+                    location_ambiguity_note=self._location_ambiguity_note(extraction),
                     deaths=village_deaths,
                     injuries=village_injuries,
                     duplicate_flag=True,
@@ -627,6 +628,7 @@ class IncidentMaterializationService:
                 event_datetime=event_datetime,
                 origin_villages=origin_villages,
                 location_qualifier=village_match.get("qualifier_text"),
+                location_ambiguity_note=self._location_ambiguity_note(extraction),
                 deaths=village_deaths,
                 injuries=village_injuries,
                 scope_review_reason=(
@@ -885,6 +887,7 @@ class IncidentMaterializationService:
         event_datetime: datetime,
         origin_villages: list[str],
         location_qualifier: Any,
+        location_ambiguity_note: str | None = None,
         deaths: int | None,
         injuries: int | None,
         duplicate_flag: bool = False,
@@ -940,7 +943,11 @@ class IncidentMaterializationService:
             event_time=event_datetime.time(),
             khabar=sanitized_khabar,
             khabar_embedding=representative.content_embedding,
-            note=self._incident_note(origin_villages, location_qualifier),
+            note=self._incident_note(
+                origin_villages,
+                location_qualifier,
+                location_ambiguity_note,
+            ),
             total_deaths=total_deaths,
             total_injuries=total_injuries,
             deaths=deaths,
@@ -1276,6 +1283,7 @@ class IncidentMaterializationService:
                 note=self._incident_note(
                     origin_villages,
                     village_match.get("qualifier_text"),
+                    self._location_ambiguity_note(extraction),
                 ),
                 total_deaths=total_deaths,
                 total_injuries=total_injuries,
@@ -1776,11 +1784,23 @@ class IncidentMaterializationService:
         cls,
         origin_villages: list[str],
         qualifier_text: Any,
+        location_ambiguity_note: str | None = None,
     ) -> str | None:
         parts = [cls._origin_village_note(origin_villages)]
         if isinstance(qualifier_text, str) and qualifier_text.strip():
             parts.append(f"Location qualifier: {qualifier_text.strip()}")
+        if location_ambiguity_note:
+            parts.append(location_ambiguity_note)
         return "\n".join(part for part in parts if part) or None
+
+    @staticmethod
+    def _location_ambiguity_note(extraction: ExtractionResult) -> str | None:
+        if not extraction.location_ambiguity or not extraction.location_alternatives:
+            return None
+        alternatives = ", ".join(extraction.location_alternatives)
+        evidence = extraction.location_ambiguity_evidence
+        suffix = f" Evidence: {evidence}" if evidence else ""
+        return f"Location ambiguity: fuzzy area; alternate village(s): {alternatives}.{suffix}"
 
     @staticmethod
     def _build_exact_hash(

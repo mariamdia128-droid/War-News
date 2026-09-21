@@ -23,6 +23,11 @@ _DASH_ROUTE_RE = re.compile(
     r"[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?"
 )
 _MULTI_VILLAGE_SEPARATORS = ("؛", ";", ":\n", " : ")
+_FUZZY_AREA_RE = re.compile(
+    r"(?:في\s+)?(?:محيط|قرب|بالقرب\s+من|بين)\s+"
+    r"[\u0600-\u06ff][\u0600-\u06ff\s]{1,100}?\s+و\s*"
+    r"[\u0600-\u06ff]"
+)
 
 SituationalTrigger = Callable[[str], bool]
 
@@ -31,6 +36,14 @@ def is_multi_village_candidate(text: str) -> bool:
     """True when bulletin text likely names multiple target locations."""
     normalized = normalize_arabic_text(text or "")
     if not normalized:
+        return False
+    fuzzy_match = _FUZZY_AREA_RE.search(normalized)
+    if fuzzy_match and not (
+        normalized[max(0, fuzzy_match.start() - 12) : fuzzy_match.start()].find(
+            "طريق"
+        ) >= 0
+        and normalized[fuzzy_match.start() :].startswith("بين")
+    ):
         return False
     if _DASH_ROUTE_RE.search(normalized):
         return True

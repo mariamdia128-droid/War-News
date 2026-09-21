@@ -5,7 +5,8 @@ Load when the message appears to name multiple target locations.
 ## Detection signals
 
 - Two or more place names in separate clauses (semicolon, colon, or list).
-- Explicit route/path endpoints only: `طريق … X - Y`, `طريق عام X - Y`, or `بين X و Y` → two distinct villages/endpoints.
+- Explicit route/path endpoints only: `طريق … X - Y`, `طريق عام X - Y`, or `طريق بين X و Y` → two distinct villages/endpoints.
+- Fuzzy area references are one location, not a village list: `في محيط X وY`, `محيط X وY`, `قرب X وY`, `بالقرب من X وY`, or plain `بين X وY` when no route/path is named. Keep the first-mentioned village as the primary attribution and mark the location low-confidence with the other village as reviewable context.
 - Every other dash phrase defaults to one target on the left and qualifier context on the right: `بلدة X - حي Y`, `مزرعة X - Y`, `بلدة X - قضاء Y`, or `بلدة X - [neighborhood/hamlet]`.
 - In `مزرعة X - Y وZ`, the complete `Y وZ` tail is qualifier context, not two additional targets.
 - Multiple `target` entries in expected extraction.
@@ -27,6 +28,11 @@ Load when the message appears to name multiple target locations.
 
 **Bulletin aggregate:**
 «غارة على المنصوري ومجدل زون أدت إلى 5 شهداء» (no per-village breakdown)
+
+**One fuzzy area, not two incidents:**
+«القوات الإسرائيلية أحرقت حقول الزيتون وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية» → one target location, `مجدل زون`, with `بيوت السياد` retained as an alternate area candidate and manual review required. Do not emit two target entries and do not set the bulletin as a genuine multi-village event.
+
+«قصف قرب X وY» and «قصف بين X وY» without a named road or route likewise describe one fuzzy area. A route such as «قصف على طريق عام X - Y» remains two endpoints in one event.
 
 **Dash route / endpoints:**
 «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"] (two target endpoints)

@@ -61,6 +61,9 @@ class MatchResultDTO(BaseModel):
     # low-confidence query (RawMessage.match_result["any_village_low_confidence"])
     # stays simple and backward-compatible.
     any_village_low_confidence: bool
+    location_ambiguity: bool = False
+    location_alternatives: list[str] = Field(default_factory=list)
+    location_ambiguity_evidence: str | None = None
 
     matched_condition_id: int | None
     condition_confidence: float | None

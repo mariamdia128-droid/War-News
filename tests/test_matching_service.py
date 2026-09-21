@@ -133,6 +133,33 @@ def test_multi_village_produces_two_match_entries() -> None:
     )
 
 
+def test_fuzzy_area_village_is_one_low_confidence_match() -> None:
+    villages = _SimilarRepositoryStub(969, 1.0)
+    conditions = _SimilarRepositoryStub(None, None)
+    extraction = _extraction(
+        village=["مجدل زون"],
+        action="إحراق حقول في محيط مجدل زون وبيوت السياد",
+        village_roles=[VillageRoleEntry(village="مجدل زون")],
+    ).model_copy(
+        update={
+            "location_ambiguity": True,
+            "location_alternatives": ["بيوت السياد"],
+            "location_ambiguity_evidence": "محيط مجدل زون وبيوت السياد",
+        }
+    )
+
+    result = MatchingService(villages, conditions).match(extraction)
+
+    assert len(result.village_matches) == 1
+    assert result.village_matches[0].raw_village_text == "مجدل زون"
+    assert result.village_matches[0].village_match_status == (
+        MatchResultStatus.matched_low_confidence
+    )
+    assert result.village_matches[0].village_review_required is True
+    assert result.any_village_low_confidence is True
+    assert result.location_alternatives == ["بيوت السياد"]
+
+
 def test_village_roles_are_preserved_in_match_entries() -> None:
     villages = _SimilarRepositoryStub(11, 0.75)
     conditions = _SimilarRepositoryStub(None, None)
