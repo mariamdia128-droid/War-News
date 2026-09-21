@@ -15,6 +15,10 @@ from app.core.scheduler import start_scheduler, stop_scheduler
 from app.core.seeds.seed_cnrs_source import ensure_cnrs_source
 from app.core.seeds.seed_super_admin import ensure_super_admin
 from app.news.services.realtime.incident_event_stream import incident_event_stream
+import app.accounts.models  # noqa: F401
+import app.logs.models  # noqa: F401
+import app.news.models  # noqa: F401
+import app.sources.models  # noqa: F401
 
 configure_logging()
 logger = logging.getLogger(__name__)
