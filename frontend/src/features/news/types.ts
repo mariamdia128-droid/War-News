@@ -246,7 +246,9 @@ export type FilteredNewsItem = {
   confidence: number | null;
   reasoning: string | null;
   condition_id: number | null;
+  condition_name: string | null;
   village_id: number | null;
+  village_name: string | null;
 };
 
 export type FilteredNewsListResponse = {

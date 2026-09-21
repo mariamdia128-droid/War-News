@@ -8,11 +8,11 @@ import { getBeirutDate } from "../../../lib/localDate";
 import { getFilteredNews } from "../api";
 import type { FilteredNewsItem } from "../types";
 
-const PAGE_SIZE = 150;
-const DEFAULT_EVENT_DATE_FROM = "2026-08-20";
+const PAGE_SIZE = 100;
+const DEFAULT_EVENT_DATE_FROM = "2026-08-01";
 
 const twoLineClampClass =
-  "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]";
+  "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]";
 
 const statusVariant = (status: string) => {
   if (status === "materialized") return "success" as const;
@@ -34,6 +34,7 @@ const eventHour = (value: string) =>
     timeZone: "Asia/Beirut",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   }).format(new Date(value));
 
@@ -44,6 +45,7 @@ export const AllNewsPage = () => {
   const [eventDateTo, setEventDateTo] = useState(getBeirutDate());
   const [sourceName, setSourceName] = useState("");
   const [status, setStatus] = useState("");
+  const [relatedOnly, setRelatedOnly] = useState(false);
   const [search, setSearch] = useState("");
   const offset = (page - 1) * PAGE_SIZE;
 
@@ -51,13 +53,14 @@ export const AllNewsPage = () => {
     () => ({
       limit: PAGE_SIZE,
       offset,
-      eventDateFrom,
-      eventDateTo,
+      eventDateFrom: eventDateFrom || undefined,
+      eventDateTo: eventDateTo || undefined,
       sourceName: sourceName || undefined,
       status: status || undefined,
+      relatedOnly,
       search: search || undefined,
     }),
-    [eventDateFrom, eventDateTo, offset, search, sourceName, status],
+    [eventDateFrom, eventDateTo, offset, relatedOnly, search, sourceName, status],
   );
 
   const query = useQuery({
@@ -78,69 +81,90 @@ export const AllNewsPage = () => {
     {
       key: "index",
       header: "#",
-      headerClassName: "w-14 whitespace-nowrap",
-      cellClassName: "w-14 tabular-nums text-text-muted",
+      headerClassName: "w-12 whitespace-nowrap",
+      cellClassName: "w-12 tabular-nums text-text-muted",
       render: (row) => offset + rows.indexOf(row) + 1,
     },
     {
       key: "time",
-      header: "Day / hour",
+      header: "Event Day / Hour",
       headerClassName: "w-[12rem] whitespace-nowrap",
       cellClassName: "w-[12rem]",
       render: (row) => (
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <p className="font-semibold text-text-primary">{eventDay(row.event_at)}</p>
-          <p className="text-caption text-text-muted">{eventHour(row.event_at)}</p>
+          <p className="text-caption font-mono text-accent">{eventHour(row.event_at)}</p>
         </div>
       ),
     },
     {
       key: "report",
-      header: "Filtered news",
-      headerClassName: "min-w-[28rem]",
-      cellClassName: "min-w-[28rem]",
+      header: "Filtered News (Khabar)",
+      headerClassName: "min-w-[24rem]",
+      cellClassName: "min-w-[24rem]",
       render: (row) => (
         <div className="space-y-1.5">
           <p className={`${twoLineClampClass} whitespace-normal leading-6 text-text-primary`} dir="auto">
             {row.khabar}
           </p>
-          <p className="text-caption text-text-muted">
-            Raw #{row.id}{row.external_message_id ? ` · ${row.external_message_id}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 text-caption text-text-muted">
+            <span>Raw #{row.id}</span>
+            {row.external_message_id ? <span>· ID: {row.external_message_id}</span> : null}
+            {row.source_name ? (
+              <span className="rounded bg-surface-subtle px-1.5 py-0.5 font-medium text-text-secondary">
+                {row.source_name}
+              </span>
+            ) : null}
+          </div>
         </div>
       ),
     },
     {
-      key: "source",
-      header: "Source",
-      headerClassName: "w-[11rem]",
-      cellClassName: "w-[11rem]",
-      render: (row) => row.source_name ?? row.source_platform ?? "Unknown",
+      key: "incident_link",
+      header: "Related Incident",
+      headerClassName: "w-[16rem]",
+      cellClassName: "w-[16rem]",
+      render: (row) => {
+        if (!row.incident_id) {
+          return (
+            <span className="inline-flex items-center rounded-md bg-surface-subtle px-2.5 py-1 text-caption text-text-muted">
+              No incident linked
+            </span>
+          );
+        }
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="font-medium text-text-primary text-small">Incident linked</span>
+            </div>
+            {row.village_name || row.condition_name ? (
+              <p className="text-caption text-text-secondary">
+                {row.village_name ? <span>📍 {row.village_name} </span> : null}
+                {row.condition_name ? <span>⚡ {row.condition_name}</span> : null}
+              </p>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "status",
-      header: "Pipeline",
-      headerClassName: "w-[11rem]",
-      cellClassName: "w-[11rem]",
+      header: "Pipeline Status",
+      headerClassName: "w-[10rem]",
+      cellClassName: "w-[10rem]",
       render: (row) => (
-        <div className="space-y-2">
-          <StatusBadge label={row.status} variant={statusVariant(row.status)} />
-          {row.incident_id ? (
-            <p className="text-caption text-text-muted">Incident created</p>
-          ) : (
-            <p className="text-caption text-text-muted">No incident row</p>
-          )}
-        </div>
+        <StatusBadge label={row.status} variant={statusVariant(row.status)} />
       ),
     },
     {
       key: "reason",
-      header: "Filter reason",
-      headerClassName: "w-[18rem]",
-      cellClassName: "w-[18rem]",
+      header: "Relevance Reason",
+      headerClassName: "w-[16rem]",
+      cellClassName: "w-[16rem]",
       render: (row) => (
-        <p className={`${twoLineClampClass} text-small leading-6 text-text-muted`}>
-          {row.reasoning ?? "Relevant filtered news"}
+        <p className={`${twoLineClampClass} text-small leading-5 text-text-muted`}>
+          {row.reasoning ?? (row.verdict === "relevant" ? "Classified as relevant" : "Relevant incident news")}
         </p>
       ),
     },
@@ -148,23 +172,37 @@ export const AllNewsPage = () => {
 
   return (
     <div className="space-y-6">
-      <section className="space-y-1">
-        <h1 className="text-h3 font-semibold text-text-primary">Filtered news</h1>
-        <p className="max-w-3xl text-small leading-6 text-text-muted">
-          Relevant filtered news saved in the database, ordered one by one by event day and hour.
-        </p>
+      <section className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-h3 font-semibold text-text-primary">Filtered News</h1>
+          <p className="max-w-3xl text-small leading-6 text-text-muted">
+            All filtered news saved in the database, ordered chronologically day by day and hour by hour with direct linkage to incidents.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={relatedOnly ? "primary" : "secondary"}
+            onClick={() => {
+              setRelatedOnly(!relatedOnly);
+              setPage(1);
+            }}
+          >
+            {relatedOnly ? "Showing: Related to Incidents only" : "Filter: Related to Incidents"}
+          </Button>
+        </div>
       </section>
 
       <section className="grid gap-4 rounded-lg border border-border bg-surface-raised p-4 shadow-[0_1px_2px_rgba(11,34,54,0.04)] md:grid-cols-5">
         <div className="space-y-2">
-          <Label htmlFor="filtered-from">From</Label>
+          <Label htmlFor="filtered-from">From Date</Label>
           <Input id="filtered-from" type="date" value={eventDateFrom} onChange={(event) => {
             setEventDateFrom(event.target.value);
             setPage(1);
           }} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="filtered-to">To</Label>
+          <Label htmlFor="filtered-to">To Date</Label>
           <Input id="filtered-to" type="date" value={eventDateTo} onChange={(event) => {
             setEventDateTo(event.target.value);
             setPage(1);
@@ -203,7 +241,7 @@ export const AllNewsPage = () => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="filtered-search">Search</Label>
-          <Input id="filtered-search" value={search} placeholder="Text or source id" onChange={(event) => {
+          <Input id="filtered-search" value={search} placeholder="Text, village, or ID" onChange={(event) => {
             setSearch(event.target.value);
             setPage(1);
           }} />
@@ -218,8 +256,8 @@ export const AllNewsPage = () => {
         clientSort={false}
         loading={query.isLoading}
         error={query.isError}
-        emptyState={<EmptyState title="No filtered news" description="Relevant filtered news will appear here after the pipeline processes source messages." />}
-        errorState={<EmptyState title="Could not load filtered news" description="Try again." />}
+        emptyState={<EmptyState title="No filtered news found" description="Try adjusting your date range or filters." />}
+        errorState={<EmptyState title="Could not load filtered news" description="Check API connection and try again." />}
         actions={(row) => (
           <Button
             type="button"
@@ -229,7 +267,7 @@ export const AllNewsPage = () => {
               if (row.incident_id) navigate(`../incidents/${row.incident_id}`);
             }}
           >
-            View incident
+            Open incident
           </Button>
         )}
       />
