@@ -34,6 +34,9 @@ from app.news.models import (
     Condition,
     Village,
 )
+from app.news.services.matching.conflict_attribution import (
+    has_conflict_attribution_text,
+)
 
 MATCH_THRESHOLD = 0.6
 LOW_CONFIDENCE_THRESHOLD = 0.35
@@ -83,48 +86,68 @@ CONDITION_DISTINGUISHING_TOKENS: dict[int, tuple[str, ...]] = {
     39: _distinguishing_tokens("Feigned Attacks") or ("وهميه",),
 }
 
-EFFECT_DEFINED_CONDITION_IDS = frozenset({17, 24, 25, 26, 27, 40})
+# Effect-defined conditions describe an outcome (fire, hole in the road, an
+# explosion) that plain civilian/criminal/traffic news can also produce with
+# no war attribution at all — condition_id 21 (Mining & Detonation) joined
+# this set after the عباسية car-fire recon ("النيران تلتهم سيارة... حريق
+# كبير") showed a civilian car fire matching Mining & Detonation with no
+# conflict marker in the text. Reviewed the rest of Data/Conditions.json for
+# the same failure mode and found no other gaps: Kidnapping/Arrest
+# Operation/Ambushes read as war-context-only in this corpus's actual usage
+# (no civilian-crime false positives observed), and every other condition is
+# either device-defined (a named weapon/aircraft) rather than effect-defined,
+# or explicitly scoped to require a prior Ground Incursion per its note.
+EFFECT_DEFINED_CONDITION_IDS = frozenset({17, 21, 24, 25, 26, 27, 40})
 EFFECT_DEFINED_CANONICAL_ACTIONS = {
     17: "shooting",
+    21: "mining and detonation",
     24: "road blockage",
     25: "bulldozing",
     26: "cutting trees",
     27: "burning properties",
     40: "unexploded shells",
 }
-CONFLICT_ATTRIBUTION_TOKENS = (
-    "غار",
-    "قصف",
-    "قذيف",
-    "صاروخ",
-    "صواريخ",
-    "مسير",
-    "مسير",
-    "طيران",
-    "حربي",
-    "مروحي",
-    "مدفع",
-    "دباب",
-    "ميركافا",
-    "عدو",
-    "اسرائيل",
-    "اسرائيلي",
-    "احتلال",
-    "جيش العدو",
-    "استهدف",
-    "استهداف",
-    "اعتداء",
-    "حزام ناري",
-    "فوسفور",
-    "تفجير",
-    "مفخخ",
-    "عبوه",
-    "اشتباك",
-    "توغل",
-    "تمشيط",
-    "رشاش",
-    "معادي",
+VILLAGE_MATCH_EXCEPTION_CATEGORIES = frozenset({"village_do_not_fuzzy_match"})
+CONDITION_MATCH_EXCEPTION_CATEGORIES = frozenset(
+    {"condition_do_not_match_without_attribution"}
 )
+
+
+def _exception_terms(
+    relative_path: str,
+    categories: frozenset[str],
+) -> tuple[str, ...]:
+    return tuple(
+        normalize_arabic_text(entry.normalized or entry.term)
+        for entry in load_terminology(relative_path)
+        if entry.category in categories and (entry.normalized or entry.term)
+    )
+
+
+def _is_exception_match(text: str, exceptions: tuple[str, ...]) -> bool:
+    normalized = normalize_arabic_text(text or "")
+    if not normalized:
+        return False
+    return any(
+        normalized == exception
+        or exception in normalized
+        or normalized in exception
+        for exception in exceptions
+    )
+
+
+def _village_match_exceptions() -> tuple[str, ...]:
+    return _exception_terms(
+        "terminology/village_match_exceptions.yaml",
+        VILLAGE_MATCH_EXCEPTION_CATEGORIES,
+    )
+
+
+def _condition_match_exceptions() -> tuple[str, ...]:
+    return _exception_terms(
+        "terminology/condition_match_exceptions.yaml",
+        CONDITION_MATCH_EXCEPTION_CATEGORIES,
+    )
 
 
 @dataclass(frozen=True)
@@ -407,6 +430,15 @@ class MatchingService(MatchingServiceInterface):
             " ".join(part for part in (normalized, qualifier_text or "") if part)
         )
         search_text = _strip_district_hint(normalized)
+        if _is_exception_match(search_text, _village_match_exceptions()):
+            return _VillageCandidateResolution(
+                (),
+                _ClassifiedMatch(
+                    None,
+                    None,
+                    MatchResultStatus.matched_low_confidence,
+                ),
+            )
 
         resolve_alias = getattr(self.villages, "resolve_alias", None)
         if resolve_alias is not None and district_hint is None:
@@ -778,11 +810,13 @@ class MatchingService(MatchingServiceInterface):
 
     @staticmethod
     def _condition_match_allowed(condition_id: int, normalized_text: str) -> bool:
+        if _is_exception_match(normalized_text, _condition_match_exceptions()):
+            return False
         required_tokens = CONDITION_DISTINGUISHING_TOKENS.get(condition_id)
         if required_tokens is None:
             if condition_id not in EFFECT_DEFINED_CONDITION_IDS:
                 return True
-            if normalized_text == EFFECT_DEFINED_CANONICAL_ACTIONS.get(condition_id):
+            if normalized_text.lower() == EFFECT_DEFINED_CANONICAL_ACTIONS.get(condition_id):
                 return True
-            return any(token in normalized_text for token in CONFLICT_ATTRIBUTION_TOKENS)
+            return has_conflict_attribution_text(normalized_text)
         return any(token in normalized_text for token in required_tokens)

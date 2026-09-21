@@ -16,6 +16,9 @@ from app.llm.dtos import (
 )
 from app.llm.interfaces import ExtractionClassifierInterface
 from app.news.models import RawMessage
+from app.news.services.matching.conflict_attribution import (
+    has_conflict_attribution_text,
+)
 
 
 SUBTYPE_ACTIONS = {
@@ -36,44 +39,6 @@ _TANK_MARKERS = tuple(
 ) or ("دبابة",)
 
 
-_CONFLICT_ACTION_MARKERS = (
-    "غار",
-    "قصف",
-    "قذيف",
-    "صاروخ",
-    "صواريخ",
-    "مسير",
-    "مسيّر",
-    "طيران",
-    "حربي",
-    "مروحي",
-    "مدفع",
-    "دباب",
-    "ميركافا",
-    "عدو",
-    "إسرائيل",
-    "اسرائيل",
-    "احتلال",
-    "جيش العدو",
-    "استهدف",
-    "استهداف",
-    "اعتداء",
-    "حزام ناري",
-    "فوسفور",
-    "فوسفوري",
-    "حارق",
-    "حارقة",
-    "تفجير",
-    "تفجيرات",
-    "مفخخ",
-    "عبوة",
-    "اشتباك",
-    "توغل",
-    "رصاص",
-    "تمشيط",
-)
-
-
 def has_conflict_attribution(
     classification: dict[str, Any] | None,
     post_text: str,
@@ -82,8 +47,7 @@ def has_conflict_attribution(
     if classification:
         if classification.get("mentions_israeli_actor") is True:
             return True
-    normalized_text = normalize_arabic_text(post_text or "")
-    return any(marker in normalized_text for marker in _CONFLICT_ACTION_MARKERS)
+    return has_conflict_attribution_text(post_text)
 
 
 def trusted_cnrs_action(
