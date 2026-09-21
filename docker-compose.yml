@@ -48,8 +48,6 @@ services:
       PG_APPLICATION_NAME: war-news-backend
       PIPELINE_ROLE: api
       WATCHFILES_FORCE_POLLING: "true"
-    volumes:
-      - .:/app
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     # Bound graceful shutdown so an open SSE connection cannot stall dev reloads.
@@ -75,18 +73,14 @@ services:
     environment:
       PG_APPLICATION_NAME: war-news-pipeline
       PIPELINE_ROLE: worker
-    volumes:
-      - .:/app
-    # Temporary: disable reload — host bind-mount races were crash-looping the
-    # worker on SyntaxError conflict-marker ghosts and blocking Sep 9–10 drains.
     command: python -m app.core.scripts.run_pipeline_worker
     restart: unless-stopped
     networks:
       - appnet
 
   live-sweep-worker:
-    # Reuse the backend runtime: both services execute the same bind-mounted
-    # application and dependency set. This also avoids a separate worker build.
+    # Reuse the backend runtime: both services execute the same application
+    # and dependency set. This also avoids a separate worker build.
     build:
       context: .
       dockerfile: app/Dockerfile
@@ -99,8 +93,6 @@ services:
       PG_APPLICATION_NAME: war-news-live-sweep-worker
       PIPELINE_ROLE: live-sweep-worker
       PYTHONUNBUFFERED: "1"
-    volumes:
-      - .:/app
     command: sh -c "while true; do python -m scripts.live_sweep_new_only; sleep 300; done"
     restart: unless-stopped
     networks:
@@ -119,8 +111,6 @@ services:
       PG_APPLICATION_NAME: war-news-backlog-relevance
       PIPELINE_ROLE: backlog-relevance-worker
       PYTHONUNBUFFERED: "1"
-    volumes:
-      - .:/app
     command: sh -c "while true; do python -m scripts.backlog_relevance_sweep; sleep 1800; done"
     restart: unless-stopped
     networks:
@@ -139,8 +129,6 @@ services:
       PG_APPLICATION_NAME: war-news-bulletin-reconciliation
       PIPELINE_ROLE: bulletin-reconciliation-worker
       PYTHONUNBUFFERED: "1"
-    volumes:
-      - .:/app
     command: sh -c "while true; do python -m scripts.bulletin_reconciliation_sweep; sleep ${BULLETIN_RECONCILIATION_SWEEP_INTERVAL_SECONDS:-1800}; done"
     restart: unless-stopped
     networks:
@@ -158,8 +146,6 @@ services:
     environment:
       PG_APPLICATION_NAME: war-news-cnrs-poll
       PIPELINE_ROLE: cnrs-poll-worker
-    volumes:
-      - .:/app
     command: sh -c "while true; do python -m scripts.cnrs_poll_worker --hours 72; sleep 300; done"
     restart: unless-stopped
     networks:
@@ -177,8 +163,6 @@ services:
     environment:
       PG_APPLICATION_NAME: war-news-red-alert
       PIPELINE_ROLE: red-alert-collector
-    volumes:
-      - .:/app
     command: python -m app.core.scripts.run_module_with_reload app.core.scripts.run_red_alert_collector
     restart: unless-stopped
     networks:
@@ -196,9 +180,6 @@ services:
       VITE_API_BASE_URL: /api
       VITE_API_PROXY_TARGET: http://backend:8000
       VITE_USE_POLLING: "true"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     ports:
       - "${FRONTEND_HOST_PORT:-5173}:5173"
     command: npm run dev -- --host 0.0.0.0

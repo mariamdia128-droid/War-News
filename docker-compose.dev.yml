@@ -1,3 +1,5 @@
+name: war_news_dev
+
 services:
   db:
     env_file:
@@ -9,40 +11,48 @@ services:
   backend:
     env_file:
       - .env.dev
-    volumes: !reset []
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
+    volumes:
+      - .:/app
 
   pipeline-worker:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - .:/app
 
   live-sweep-worker:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - .:/app
 
   backlog-relevance-worker:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - .:/app
 
   bulletin-reconciliation-worker:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - .:/app
 
   cnrs-poll-worker:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - .:/app
 
   red-alert-collector:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - .:/app
 
   frontend:
     env_file:
       - .env.dev
-    volumes: !reset []
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
