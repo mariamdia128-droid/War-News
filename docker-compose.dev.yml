@@ -1,0 +1,35 @@
+name: war_news_dev
+
+services:
+  backend:
+    volumes:
+      - .:/app
+
+  pipeline-worker:
+    volumes:
+      - .:/app
+
+  live-sweep-worker:
+    volumes:
+      - .:/app
+
+  backlog-relevance-worker:
+    volumes:
+      - .:/app
+
+  bulletin-reconciliation-worker:
+    volumes:
+      - .:/app
+
+  cnrs-poll-worker:
+    volumes:
+      - .:/app
+
+  red-alert-collector:
+    volumes:
+      - .:/app
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
