@@ -173,3 +173,28 @@ def finish_pipeline_sweep_job(db: Session, job_id: int, *, status: str) -> None:
         {"status": status, "job_id": job_id},
     )
     db.commit()
+
+
+def drain_one_enqueued_pipeline_sweep_job() -> bool:
+    from app.core.database import SessionLocal
+    from app.news.services.pipeline.pipeline_orchestrator import drain_pipeline_sweeps_sync
+
+    with SessionLocal() as db:
+        job = claim_next_pipeline_sweep_job(db)
+    if job is None:
+        return False
+
+    job_id = int(job["id"])
+    status_value = "succeeded"
+    try:
+        drain_pipeline_sweeps_sync(
+            max_rows=int(job["max_rows"]) if job["max_rows"] is not None else None,
+            use_advisory_lock=bool(job["use_advisory_lock"]),
+        )
+    except Exception:
+        status_value = "failed"
+        raise
+    finally:
+        with SessionLocal() as db:
+            finish_pipeline_sweep_job(db, job_id, status=status_value)
+    return True

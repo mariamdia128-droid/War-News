@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import date, datetime
 from typing import BinaryIO
 from zipfile import BadZipFile
@@ -19,6 +20,13 @@ from app.sources.models import Source, SourceType
 from app.sources.services.red_alert_collector import classify_condition
 from app.news.services.air_violations.import_source_enrichment import ImportSourceLookup, import_location_text, match_import_village, source_local_datetime, researched_import_location
 from app.news.repositories.air_violation_repository import air_violation_caza_labels
+
+
+def _duplicate_key(value: object) -> str | None:
+    if value is None:
+        return None
+    text = re.sub(r'\s+', ' ', str(value).casefold()).strip()
+    return text or None
 
 
 def parse_event_date(value: object, default_date: date) -> date:
@@ -89,6 +97,7 @@ class AirViolationKhabarImportService:
         processed = succeeded = skipped = 0
         errors = []
         source_lookup = ImportSourceLookup(self.db)
+        seen_import_rows: set[tuple[object, ...]] = set()
         for row_number, row in enumerate(rows, start=2):
             if not any(value not in (None, '') for value in row.values()):
                 continue
@@ -137,6 +146,22 @@ class AirViolationKhabarImportService:
                     event_time = published.time().replace(tzinfo=None)
                 enrichment['date_source'] = 'file' if optional(row.get('date')) else 'source_post' if published else 'fallback'
                 source_name = AirViolationWorkbookService._optional(row.get('source')) or 'Khabar import'
+                import_key = (
+                    _duplicate_key(source_name),
+                    _duplicate_key(text),
+                    condition_id,
+                    event_date,
+                    event_time,
+                    _duplicate_key(caza_en),
+                    _duplicate_key(caza_ar),
+                    _duplicate_key(row.get('note 1')),
+                    _duplicate_key(row.get('note 2')),
+                    _duplicate_key(row.get('link')),
+                )
+                if import_key in seen_import_rows:
+                    skipped += 1
+                    continue
+                seen_import_rows.add(import_key)
                 source = self.db.scalar(select(Source).where(Source.name == source_name))
                 if source is None:
                     source = Source(type=SourceType.manual, name=source_name, config={}, is_active=True)

@@ -259,6 +259,7 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
     location_text = text.rsplit(RED_ZONE_OCR_MARKER, 1)[-1] if RED_ZONE_OCR_MARKER in text else text
     normalized_text = normalize_arabic(location_text)
     normalized_latin_text = normalize_latin_location_token(location_text)
+    alias_matches: list[tuple[Village, str]] = []
     for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
         normalized_alias = normalize_arabic(alias)
         alias_found = (
@@ -269,7 +270,11 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
         if alias_found:
             village = next((item for item in villages if item.acs_code == acs_code), None)
             if village is not None:
-                return village, alias
+                alias_matches.append((village, alias))
+    if alias_matches:
+        if RED_ZONE_OCR_MARKER in text and len({village.id for village, _alias in alias_matches}) > 1:
+            return None
+        return max(alias_matches, key=lambda item: len(item[1]))
     hashtags = [normalize_arabic(value) for value in HASHTAG_RE.findall(location_text)]
     non_location_terms = {normalize_arabic(value) for value in _NON_LOCATION_TERMS}
     candidates = [value for value in hashtags if value and value not in non_location_terms]
@@ -292,6 +297,8 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
         for name, village in indexed
         if len(name) >= 3 and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", normalized_text)
     ]
+    if RED_ZONE_OCR_MARKER in text and len({village.id for _length, _name, village in matches}) > 1:
+        return None
     if not matches:
         latin_text = normalize_latin_location_token(location_text)
         latin_matches: list[tuple[int, str, Village]] = []
@@ -305,6 +312,8 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
                 if len(normalized_name) >= 4 and normalized_name in latin_text:
                     latin_matches.append((len(normalized_name), canonical_name or "", village))
         if not latin_matches:
+            return None
+        if RED_ZONE_OCR_MARKER in text and len({village.id for _length, _name, village in latin_matches}) > 1:
             return None
         _length, canonical_name, village = max(latin_matches, key=lambda item: item[0])
         return village, canonical_name
@@ -619,23 +628,7 @@ class RedAlertCollector:
         for index, blob in enumerate(post.image_blobs):
             try:
                 image = Image.open(io.BytesIO(blob))
-                text = pytesseract.image_to_string(image, lang="ara+eng")
-                header = image.crop(
-                    (
-                        int(image.width * 0.55),
-                        0,
-                        image.width,
-                        int(image.height * 0.16),
-                    )
-                )
-                header = ImageOps.autocontrast(ImageOps.grayscale(header))
-                header = header.resize((header.width * 5, header.height * 5))
-                header_text = pytesseract.image_to_string(
-                    header,
-                    lang="ara+eng",
-                    config="--psm 6",
-                )
-                combined = "\n".join(part.strip() for part in (text, header_text) if part.strip())
+                combined = self._ocr_red_alert_image(image, pytesseract)
                 if combined:
                     output.append(combined)
             except Exception:
@@ -645,6 +638,66 @@ class RedAlertCollector:
                     index,
                 )
         return "\n".join(output)
+
+    @staticmethod
+    def _ocr_red_alert_image(image: Image.Image, pytesseract_module) -> str:
+        text = pytesseract_module.image_to_string(image, lang="ara+eng")
+        header = image.crop(
+            (
+                int(image.width * 0.55),
+                0,
+                image.width,
+                int(image.height * 0.16),
+            )
+        )
+        header = ImageOps.autocontrast(ImageOps.grayscale(header))
+        header = header.resize((header.width * 5, header.height * 5))
+        header_text = pytesseract_module.image_to_string(
+            header,
+            lang="ara+eng",
+            config="--psm 6",
+        )
+
+        red_zone_text = RedAlertCollector._ocr_red_zone_text(image, pytesseract_module)
+        combined_parts = [part.strip() for part in (text, header_text) if part.strip()]
+        if red_zone_text.strip():
+            combined_parts.extend((RED_ZONE_OCR_MARKER, red_zone_text.strip()))
+        return "\n".join(combined_parts)
+
+    @staticmethod
+    def _ocr_red_zone_text(image: Image.Image, pytesseract_module) -> str:
+        rgb_image = image.convert("RGB")
+        pixels = rgb_image.load()
+        red_points = [
+            (x, y)
+            for y in range(int(image.height * 0.14), int(image.height * 0.90))
+            for x in range(image.width)
+            if pixels[x, y][0] > 150
+            and pixels[x, y][0] > pixels[x, y][1] * 1.35
+            and pixels[x, y][0] > pixels[x, y][2] * 1.25
+        ]
+        if not red_points:
+            return ""
+        xs = [point[0] for point in red_points]
+        ys = [point[1] for point in red_points]
+        margin = 10
+        if max(xs) - min(xs) <= margin * 2 or max(ys) - min(ys) <= margin * 2:
+            return ""
+        red_zone = rgb_image.crop(
+            (
+                min(xs) + margin,
+                min(ys) + margin,
+                max(xs) - margin,
+                max(ys) - margin,
+            )
+        )
+        red_zone = ImageOps.autocontrast(ImageOps.grayscale(red_zone))
+        red_zone = red_zone.resize((red_zone.width * 8, red_zone.height * 8))
+        return pytesseract_module.image_to_string(
+            red_zone,
+            lang="ara+eng",
+            config="--psm 11",
+        )
 
     def _ensure_source(self) -> Source:
         source = self.db.scalar(select(Source).where(Source.external_id == SOURCE_EXTERNAL_ID))

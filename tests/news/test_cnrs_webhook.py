@@ -195,6 +195,33 @@ def test_valid_secret_single_post_returns_202_and_writes_raw_message() -> None:
     assert message.message_datetime == TEST_MESSAGE_DATETIME
 
 
+def test_webhook_accepts_cnrs_api_record_shape() -> None:
+    client = _client()
+
+    response = client.post(
+        "/webhooks/cnrs-posts?source_id=44",
+        headers=_headers(),
+        json={
+            "id": 731293,
+            "post_date": "2026-09-22T09:15:00+00:00",
+            "post_text": "CNRS API post text",
+            "source_platform": "telegram",
+            "source_name": "api-channel",
+            "include": True,
+            "event_domain": "security",
+        },
+    )
+
+    assert response.status_code == 202
+    message = _WebhookSourceRepository.messages[0]
+    assert message.external_message_id == "731293"
+    assert message.raw_text == "CNRS API post text"
+    assert message.cnrs_classification == {
+        "include": True,
+        "event_domain": "security",
+    }
+
+
 def test_webhook_accepts_historical_catch_up_posts() -> None:
     client = _client()
     payload = _payload("historical-catch-up")

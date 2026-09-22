@@ -55,7 +55,7 @@ def test_excel_import_preserves_metadata_and_keeps_lookup_loaded():
         workbook.save(stream)
         stream.seek(0)
         result = AirViolationKhabarImportService(db).import_file(stream, 'news.xlsx', date(2026, 9, 7))
-        assert (result.succeeded, result.failed) == (2, 0)
+        assert (result.succeeded, result.skipped, result.failed) == (1, 1, 0)
         records = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], AirViolation)]
         assert records[0].event_date == date(2026, 8, 1)
         assert records[0].event_time == time(14, 30)

@@ -7,6 +7,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.logs.models import IngestionLog
+from app.news.services.pipeline.pipeline_jobs import (
+    drain_one_enqueued_pipeline_sweep_job,
+    enqueue_pipeline_sweep,
+)
 from app.sources.actions import IngestSourceAction
 from app.sources.dtos import IngestSourceData
 from app.sources.repositories import SourceRepository
@@ -20,7 +24,7 @@ _scheduler_stop_event: threading.Event | None = None
 
 
 def _uses_cnrs_polling(source) -> bool:
-    return (source.config or {}).get("delivery_method") != "webhook"
+    return source is not None
 
 
 def _poll_cnrs() -> None:
@@ -34,9 +38,6 @@ def _poll_cnrs() -> None:
         source = repository.get_active_by_external_id("cnrs_webhook")
         if source is None:
             logger.error("CNRS polling skipped: active cnrs_webhook source was not found")
-            return
-        if not _uses_cnrs_polling(source):
-            logger.info("CNRS polling skipped: source uses webhook delivery")
             return
         started_at = datetime.now(timezone.utc)
 
@@ -71,6 +72,9 @@ def _poll_cnrs() -> None:
                 )
             )
             db.commit()
+        if result.inserted > 0:
+            enqueue_pipeline_sweep(db, use_advisory_lock=False)
+            drain_one_enqueued_pipeline_sweep_job()
         logger.info("CNRS polling ingestion result=%s", result.model_dump())
     except Exception as exc:
         db.rollback()

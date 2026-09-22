@@ -24,10 +24,10 @@ class _FakeThread:
         self._alive = False
 
 
-def test_cnrs_webhook_source_is_not_polled() -> None:
+def test_cnrs_polling_runs_for_webhook_source_as_backstop() -> None:
     assert scheduler._uses_cnrs_polling(
         SimpleNamespace(config={"delivery_method": "webhook"})
-    ) is False
+    ) is True
     assert scheduler._uses_cnrs_polling(
         SimpleNamespace(config={"delivery_method": "polling"})
     ) is True

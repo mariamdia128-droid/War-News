@@ -67,7 +67,7 @@ AIR_VIOLATION_PRIORITY_CAZAS = {
     "west bekaa",
 }
 AIR_VIOLATION_PRIORITY_CAZA_HOURS = 1
-AIR_VIOLATION_DEFAULT_CAZA_HOURS = 4
+AIR_VIOLATION_DEFAULT_CAZA_HOURS = 1
 
 
 def _normalize_caza_token(value: str) -> str:
@@ -82,6 +82,10 @@ def air_violation_caza_window_hours(caza_en: str | None) -> int:
 
 def _air_violation_event_datetime(record: AirViolation) -> datetime:
     return datetime.combine(record.event_date, record.event_time or time.min)
+
+
+def _normalize_duplicate_text(value: str | None) -> str:
+    return re.sub(r"\s+", " ", (value or "").casefold()).strip()
 
 
 def as_beirut_datetime(value):
@@ -603,8 +607,6 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             village.caza_ar if village else None,
             known_cazas,
         )
-        if existing is None and self._has_recent_air_violation(caza_en, caza_ar, occurred_at):
-            return False
         values = {
             "condition_id": result.matched_condition_id,
             "source_id": message.source_id,
@@ -618,6 +620,14 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             "note_2": payload.get("note_2"),
             "source_link": str(link) if link else None,
         }
+        if existing is None and self._has_recent_air_violation(
+            caza_en,
+            caza_ar,
+            occurred_at,
+            condition_id=result.matched_condition_id,
+            khabar=values["khabar"],
+        ):
+            return False
         if existing is None:
             existing = AirViolation(raw_message_id=message.id, **values)
             self._sync_locations(existing, self._location_entries_from_match(result))
@@ -635,11 +645,14 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         caza_en: str | None,
         caza_ar: str | None,
         occurred_at: datetime,
+        *,
+        condition_id: int,
+        khabar: str | None,
     ) -> bool:
         window_hours = air_violation_caza_window_hours(caza_en)
         cutoff = occurred_at - timedelta(hours=window_hours)
         filters = [
-            AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_IDS),
+            AirViolation.condition_id == condition_id,
             AirViolation.event_date >= cutoff.date(),
             AirViolation.event_date <= occurred_at.date(),
         ]
@@ -653,8 +666,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         existing_records = self.db.scalars(select(AirViolation).where(*filters)).all()
         occurred_naive = occurred_at.replace(tzinfo=None)
         cutoff_naive = cutoff.replace(tzinfo=None)
+        normalized_khabar = _normalize_duplicate_text(khabar)
         return any(
             cutoff_naive <= _air_violation_event_datetime(record) <= occurred_naive
+            and _normalize_duplicate_text(record.khabar) == normalized_khabar
             for record in existing_records
         )
     @staticmethod

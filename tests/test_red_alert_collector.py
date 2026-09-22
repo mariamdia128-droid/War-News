@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.sources.services.red_alert_collector import (
     HOURS_FETCH_LIMIT_CAP,
+    RED_ZONE_OCR_MARKER,
     RedAlertPost,
     RedAlertCollector,
     classify_condition,
@@ -191,6 +192,18 @@ def test_matches_village_from_plain_text() -> None:
 
     assert matched is not None
     assert matched[0].id == 11
+
+
+def test_focused_red_zone_ocr_with_multiple_villages_is_not_single_place() -> None:
+    arnoun = _village(15, "Ø£Ø±Ù†ÙˆÙ†", caza_en="Nabatiye")
+    mayfadoun = _village(16, "Ù…ÙŠÙØ¯ÙˆÙ†", caza_en="Nabatiye")
+
+    matched = match_village(
+        f"map labels outside circle {RED_ZONE_OCR_MARKER} Ø£Ø±Ù†ÙˆÙ† Ù…ÙŠÙØ¯ÙˆÙ†",
+        [arnoun, mayfadoun],
+    )
+
+    assert matched is None
 
 
 def test_does_not_turn_caza_label_into_an_arbitrary_village() -> None:

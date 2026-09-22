@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
@@ -174,7 +174,16 @@ def list_filtered_news(
     _current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> FilteredNewsList:
-    event_at = func.coalesce(RawMessage.message_datetime, RawMessage.received_at)
+    raw_event_at = func.timezone(
+        "Asia/Beirut",
+        func.coalesce(RawMessage.message_datetime, RawMessage.received_at),
+    )
+    incident_event_at = Incident.event_date + func.coalesce(Incident.event_time, time.min)
+    air_violation_event_at = AirViolation.event_date + func.coalesce(
+        AirViolation.event_time,
+        time.min,
+    )
+    event_at = func.coalesce(incident_event_at, air_violation_event_at, raw_event_at)
     filters = [
         or_(
             RawMessage.filter_result["verdict"].as_string() == "relevant",
@@ -183,8 +192,13 @@ def list_filtered_news(
         ),
     ]
     if related_only:
-        filters.append(Incident.id.is_not(None))
-        filters.append(_visible_incident_scope_filter())
+        filters.append(or_(Incident.id.is_not(None), AirViolation.id.is_not(None)))
+        filters.append(
+            or_(
+                AirViolation.id.is_not(None),
+                _visible_incident_scope_filter(),
+            )
+        )
     if event_date_from is not None:
         filters.append(func.date(event_at) >= event_date_from)
     if event_date_to is not None:
