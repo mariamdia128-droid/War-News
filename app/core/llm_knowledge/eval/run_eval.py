@@ -27,6 +27,7 @@ CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 STAGE_BY_CORPUS: dict[str, str] = {
+    "relevance_filter.jsonl": "relevance_filter",
     "tier1_extraction.jsonl": "tier1_extraction",
     "casualty_scope.jsonl": "casualty_scope",
     "village_matching.jsonl": "village_matching",

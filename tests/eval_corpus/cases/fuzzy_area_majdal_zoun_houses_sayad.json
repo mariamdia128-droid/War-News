@@ -1,0 +1,14 @@
+{
+  "bug_ref": "fuzzy-area-majdal-zoun-houses-sayad",
+  "description": "\"في محيط X وY\" describes one fuzzy area, not two incidents — must collapse to one target with the other retained as a reviewable alternate.",
+  "source": "real bulletin, fixed 2026-09-21 (محيط false multi-village split)",
+  "check": "fuzzy_area_collapse",
+  "input": {
+    "post_text": "القوات الإسرائيلية أحرقت حقول الزيتون وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية",
+    "villages": ["مجدل زون", "بيوت السياد"]
+  },
+  "expected": {
+    "villages": ["مجدل زون"],
+    "alternatives": ["بيوت السياد"]
+  }
+}

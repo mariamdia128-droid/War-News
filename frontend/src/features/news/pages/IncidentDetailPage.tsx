@@ -654,27 +654,25 @@ export const IncidentDetailPage = () => {
               {incident.martyrs || "No data"}
             </dd>
           </div>
-          {[incident.source_link, incident.source_link_2].map((link, index) => (
-            <div key={index}>
-              <dt className="text-caption font-semibold uppercase text-text-muted">
-                Source link {index + 1}
-              </dt>
-              <dd className="mt-1 text-small">
-                {link ? (
-                  <a
-                    className="font-semibold text-accent hover:text-accent-hover"
-                    href={link}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open source
-                  </a>
-                ) : (
-                  <span className="text-text-primary">No data</span>
-                )}
-              </dd>
-            </div>
-          ))}
+          <div>
+            <dt className="text-caption font-semibold uppercase text-text-muted">
+              Source link 1
+            </dt>
+            <dd className="mt-1 text-small">
+              {incident.source_link ? (
+                <a
+                  className="font-semibold text-accent hover:text-accent-hover"
+                  href={incident.source_link}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open source
+                </a>
+              ) : (
+                <span className="text-text-primary">No data</span>
+              )}
+            </dd>
+          </div>
         </dl>
       </section>
 
@@ -791,7 +789,6 @@ export const IncidentDetailPage = () => {
                   note: nullable("note"),
                   worker_name: nullable("worker_name"),
                   source_link: nullable("source_link"),
-                  source_link_2: nullable("source_link_2"),
                   total_deaths: numberOrNull("total_deaths"),
                   total_injuries: numberOrNull("total_injuries"),
                   deaths: numberOrNull("deaths"),
@@ -817,7 +814,6 @@ export const IncidentDetailPage = () => {
             <div className="grid gap-4 sm:grid-cols-2">
               <div><Label htmlFor="incident-worker">Data worker</Label><Input id="incident-worker" name="worker_name" defaultValue={incident.worker_name ?? ""} /></div>
               <div><Label htmlFor="incident-source-1">Source link 1</Label><Input id="incident-source-1" name="source_link" type="url" defaultValue={incident.source_link ?? ""} /></div>
-              <div><Label htmlFor="incident-source-2">Source link 2</Label><Input id="incident-source-2" name="source_link_2" type="url" defaultValue={incident.source_link_2 ?? ""} /></div>
               {(["total_deaths", "total_injuries", "deaths", "injuries"] as const).map((field) => (
                 <div key={field}><Label htmlFor={`incident-${field}`}>{field.split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")}</Label><Input id={`incident-${field}`} name={field} type="number" min="0" defaultValue={incident[field] ?? ""} /></div>
               ))}

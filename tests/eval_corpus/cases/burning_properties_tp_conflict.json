@@ -1,0 +1,18 @@
+{
+  "bug_ref": "burning-properties-tp-conflict",
+  "description": "House fire explicitly caused by Israeli artillery shelling — must still be extractable as Burning Properties.",
+  "source": "CNRS fallback fire_incident positive control, commit e682d3a",
+  "check": "cnrs_fire_attribution",
+  "input": {
+    "post_text": "اندلاع حريق في منزل في عيتا الشعب إثر قصف مدفعي إسرائيلي",
+    "classification": {
+      "include": true,
+      "event_domain": "fire",
+      "event_subtype": "fire_incident",
+      "mentions_israeli_actor": false
+    }
+  },
+  "expected": {
+    "trusted_action": "Burning Properties"
+  }
+}

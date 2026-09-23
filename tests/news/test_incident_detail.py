@@ -156,7 +156,7 @@ def test_repository_get_by_id_returns_detail_and_hides_soft_deleted() -> None:
             source_platform="telegram",
             source_name="Red Alert Lebanon",
             origin_account="@redlinkleb",
-            raw_payload={},
+            raw_payload={"post_link": "https://t.me/redlinkleb/123"},
             match_result={
                 "village_matches": [
                     {
@@ -211,6 +211,7 @@ def test_repository_get_by_id_returns_detail_and_hides_soft_deleted() -> None:
         assert result.source == "API"
         assert result.source_reference == "@redlinkleb"
         assert result.source_name == "Red Alert Lebanon"
+        assert result.source_link == "https://t.me/redlinkleb/123"
         assert result.matched is False
         assert result.duplicate_flag == "possible"
         assert result.village_review_required is False

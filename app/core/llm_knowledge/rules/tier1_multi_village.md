@@ -5,7 +5,9 @@ Load when the message appears to name multiple target locations.
 ## Detection signals
 
 - Two or more place names in separate clauses (semicolon, colon, or list).
-- Explicit route/path endpoints only: `طريق … X - Y`, `طريق عام X - Y`, or `بين X و Y` → two distinct villages/endpoints.
+- Explicit route/path endpoints only: `طريق … X - Y`, `طريق عام X - Y`, or `طريق بين X و Y` → two distinct villages/endpoints.
+- Fuzzy area references are one location, not a village list: `في محيط X وY`, `محيط X وY`, `قرب X وY`, `بالقرب من X وY`, or plain `بين X وY` when no route/path is named. Keep the first-mentioned village as the primary attribution and mark the location low-confidence with the other village as reviewable context.
+- A distinct-event connector introduces a genuinely separate second target, not a qualifier: `كما طال القصف/الغارة/الاستهداف ... بلدة Y` after an already-described strike on `X` means two separately scoped locations, each with its own action/evidence — this is the opposite of a محيط/بين vicinity phrase describing one fuzzy place.
 - Every other dash phrase defaults to one target on the left and qualifier context on the right: `بلدة X - حي Y`, `مزرعة X - Y`, `بلدة X - قضاء Y`, or `بلدة X - [neighborhood/hamlet]`.
 - In `مزرعة X - Y وZ`, the complete `Y وZ` tail is qualifier context, not two additional targets.
 - Multiple `target` entries in expected extraction.
@@ -27,6 +29,14 @@ Load when the message appears to name multiple target locations.
 
 **Bulletin aggregate:**
 «غارة على المنصوري ومجدل زون أدت إلى 5 شهداء» (no per-village breakdown)
+
+**One fuzzy area, not two incidents:**
+«القوات الإسرائيلية أحرقت حقول الزيتون وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية» → one target location, `مجدل زون`, with `بيوت السياد` retained as an alternate area candidate and manual review required. Do not emit two target entries and do not set the bulletin as a genuine multi-village event.
+
+«قصف قرب X وY» and «قصف بين X وY» without a named road or route likewise describe one fuzzy area. A route such as «قصف على طريق عام X - Y» remains two endpoints in one event.
+
+**Two genuine strikes, distinct-event connector:**
+«...طالت الغارات أطراف بلدة زوطر الشرقية في اتجاه ميفدون... كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل» → two target villages, `زوطر الشرقية` and `عيتا الجبل`, each with its own village_roles entry (and, if described as separate actions, its own sub_event). Do not drop the second village and do not collapse it the way a محيط/بين phrase is collapsed — «كما طال» explicitly marks it as a second, separately scoped strike.
 
 **Dash route / endpoints:**
 «استهدف دراجة نارية على طريق عام مرج حاروف - زبدين» → village=["حاروف","زبدين"] (two target endpoints)

@@ -166,7 +166,8 @@ def _new_incident_payload(incident: Incident) -> str:
         ),
         "condition_id": incident.condition_id,
         "village": (
-            village.ref_name_en or village.cad_name if village is not None else None
+            incident.village_display_name
+            or (village.ref_name_en or village.cad_name if village is not None else None)
         ),
         "condition": condition.action_en if condition is not None else None,
         "condition_ar": condition.action_ar if condition is not None else None,
@@ -484,10 +485,12 @@ class IncidentMaterializationService:
                     representative=representative,
                     casualties=village_casualties,
                     village_id=village_id,
+                    village_display_name=self._village_display_name(village_match),
                     condition_id=condition_id,
                     event_datetime=event_datetime,
                     origin_villages=origin_villages,
                     location_qualifier=village_match.get("qualifier_text"),
+                    location_ambiguity_note=self._location_ambiguity_note(extraction),
                     deaths=village_deaths,
                     injuries=village_injuries,
                     duplicate_flag=True,
@@ -623,10 +626,12 @@ class IncidentMaterializationService:
                 representative=representative,
                 casualties=village_casualties,
                 village_id=village_id,
+                village_display_name=self._village_display_name(village_match),
                 condition_id=condition_id,
                 event_datetime=event_datetime,
                 origin_villages=origin_villages,
                 location_qualifier=village_match.get("qualifier_text"),
+                location_ambiguity_note=self._location_ambiguity_note(extraction),
                 deaths=village_deaths,
                 injuries=village_injuries,
                 scope_review_reason=(
@@ -881,10 +886,12 @@ class IncidentMaterializationService:
         representative: RawMessage,
         casualties: ExtractionCasualties,
         village_id: int | None,
+        village_display_name: str | None,
         condition_id: int,
         event_datetime: datetime,
         origin_villages: list[str],
         location_qualifier: Any,
+        location_ambiguity_note: str | None = None,
         deaths: int | None,
         injuries: int | None,
         duplicate_flag: bool = False,
@@ -934,13 +941,18 @@ class IncidentMaterializationService:
         incident = Incident(
             raw_message_id=representative.id,
             village_id=village_id,
+            village_display_name=village_display_name,
             condition_id=condition_id,
             source_id=representative.source_id,
             event_date=event_datetime.date(),
             event_time=event_datetime.time(),
             khabar=sanitized_khabar,
             khabar_embedding=representative.content_embedding,
-            note=self._incident_note(origin_villages, location_qualifier),
+            note=self._incident_note(
+                origin_villages,
+                location_qualifier,
+                location_ambiguity_note,
+            ),
             total_deaths=total_deaths,
             total_injuries=total_injuries,
             deaths=deaths,
@@ -1267,6 +1279,7 @@ class IncidentMaterializationService:
             incident = Incident(
                 raw_message_id=representative.id,
                 village_id=village_id,
+                village_display_name=self._village_display_name(village_match),
                 condition_id=village_condition_id,
                 source_id=representative.source_id,
                 event_date=event_datetime.date(),
@@ -1276,6 +1289,7 @@ class IncidentMaterializationService:
                 note=self._incident_note(
                     origin_villages,
                     village_match.get("qualifier_text"),
+                    self._location_ambiguity_note(extraction),
                 ),
                 total_deaths=total_deaths,
                 total_injuries=total_injuries,
@@ -1395,6 +1409,7 @@ class IncidentMaterializationService:
             ),
             "raw_village_text": match_result.get("raw_village_text"),
             "village_role": match_result.get("village_role", VillageRole.target.value),
+            "alias_matched": match_result.get("alias_matched", False),
         }
         return {**match_result, "village_matches": [village_match]}
 
@@ -1763,6 +1778,16 @@ class IncidentMaterializationService:
         return origin_villages
 
     @staticmethod
+    def _village_display_name(village_match: dict[str, Any]) -> str | None:
+        if not village_match.get("alias_matched"):
+            return None
+        raw_text = village_match.get("raw_village_text")
+        if not isinstance(raw_text, str):
+            return None
+        normalized = raw_text.strip()
+        return normalized or None
+
+    @staticmethod
     def _origin_village_note(origin_villages: list[str]) -> str | None:
         if not origin_villages:
             return None
@@ -1776,11 +1801,23 @@ class IncidentMaterializationService:
         cls,
         origin_villages: list[str],
         qualifier_text: Any,
+        location_ambiguity_note: str | None = None,
     ) -> str | None:
         parts = [cls._origin_village_note(origin_villages)]
         if isinstance(qualifier_text, str) and qualifier_text.strip():
             parts.append(f"Location qualifier: {qualifier_text.strip()}")
+        if location_ambiguity_note:
+            parts.append(location_ambiguity_note)
         return "\n".join(part for part in parts if part) or None
+
+    @staticmethod
+    def _location_ambiguity_note(extraction: ExtractionResult) -> str | None:
+        if not extraction.location_ambiguity or not extraction.location_alternatives:
+            return None
+        alternatives = ", ".join(extraction.location_alternatives)
+        evidence = extraction.location_ambiguity_evidence
+        suffix = f" Evidence: {evidence}" if evidence else ""
+        return f"Location ambiguity: fuzzy area; alternate village(s): {alternatives}.{suffix}"
 
     @staticmethod
     def _build_exact_hash(

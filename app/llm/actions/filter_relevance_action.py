@@ -9,13 +9,12 @@ from app.llm.dtos import (
     RelevanceClassificationResult,
     RelevancePolicyVerdict,
 )
-from app.news.interfaces import RawMessageRepositoryInterface
 from app.llm.interfaces import (
     KeywordPrefilterInterface,
     RelevanceClassifierInterface,
 )
-from app.news.models import RawMessage
 from app.llm.services.cnrs_relevance_classifier import classification_from_cnrs
+from app.llm.services.lebanon_scope_filter import is_non_lebanon_location
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
 from app.llm.services.relevance_filter_service import (
     policy_for_result,
@@ -25,6 +24,8 @@ from app.llm.services.relevance_guardrails import (
     apply_relevance_guardrails,
     relevance_guardrail_result,
 )
+from app.news.interfaces import RawMessageRepositoryInterface
+from app.news.models import RawMessage
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ KEYWORD_PREFILTER_REASONING = "no keyword match (village/action)"
 KEYWORD_PREFILTER_MODEL = "keyword_prefilter"
 TRUSTED_SOURCE_REASONING = "skipped relevance check: trusted source"
 TRUSTED_SOURCE_BACKEND = "trusted_source"
+NON_LEBANON_LOCATION_BACKEND = "lebanon_scope_filter"
 
 
 def _format_exception(exc: Exception) -> str:
@@ -97,6 +99,37 @@ class FilterRelevanceAction:
                     errored += 1
                     logger.error(
                         "raw_message_id=%s relevance guardrail save failed: %s",
+                        message.id,
+                        _format_exception(exc),
+                    )
+                continue
+
+            non_lebanon_marker = is_non_lebanon_location(message.raw_text)
+            if non_lebanon_marker is not None:
+                try:
+                    result = ClassificationResultDTO(
+                        raw_message_id=message.id,
+                        verdict=ClassificationVerdict.not_relevant,
+                        confidence=1.0,
+                        reasoning=(
+                            "explicit non-Lebanon location marker: "
+                            f"{non_lebanon_marker!r}"
+                        ),
+                        backend=NON_LEBANON_LOCATION_BACKEND,
+                    )
+                    policy = policy_for_result(result)
+                    self.raw_messages.save_filter_result(
+                        message=message,
+                        result=result,
+                        new_status=status_for_result(result),
+                        needs_review=policy.needs_review,
+                    )
+                    rejected += 1
+                except Exception as exc:
+                    self.raw_messages.rollback()
+                    errored += 1
+                    logger.error(
+                        "raw_message_id=%s non-Lebanon location reject save failed: %s",
                         message.id,
                         _format_exception(exc),
                     )
@@ -191,7 +224,7 @@ class FilterRelevanceAction:
                         "Classifier result count does not match message count."
                     )
             # One chunk's failure must not mark subsequent unattempted chunks as
-            # errored — they haven't been tried yet.
+            # errored - they haven't been tried yet.
             except Exception as exc:
                 self.raw_messages.rollback()
                 auth_failure = coerce_ollama_auth_failure(

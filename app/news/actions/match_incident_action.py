@@ -1,7 +1,8 @@
 from pydantic import ValidationError
 
+from app.llm.services.lebanon_scope_filter import is_non_lebanon_location
 from app.llm.dtos import ExtractionResult
-from app.news.dtos import MatchResultDTO
+from app.news.dtos import MatchResultDTO, MatchResultStatus
 from app.news.interfaces import MatchingServiceInterface
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.interfaces import AirViolationRepositoryInterface
@@ -38,7 +39,24 @@ class MatchIncidentAction:
                 f"raw_message id={raw_message_id} has an invalid extraction_result."
             ) from exc
 
-        result = self.matching_service.match(extraction_result)
+        non_lebanon_marker = is_non_lebanon_location(
+            getattr(message, "raw_text", None)
+        )
+        if non_lebanon_marker is not None:
+            result = MatchResultDTO(
+                village_matches=[],
+                any_village_low_confidence=False,
+                matched_condition_id=None,
+                condition_confidence=None,
+                condition_match_status=MatchResultStatus.unmatched,
+                condition_review_required=True,
+                raw_condition_text=(
+                    "explicit non-Lebanon location marker: "
+                    f"{non_lebanon_marker!r}"
+                ),
+            )
+        else:
+            result = self.matching_service.match(extraction_result)
         # Route air violations before marking matching complete. If routing
         # fails, match_result remains unset and the pipeline can safely retry
         # this message instead of terminalizing it without an AirViolation row.

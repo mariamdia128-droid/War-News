@@ -1,0 +1,2 @@
+# Village mention exceptions that must not be trusted to fuzzy matching.
+# Shape follows the other terminology YAML catalogs: term/category/meaning/notes/normalized.

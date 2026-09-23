@@ -163,6 +163,9 @@ class ExtractionResult(BaseModel):
     is_relevant: bool
     village: list[str] | None = None
     village_roles: list[VillageRoleEntry] = Field(default_factory=list)
+    location_ambiguity: bool = False
+    location_alternatives: list[str] = Field(default_factory=list)
+    location_ambiguity_evidence: str | None = None
     action_description: str | None = None
     sub_events: list[ExtractionSubEvent] = Field(default_factory=list)
 

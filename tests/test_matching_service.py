@@ -133,6 +133,33 @@ def test_multi_village_produces_two_match_entries() -> None:
     )
 
 
+def test_fuzzy_area_village_is_one_low_confidence_match() -> None:
+    villages = _SimilarRepositoryStub(969, 1.0)
+    conditions = _SimilarRepositoryStub(None, None)
+    extraction = _extraction(
+        village=["مجدل زون"],
+        action="إحراق حقول في محيط مجدل زون وبيوت السياد",
+        village_roles=[VillageRoleEntry(village="مجدل زون")],
+    ).model_copy(
+        update={
+            "location_ambiguity": True,
+            "location_alternatives": ["بيوت السياد"],
+            "location_ambiguity_evidence": "محيط مجدل زون وبيوت السياد",
+        }
+    )
+
+    result = MatchingService(villages, conditions).match(extraction)
+
+    assert len(result.village_matches) == 1
+    assert result.village_matches[0].raw_village_text == "مجدل زون"
+    assert result.village_matches[0].village_match_status == (
+        MatchResultStatus.matched_low_confidence
+    )
+    assert result.village_matches[0].village_review_required is True
+    assert result.any_village_low_confidence is True
+    assert result.location_alternatives == ["بيوت السياد"]
+
+
 def test_village_roles_are_preserved_in_match_entries() -> None:
     villages = _SimilarRepositoryStub(11, 0.75)
     conditions = _SimilarRepositoryStub(None, None)
@@ -205,6 +232,150 @@ def test_any_village_low_confidence_flag_set_correctly() -> None:
     assert result2.any_village_low_confidence is False
 
 
+def test_ungazetteered_place_does_not_silently_match_unrelated_village() -> None:
+    """Recon: "بيوت السياد" has no ACS row and no alias; pure trigram
+    similarity landed on "المنصوري" (an unrelated South Lebanon village)
+    with a clear score margin, so the old tie-margin-only check let it
+    through as a confident match. There must be no lexical relationship
+    between the two names, so this should downgrade instead of matching.
+    """
+    mansouri = SimpleNamespace(
+        id=42,
+        ref_name_ar="المنصوري",
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    villages = _GeoVillageRepositoryStub({"بيوت السياد": [(mansouri, 0.62)]})
+    conditions = _SimilarRepositoryStub(None, None)
+    service = MatchingService(villages, conditions)
+
+    result = service.match(_extraction(village=["بيوت السياد"], action=None))
+
+    vm = result.village_matches[0]
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
+def test_confirmed_bouyout_sayyad_alias_overrides_similarity() -> None:
+    mansouri = SimpleNamespace(
+        id=42,
+        ref_name_ar="المنصوري",
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    villages = _GeoVillageRepositoryStub(
+        {"بيوت السياد": [(mansouri, 0.99)]},
+        aliases={"بيوت السياد": mansouri},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["بيوت السياد"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == 42
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.village_review_required is False
+    assert vm.alias_matched is True
+
+
+def test_wadi_selouqi_alias_overrides_baalbek_slouqi_similarity() -> None:
+    touline = SimpleNamespace(
+        id=1464,
+        ref_name_ar="تولين",
+        acs_name="Touline",
+        cad_name="Touline",
+        caza_ar="مرجعيون",
+        caza_en="Marjaayoun",
+    )
+    slouqi = SimpleNamespace(
+        id=1397,
+        ref_name_ar="سلوقي",
+        acs_name="Slouqi",
+        cad_name="Slouky",
+        caza_ar="بعلبك",
+        caza_en="Baalbek",
+    )
+    villages = _GeoVillageRepositoryStub(
+        {"وادي السلوقي": [(slouqi, 0.92)]},
+        aliases={"وادي السلوقي": touline},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["وادي السلوقي"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == 1464
+    assert vm.village_confidence == 1.0
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.village_review_required is False
+    assert vm.alias_matched is True
+
+
+@pytest.mark.parametrize(
+    ("raw_name", "expected_id"),
+    [
+        ("وادي راج", 71367),
+        ("الدبشة", 71133),
+        ("جبل الرفيع", 71133),
+    ],
+)
+def test_confirmed_no_acs_aliases_override_similarity(raw_name: str, expected_id: int) -> None:
+    target = SimpleNamespace(
+        id=expected_id,
+        ref_name_ar=raw_name,
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    wrong = SimpleNamespace(
+        id=999,
+        ref_name_ar="الشرفية",
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    villages = _GeoVillageRepositoryStub(
+        {raw_name: [(wrong, 0.92)]},
+        aliases={normalize_arabic_text(raw_name): target},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=[raw_name], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.raw_village_text == raw_name
+    assert vm.matched_village_id == expected_id
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.alias_matched is True
+
+
+def test_qada_hint_does_not_force_unrelated_candidate_without_name_overlap() -> None:
+    abbasiyeh = _geo_village(9001, "العباسية", 0, 0, caza_ar="صور")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "تل النحاس": [(abbasiyeh, 0.4)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["تل النحاس قضاء صور"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == abbasiyeh.id
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
 def test_generic_strike_does_not_match_warning_or_feigned_without_distinguishing_words() -> (
     None
 ):
@@ -250,6 +421,91 @@ def test_feigned_attacks_still_matches_when_distinguishing_word_present() -> Non
 
     assert result.matched_condition_id == 39
     assert result.condition_match_status == MatchResultStatus.matched
+
+
+@pytest.mark.parametrize(
+    ("condition_id", "negative_action", "positive_action"),
+    [
+        (
+            17,
+            "إطلاق نار خلال إشكال فردي في أحد الأحياء",
+            "إطلاق نار معاد من موقع للعدو الإسرائيلي باتجاه البلدة",
+        ),
+        (
+            21,
+            "النيران تلتهم سيارة في العباسية... حريق كبير شرق صور",
+            "تفجير عبوة ناسفة زرعتها قوات العدو الإسرائيلي خلال توغل بري",
+        ),
+        (
+            24,
+            "قطع طريق بسبب حادث سير وزحمة خانقة",
+            "قطع طريق بعد قصف مدفعي إسرائيلي استهدف الطريق العام",
+        ),
+        (
+            25,
+            "حفر وجرف ضمن أشغال بلدية لتأهيل الطريق",
+            "حفر وجرف نفذته جرافات العدو الإسرائيلي قرب الحدود",
+        ),
+        (
+            26,
+            "قطع أشجار ضمن أعمال تنظيف زراعية",
+            "قطع أشجار نفذته قوات العدو خلال توغل بري",
+        ),
+        (
+            27,
+            "حريق داخل منزل في البحصة - طرابلس",
+            "اندلاع حريق في منزل إثر قصف مدفعي إسرائيلي",
+        ),
+        (
+            40,
+            "العثور على جسم مشبوه غير منفجر قرب مكب نفايات",
+            "العثور على قذائف لم تنفجر من مخلفات قصف إسرائيلي",
+        ),
+    ],
+)
+def test_effect_defined_conditions_require_conflict_attribution(
+    condition_id: int,
+    negative_action: str,
+    positive_action: str,
+) -> None:
+    villages = _SimilarRepositoryStub(None, None)
+    conditions = _SimilarRepositoryStub(condition_id, 1.0)
+    service = MatchingService(villages, conditions)
+
+    negative = service.match(_extraction(village=[], action=negative_action))
+
+    assert negative.matched_condition_id is None
+    assert negative.condition_match_status == MatchResultStatus.unmatched
+
+    positive = service.match(_extraction(village=[], action=positive_action))
+
+    assert positive.matched_condition_id == condition_id
+    assert positive.condition_match_status == MatchResultStatus.matched
+
+
+def test_effect_defined_canonical_cnrs_override_can_still_match() -> None:
+    result = MatchingService(
+        _SimilarRepositoryStub(None, None),
+        _SimilarRepositoryStub(27, 1.0),
+    ).match(_extraction(village=[], action="Burning Properties"))
+
+    assert result.matched_condition_id == 27
+    assert result.condition_match_status == MatchResultStatus.matched
+
+
+def test_condition_exception_blocks_even_with_conflict_attribution() -> None:
+    result = MatchingService(
+        _SimilarRepositoryStub(None, None),
+        _SimilarRepositoryStub(21, 1.0),
+    ).match(
+        _extraction(
+            village=[],
+            action="النيران تلتهم سيارة في العباسية بعد قصف",
+        )
+    )
+
+    assert result.matched_condition_id is None
+    assert result.condition_match_status == MatchResultStatus.unmatched
 
 
 def test_verbose_airstrike_uses_word_similarity_score_without_matching_artillery() -> (
@@ -342,6 +598,47 @@ def test_action_rejects_message_without_extraction_result() -> None:
 
     with pytest.raises(ValueError, match="has no extraction_result"):
         MatchIncidentAction(repository, service).execute(42)
+
+
+def test_action_short_circuits_non_lebanon_raw_text_before_matching() -> None:
+    expected = MatchResultDTO(
+        village_matches=[
+            VillageMatchResult(
+                matched_village_id=1519,
+                village_confidence=0.62,
+                village_match_status=MatchResultStatus.matched,
+                village_review_required=False,
+                raw_village_text="الشرقية",
+            )
+        ],
+        any_village_low_confidence=False,
+        matched_condition_id=1,
+        condition_confidence=1.0,
+        condition_match_status=MatchResultStatus.matched,
+        condition_review_required=False,
+        raw_condition_text="Bombs",
+    )
+    message = SimpleNamespace(
+        id=42,
+        raw_text=(
+            "إطلاق نار من آليات الاحتلال باتجاه المناطق الشرقية "
+            "لمشروع بيت لا.هيا شمال قطاع غز.ة"
+        ),
+        extraction_result=_extraction(
+            village=["الشرقية"],
+            action="Bombs",
+        ).model_dump(mode="json"),
+    )
+    repository = _RawMessageRepositoryStub(message)
+    service = _MatchingServiceStub(expected)
+
+    result = MatchIncidentAction(repository, service).execute(42)
+
+    assert service.received is None
+    assert result.village_matches == []
+    assert result.condition_match_status == MatchResultStatus.unmatched
+    assert result.condition_review_required is True
+    assert repository.saved == (message, result)
 
 
 def test_action_does_not_persist_match_when_air_violation_routing_fails() -> None:

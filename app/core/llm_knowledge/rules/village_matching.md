@@ -4,17 +4,23 @@
 
 - `MATCH_THRESHOLD = 0.6` for confident match.
 - `LOW_CONFIDENCE_THRESHOLD = 0.35` for review-tier match.
-- `MATCH_TIE_MARGIN = 0.05` — if top two scores differ by less than this at ≥0.6, demote to `matched_low_confidence`.
+- `MATCH_TIE_MARGIN = 0.05` - if top two scores differ by less than this at >=0.6, demote to `matched_low_confidence`.
 
 ## Collision detection
 
-When ≥2 candidates share the same `ref_name_ar` prefix as the mention (e.g. five *النبطية* villages at ~0.615), treat as collision-like and demote confidence.
+When >=2 candidates share the same `ref_name_ar` prefix as the mention (e.g. five *النبطية* villages at ~0.615), treat as collision-like and demote confidence.
 
 ## Location aliases
 
-Evidence-backed aliases in `village_location_aliases` resolve exact normalized mentions to a parent village ACS row (e.g. «النبطية» → Nabatieh Et-Tahta 71111, «حي المسلخ» → same).
+Evidence-backed aliases in `village_location_aliases` resolve exact normalized mentions to a parent village ACS row (e.g. «النبطية» -> Nabatieh Et-Tahta 71111, «حي المسلخ» -> same).
 
 Do not fuzzy-match bare ambiguous tokens without alias when multiple ACS rows tie.
+
+No-ACS local/colloquial names that have been confirmed against an ACS parent must be exact aliases, not fuzzy matches. The news-side phrase remains the incident display label, while matching, caza/mohafaza, coordinates, condition logic, and dedup use the parent ACS village row. `terminology/village_aliases.yaml` and `Data/VillageLocationAliases.json` are the source of truth for these mappings.
+
+Specific collision guards:
+- «وادي السلوقي», «السلوقي», and spelling/Latin variants in recurring south-Lebanon Wadi el-Selouqi bulletins resolve to Touline / تولين (ACS 73282). Do not allow trigram similarity to resolve those mentions to Slouqi/Slouky Baalbek (ACS 53423).
+- Confirmed no-ACS aliases such as «وادي راج» -> Zaoutar Ech-Charqiye (ACS 71367), «الدبشة» and «جبل الرفيع» -> Kfar Roummane (ACS 71133), and «بيوت السياد» -> Mansouri Sour (ACS 62296) must resolve through aliases. Preserve each distinct Arabic news phrase as the displayed village name.
 
 ## Geo-context disambiguation
 
@@ -30,4 +36,4 @@ Some condition IDs require distinguishing substrings in the action text:
 
 ## Dash-route extraction (upstream)
 
-Before matching, Tier 1 should split `طريق … X - Y` into two village mentions for separate match attempts.
+Before matching, Tier 1 should split `طريق ... X - Y` into two village mentions for separate match attempts.

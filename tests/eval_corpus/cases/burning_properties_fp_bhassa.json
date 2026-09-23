@@ -1,0 +1,18 @@
+{
+  "bug_ref": "burning-properties-fp-bhassa",
+  "description": "House fire in Tripoli's Bhassa, no war attribution — must not become Burning Properties.",
+  "source": "CNRS fallback fire_incident false positive, fixed commit e682d3a",
+  "check": "cnrs_fire_attribution",
+  "input": {
+    "post_text": "حريق داخل منزل في البحصة - طرابلس",
+    "classification": {
+      "include": true,
+      "event_domain": "fire",
+      "event_subtype": "fire_incident",
+      "mentions_israeli_actor": false
+    }
+  },
+  "expected": {
+    "trusted_action": null
+  }
+}

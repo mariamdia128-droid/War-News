@@ -245,3 +245,62 @@ def test_tier2_details_delegate_to_wrapped_extractor() -> None:
         root_casualties=ExtractionCasualties(),
         raw_message_id=42,
     )
+
+
+def test_cnrs_fire_incident_without_conflict_attribution_rejects_override() -> None:
+    from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
+
+    classification = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": False,
+    }
+    # 3 real false positive examples
+    assert trusted_cnrs_action(classification, "احتراق سيارة عند جسر المدفون ... اندلع حريق بسيارة") is None
+    assert trusted_cnrs_action(classification, "احتراق سيارة على أوتوستراد المدفون باتجاه بيروت") is None
+    assert trusted_cnrs_action(classification, "حريق داخل منزل في البحصة – طرابلس") is None
+
+    broad_conflict_domain = dict(classification, event_domain="conflict")
+    assert (
+        trusted_cnrs_action(
+            broad_conflict_domain,
+            "احتراق سيارة على أوتوستراد المدفون باتجاه بيروت",
+        )
+        is None
+    )
+
+
+def test_cnrs_fire_incident_with_conflict_attribution_accepts_override() -> None:
+    from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
+
+    # War-attributed fire via text marker
+    classification = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": False,
+    }
+    assert (
+        trusted_cnrs_action(
+            classification,
+            "اندلاع حريق في منزل في عيتا الشعب إثر قصف مدفعي إسرائيلي",
+        )
+        == "Burning Properties"
+    )
+
+    # War-attributed fire via mentions_israeli_actor flag
+    classification_actor = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": True,
+    }
+    assert (
+        trusted_cnrs_action(
+            classification_actor,
+            "حريق في أحراج البلدة",
+        )
+        == "Burning Properties"
+    )
+

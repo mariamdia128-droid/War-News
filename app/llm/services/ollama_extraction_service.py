@@ -51,7 +51,7 @@ _DASH_ROUTE_RE = re.compile(
     r"(?=$|[\n،؛.!؟])"
 )
 _BETWEEN_ROUTE_RE = re.compile(
-    r"\bبين\s+"
+    r"(?:طريق|مسار)\s+بين\s+"
     r"(?P<left>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
     r"\s+و\s*"
     r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
@@ -63,6 +63,13 @@ _DASH_QUALIFIER_RE = re.compile(
     r"\s*[-–—]\s*"
     r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,80}?)"
     r"(?=$|[\n،؛.!؟])"
+)
+_SECONDARY_STRIKE_RE = re.compile(
+    r"كما\s+طال(?:ت)?\s+(?:القصف|الغارة|الاستهداف)\s+"
+    r"(?:حرج|خراج|أطراف|محيط)?\s*"
+    r"بلدة\s+"
+    r"(?P<village>[؀-ۿ][؀-ۿ\s]{1,40}?)"
+    r"(?=\s+(?:في\s+)?قضاء|[\n،؛.!؟]|$)"
 )
 _ROUTE_AREA_PREFIXES = terms_by_category(
     "terminology/role_terms.yaml",
@@ -502,11 +509,46 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             villages,
             village_roles,
         )
+        (
+            villages,
+            village_roles,
+            location_alternatives,
+            location_ambiguity_evidence,
+        ) = self._collapse_fuzzy_area_locations(
+            post_text,
+            villages,
+            village_roles,
+        )
         sub_events = self._validated_sub_events(
             general_response.sub_events,
             post_text=post_text,
             raw_message_id=raw_message_id,
         )
+        normalized_sub_events: list[ExtractionSubEvent] = []
+        for sub_event in sub_events:
+            (
+                _event_villages,
+                event_locations,
+                event_alternatives,
+                event_evidence,
+            ) = self._collapse_fuzzy_area_locations(
+                sub_event.evidence_span or post_text,
+                [entry.village for entry in sub_event.locations],
+                sub_event.locations,
+            )
+            if event_alternatives:
+                location_alternatives.extend(
+                    item
+                    for item in event_alternatives
+                    if item not in location_alternatives
+                )
+                location_ambiguity_evidence = (
+                    location_ambiguity_evidence or event_evidence
+                )
+            normalized_sub_events.append(
+                sub_event.model_copy(update={"locations": event_locations})
+            )
+        sub_events = normalized_sub_events
         scope, scope_evidence, scope_needs_review, scope_reason = (
             self._validated_casualty_scope(
                 general_response,
@@ -520,6 +562,9 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             is_relevant=general_response.is_relevant,
             village=villages,
             village_roles=village_roles,
+            location_ambiguity=bool(location_alternatives),
+            location_alternatives=location_alternatives,
+            location_ambiguity_evidence=location_ambiguity_evidence,
             action_description=self._validated_text(
                 general_response.action_description,
                 field_name="action_description",
@@ -1065,7 +1110,107 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 villages,
                 village_roles,
             )
+        villages, village_roles = cls._recover_secondary_strike_location(
+            post_text,
+            villages,
+            village_roles,
+        )
         return villages, village_roles
+
+    @staticmethod
+    def _recover_secondary_strike_location(
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Recover a second target dropped after a distinct-event connector.
+
+        "كما طال القصف ... بلدة X" explicitly introduces a separately scoped
+        strike location, unlike a محيط/بين vicinity phrase describing one
+        fuzzy place — this must never be collapsed the way
+        ``_collapse_fuzzy_area_locations`` collapses those.
+        """
+        match = _SECONDARY_STRIKE_RE.search(post_text)
+        if match is None:
+            return villages, village_roles
+
+        village = match.group("village").strip()
+        if not village:
+            return villages, village_roles
+
+        existing_names = list(villages or [])
+        existing_names.extend(entry.village for entry in village_roles)
+        existing_norms = {
+            normalize_arabic_text(name)
+            for name in existing_names
+            if normalize_arabic_text(name)
+        }
+        if normalize_arabic_text(village) in existing_norms:
+            return villages, village_roles
+
+        merged_villages = list(villages or [])
+        merged_villages.append(village)
+        merged_roles = list(village_roles)
+        merged_roles.append(
+            VillageRoleEntry(village=village, role=VillageRole.target)
+        )
+        return merged_villages, merged_roles
+
+    @staticmethod
+    def _collapse_fuzzy_area_locations(
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry], list[str], str | None]:
+        """Collapse hedged multi-place wording to one reviewable location."""
+        normalized_text = normalize_arabic_text(post_text or "")
+        marker = re.search(
+            r"(?:في\s+)?(?:محيط|قرب|بالقرب\s+من|بين)\s+",
+            normalized_text,
+        )
+        if marker is None:
+            return villages, village_roles, [], None
+        if normalized_text[max(0, marker.start() - 12) : marker.start()].find(
+            "طريق"
+        ) >= 0:
+            return villages, village_roles, [], None
+
+        tail = normalized_text[marker.end() :]
+        tail = re.split(r"[،؛.!؟\n]", tail, maxsplit=1)[0]
+        entries = list(village_roles)
+        if not entries:
+            entries = [VillageRoleEntry(village=name) for name in villages or []]
+        ordered = sorted(
+            (
+                entry
+                for entry in entries
+                if normalize_arabic_text(entry.village)
+                and normalize_arabic_text(entry.village) in tail
+            ),
+            key=lambda entry: tail.find(normalize_arabic_text(entry.village)),
+        )
+        if len(ordered) < 2:
+            return villages, village_roles, [], None
+
+        primary = ordered[0]
+        alternatives = [entry.village for entry in ordered[1:]]
+        evidence = normalized_text[marker.start() :].split(".", 1)[0].strip()
+        collapsed = primary.model_copy(
+            update={
+                "evidence_span": primary.evidence_span or evidence,
+                "qualifier_text": primary.qualifier_text
+                or f"fuzzy area; alternate: {', '.join(alternatives)}",
+            }
+        )
+        # Only replace the fuzzy group itself — other, unrelated locations
+        # already extracted (e.g. a distinct second strike introduced by a
+        # "كما طال القصف" connector elsewhere in the same bulletin) must
+        # survive the collapse rather than being silently dropped.
+        collapsed_ids = {id(entry) for entry in ordered}
+        unaffected = [entry for entry in entries if id(entry) not in collapsed_ids]
+        new_roles = [collapsed] + unaffected
+        new_villages = [primary.village] + [entry.village for entry in unaffected]
+        return new_villages, new_roles, alternatives, evidence
 
     @staticmethod
     def _apply_dash_route_village_backstop(

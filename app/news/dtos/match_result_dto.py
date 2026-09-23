@@ -31,6 +31,7 @@ class VillageMatchResult(BaseModel):
     event_index: int | None = None
     event_location_count: int | None = None
     qualifier_text: str | None = None
+    alias_matched: bool = False
     resolved_by_geo_context: bool = False
     geo_context_anchor_village_id: int | None = None
     original_top_candidate_id: int | None = None
@@ -61,6 +62,9 @@ class MatchResultDTO(BaseModel):
     # low-confidence query (RawMessage.match_result["any_village_low_confidence"])
     # stays simple and backward-compatible.
     any_village_low_confidence: bool
+    location_ambiguity: bool = False
+    location_alternatives: list[str] = Field(default_factory=list)
+    location_ambiguity_evidence: str | None = None
 
     matched_condition_id: int | None
     condition_confidence: float | None

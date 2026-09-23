@@ -34,6 +34,9 @@ from app.news.models import (
     Condition,
     Village,
 )
+from app.news.services.matching.conflict_attribution import (
+    has_conflict_attribution_text,
+)
 
 MATCH_THRESHOLD = 0.6
 LOW_CONFIDENCE_THRESHOLD = 0.35
@@ -82,6 +85,69 @@ CONDITION_DISTINGUISHING_TOKENS: dict[int, tuple[str, ...]] = {
     2: _distinguishing_tokens("Warning Raid") or ("تحذيريه",),
     39: _distinguishing_tokens("Feigned Attacks") or ("وهميه",),
 }
+
+# Effect-defined conditions describe an outcome (fire, hole in the road, an
+# explosion) that plain civilian/criminal/traffic news can also produce with
+# no war attribution at all — condition_id 21 (Mining & Detonation) joined
+# this set after the عباسية car-fire recon ("النيران تلتهم سيارة... حريق
+# كبير") showed a civilian car fire matching Mining & Detonation with no
+# conflict marker in the text. Reviewed the rest of Data/Conditions.json for
+# the same failure mode and found no other gaps: Kidnapping/Arrest
+# Operation/Ambushes read as war-context-only in this corpus's actual usage
+# (no civilian-crime false positives observed), and every other condition is
+# either device-defined (a named weapon/aircraft) rather than effect-defined,
+# or explicitly scoped to require a prior Ground Incursion per its note.
+EFFECT_DEFINED_CONDITION_IDS = frozenset({17, 21, 24, 25, 26, 27, 40})
+EFFECT_DEFINED_CANONICAL_ACTIONS = {
+    17: "shooting",
+    21: "mining and detonation",
+    24: "road blockage",
+    25: "bulldozing",
+    26: "cutting trees",
+    27: "burning properties",
+    40: "unexploded shells",
+}
+VILLAGE_MATCH_EXCEPTION_CATEGORIES = frozenset({"village_do_not_fuzzy_match"})
+CONDITION_MATCH_EXCEPTION_CATEGORIES = frozenset(
+    {"condition_do_not_match_without_attribution"}
+)
+
+
+def _exception_terms(
+    relative_path: str,
+    categories: frozenset[str],
+) -> tuple[str, ...]:
+    return tuple(
+        normalize_arabic_text(entry.normalized or entry.term)
+        for entry in load_terminology(relative_path)
+        if entry.category in categories and (entry.normalized or entry.term)
+    )
+
+
+def _is_exception_match(text: str, exceptions: tuple[str, ...]) -> bool:
+    normalized = normalize_arabic_text(text or "")
+    if not normalized:
+        return False
+    return any(
+        normalized == exception
+        or exception in normalized
+        or normalized in exception
+        for exception in exceptions
+    )
+
+
+def _village_match_exceptions() -> tuple[str, ...]:
+    return _exception_terms(
+        "terminology/village_match_exceptions.yaml",
+        VILLAGE_MATCH_EXCEPTION_CATEGORIES,
+    )
+
+
+def _condition_match_exceptions() -> tuple[str, ...]:
+    return _exception_terms(
+        "terminology/condition_match_exceptions.yaml",
+        CONDITION_MATCH_EXCEPTION_CATEGORIES,
+    )
 
 
 @dataclass(frozen=True)
@@ -138,6 +204,7 @@ class MatchingService(MatchingServiceInterface):
         root_condition = self._match_mention(
             extraction_result.action_description,
             self.conditions.find_similar,
+            guard_condition_tokens=True,
         )
         sub_event_matches = [
             self._match_sub_event(index, sub_event)
@@ -208,6 +275,7 @@ class MatchingService(MatchingServiceInterface):
                     event_index=event_index,
                     event_location_count=event_size,
                     qualifier_text=village_mention.qualifier_text,
+                    alias_matched=resolution.alias_hit,
                     resolved_by_geo_context=(geo_resolution.resolved_by_geo_context),
                     geo_context_anchor_village_id=(geo_resolution.anchor_village_id),
                     original_top_candidate_id=(
@@ -223,10 +291,25 @@ class MatchingService(MatchingServiceInterface):
             vm.village_match_status == MatchResultStatus.matched_low_confidence
             for vm in village_matches
         )
+        location_ambiguity = bool(extraction_result.location_ambiguity)
+        if location_ambiguity:
+            village_matches = [
+                vm.model_copy(
+                    update={
+                        "village_match_status": MatchResultStatus.matched_low_confidence,
+                        "village_review_required": True,
+                    }
+                )
+                for vm in village_matches
+            ]
+            any_village_low_confidence = True
 
         return MatchResultDTO(
             village_matches=village_matches,
             any_village_low_confidence=any_village_low_confidence,
+            location_ambiguity=location_ambiguity,
+            location_alternatives=list(extraction_result.location_alternatives),
+            location_ambiguity_evidence=extraction_result.location_ambiguity_evidence,
             matched_condition_id=root_condition.matched_id,
             condition_confidence=root_condition.confidence,
             condition_match_status=root_condition.status,
@@ -240,6 +323,7 @@ class MatchingService(MatchingServiceInterface):
         condition = self._match_mention(
             sub_event.action_description,
             self.conditions.find_similar,
+            guard_condition_tokens=True,
         )
         return SubEventMatchResult(
             index=index,
@@ -347,6 +431,15 @@ class MatchingService(MatchingServiceInterface):
             " ".join(part for part in (normalized, qualifier_text or "") if part)
         )
         search_text = _strip_district_hint(normalized)
+        if _is_exception_match(search_text, _village_match_exceptions()):
+            return _VillageCandidateResolution(
+                (),
+                _ClassifiedMatch(
+                    None,
+                    None,
+                    MatchResultStatus.matched_low_confidence,
+                ),
+            )
 
         resolve_alias = getattr(self.villages, "resolve_alias", None)
         if resolve_alias is not None and district_hint is None:
@@ -387,6 +480,7 @@ class MatchingService(MatchingServiceInterface):
                 (candidate, max(score, MATCH_THRESHOLD + 0.1))
                 for candidate, score in lexical_candidates
                 if self._candidate_matches_district(candidate, district_hint)
+                and self._has_lexical_overlap(search_text, candidate)
             )
             if district_candidates:
                 candidates = tuple(
@@ -395,6 +489,18 @@ class MatchingService(MatchingServiceInterface):
                 lexical_candidates = candidates
                 district_resolved = True
         classified = self._classify_candidates(lexical_candidates, search_text)
+        no_reference_overlap = (
+            not district_resolved
+            and classified.status == MatchResultStatus.matched
+            and bool(lexical_candidates)
+            and not self._has_lexical_overlap(search_text, lexical_candidates[0][0])
+        )
+        if no_reference_overlap:
+            classified = _ClassifiedMatch(
+                classified.matched_id,
+                classified.confidence,
+                MatchResultStatus.matched_low_confidence,
+            )
         collision_like = (
             False
             if district_resolved
@@ -429,6 +535,59 @@ class MatchingService(MatchingServiceInterface):
             (candidate, max(0.0, min(float(score), 1.0)))
             for candidate, score in find_aliases(normalized_mention)
         )
+
+    @staticmethod
+    def _has_lexical_overlap(
+        normalized_mention: str,
+        candidate: Village,
+    ) -> bool:
+        """Guard against a trigram-only match with no textual relationship.
+
+        When the gazetteer has no real entry for a place name (e.g. no ACS
+        row and no alias), pure similarity scoring can still clear
+        MATCH_THRESHOLD against an unrelated village purely by n-gram
+        coincidence (recon: "بيوت السياد" -> "المنصوري"). Require the mention
+        to share at least one meaningful token, or a substring relationship,
+        with one of the candidate's known name fields before trusting a
+        "matched" verdict. Candidates with no comparable name data (test
+        stubs, or a mention too short to tokenize) are left unaffected.
+        """
+        mention_normalized = normalize_arabic_text(normalized_mention)
+        mention_compact = normalize_arabic_text(normalized_mention, compact=True)
+        mention_tokens = [
+            token for token in mention_normalized.split() if len(token) >= 3
+        ]
+        references = [
+            normalize_arabic_text(value or "")
+            for value in (
+                getattr(candidate, "ref_name_ar", None),
+                getattr(candidate, "acs_name", None),
+                getattr(candidate, "cad_name", None),
+            )
+        ]
+        references = [reference for reference in references if reference]
+        if not mention_tokens or not references:
+            return True
+        for reference in references:
+            reference_tokens = [
+                token for token in reference.split() if len(token) >= 3
+            ]
+            if any(token in reference_tokens for token in mention_tokens):
+                return True
+            if any(
+                token in reference or reference in token for token in mention_tokens
+            ):
+                return True
+            # Compact-form comparison catches legitimate spacing variants
+            # ("كفرشوبا" vs "كفر شوبا") that a whitespace-token split misses.
+            reference_compact = reference.replace(" ", "")
+            if mention_compact and (
+                mention_compact == reference_compact
+                or mention_compact in reference_compact
+                or reference_compact in mention_compact
+            ):
+                return True
+        return False
 
     @staticmethod
     def _has_collision_like_alternative(
@@ -637,6 +796,7 @@ class MatchingService(MatchingServiceInterface):
         ],
         *,
         allow_alias: bool = False,
+        guard_condition_tokens: bool = False,
     ) -> _ClassifiedMatch:
         normalized = normalize_arabic_text(mention or "")
         if not normalized:
@@ -661,7 +821,11 @@ class MatchingService(MatchingServiceInterface):
                 self.candidate_limit,
             )
         )
-        return self._classify_candidates(candidates, normalized)
+        return self._classify_candidates(
+            candidates,
+            normalized,
+            guard_condition_tokens=guard_condition_tokens,
+        )
 
     def _classify_candidates(
         self,
@@ -670,12 +834,17 @@ class MatchingService(MatchingServiceInterface):
             ...,
         ],
         normalized: str,
+        *,
+        guard_condition_tokens: bool = False,
     ) -> _ClassifiedMatch:
         if not candidates:
             return _ClassifiedMatch(None, None, MatchResultStatus.unmatched)
         allowed: list[tuple[Village | Condition, float]] = []
         for candidate, score in candidates:
-            if not self._condition_match_allowed(candidate.id, normalized):
+            if guard_condition_tokens and not self._condition_match_allowed(
+                candidate.id,
+                normalized,
+            ):
                 continue
             allowed.append((candidate, score))
         if not allowed:
@@ -708,7 +877,13 @@ class MatchingService(MatchingServiceInterface):
 
     @staticmethod
     def _condition_match_allowed(condition_id: int, normalized_text: str) -> bool:
+        if _is_exception_match(normalized_text, _condition_match_exceptions()):
+            return False
         required_tokens = CONDITION_DISTINGUISHING_TOKENS.get(condition_id)
         if required_tokens is None:
-            return True
+            if condition_id not in EFFECT_DEFINED_CONDITION_IDS:
+                return True
+            if normalized_text.lower() == EFFECT_DEFINED_CANONICAL_ACTIONS.get(condition_id):
+                return True
+            return has_conflict_attribution_text(normalized_text)
         return any(token in normalized_text for token in required_tokens)

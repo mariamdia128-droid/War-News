@@ -220,13 +220,108 @@ def test_non_route_dash_phrases_collapse_to_target_and_qualifier(
 
 def test_between_route_phrase_keeps_both_endpoints() -> None:
     villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
-        "غارة بين كفرتبنيت وزوطر الشرقية.",
+        "غارة على طريق بين كفرتبنيت وزوطر الشرقية.",
         ["كفرتبنيت"],
         [VillageRoleEntry(village="كفرتبنيت")],
     )
 
     assert villages == ["كفرتبنيت", "زوطر الشرقية"]
     assert [entry.village for entry in roles] == ["كفرتبنيت", "زوطر الشرقية"]
+
+
+def test_fuzzy_area_phrase_collapses_to_first_village_with_alternate() -> None:
+    villages, roles, alternatives, evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            "القوات الإسرائيلية أحرقت حقول الزيتون وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية",
+            ["مجدل زون", "بيوت السياد"],
+            [],
+        )
+    )
+
+    assert villages == ["مجدل زون"]
+    assert [entry.village for entry in roles] == ["مجدل زون"]
+    assert alternatives == ["بيوت السياد"]
+    assert "محيط مجدل زون وبيوت السياد" in (evidence or "")
+
+
+def test_kama_tal_qasf_connector_recovers_dropped_second_target() -> None:
+    """Recon bulletin (Zaoutar Ech-Charqiye, 2026-09-20 09:49): the model
+    extracted only زوطر الشرقية and silently dropped عيتا الجبل, introduced
+    by the distinct-event connector "كما طال القصف". This is the inverse of
+    the fuzzy-area محيط bug — two genuinely separate strikes must both
+    survive as targets.
+    """
+    post_text = (
+        "طالت الغارات أطراف بلدة زوطر الشرقية في اتجاه ميفدون... "
+        "كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل"
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["زوطر الشرقية"],
+        [VillageRoleEntry(village="زوطر الشرقية")],
+    )
+
+    assert villages == ["زوطر الشرقية", "عيتا الجبل"]
+    assert {entry.village for entry in roles} == {"زوطر الشرقية", "عيتا الجبل"}
+
+
+def test_kama_tal_qasf_connector_does_not_duplicate_already_extracted_village() -> (
+    None
+):
+    post_text = "كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل"
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["زوطر الشرقية", "عيتا الجبل"],
+        [
+            VillageRoleEntry(village="زوطر الشرقية"),
+            VillageRoleEntry(village="عيتا الجبل"),
+        ],
+    )
+
+    assert villages == ["زوطر الشرقية", "عيتا الجبل"]
+    assert len(roles) == 2
+
+
+def test_kama_tal_qasf_connector_coexists_with_fuzzy_area_collapse() -> None:
+    """The محيط collapse and the كما طال القصف recovery must not undo each
+    other when a bulletin happens to contain both patterns.
+    """
+    post_text = (
+        "القوات الإسرائيلية أحرقت حقول الزيتون في محيط مجدل زون وبيوت السياد. "
+        "كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل"
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["مجدل زون", "بيوت السياد"],
+        [
+            VillageRoleEntry(village="مجدل زون"),
+            VillageRoleEntry(village="بيوت السياد"),
+        ],
+    )
+    villages, roles, alternatives, _evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            post_text,
+            villages,
+            roles,
+        )
+    )
+
+    assert set(villages) == {"مجدل زون", "عيتا الجبل"}
+    assert alternatives == ["بيوت السياد"]
+
+
+def test_plain_between_phrase_collapses_without_route() -> None:
+    villages, roles, alternatives, _evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            "قصف بين كفرتبنيت وزوطر الشرقية.",
+            ["كفرتبنيت", "زوطر الشرقية"],
+            [],
+        )
+    )
+
+    assert villages == ["كفرتبنيت"]
+    assert [entry.village for entry in roles] == ["كفرتبنيت"]
+    assert alternatives == ["زوطر الشرقية"]
 
 
 def test_extract_tier1_backstops_per_village_casualties() -> None:

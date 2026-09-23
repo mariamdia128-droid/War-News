@@ -18,6 +18,9 @@ from app.llm.interfaces import ExtractionClassifierInterface
 from app.llm.services.cnrs_relevance_classifier import verdict_from_cnrs_classification
 from app.llm.dtos import ClassificationVerdict
 from app.news.models import RawMessage
+from app.news.services.matching.conflict_attribution import (
+    has_conflict_attribution_text,
+)
 
 
 SUBTYPE_ACTIONS = {
@@ -38,6 +41,17 @@ _TANK_MARKERS = tuple(
 ) or ("دبابة",)
 
 
+def has_conflict_attribution(
+    classification: dict[str, Any] | None,
+    post_text: str,
+) -> bool:
+    """Return True if text or metadata explicitly attributes the event to war/conflict action."""
+    if classification:
+        if classification.get("mentions_israeli_actor") is True:
+            return True
+    return has_conflict_attribution_text(post_text)
+
+
 def trusted_cnrs_action(
     classification: dict[str, Any] | None,
     post_text: str,
@@ -54,6 +68,10 @@ def trusted_cnrs_action(
             if any(marker in post_text for marker in _TANK_MARKERS)
             else "Bombs"
         )
+    if subtype == "fire_incident":
+        # Fires require explicit war/conflict causal attribution to avoid civilian/traffic false positives.
+        if not has_conflict_attribution(classification, post_text):
+            return None
     return SUBTYPE_ACTIONS.get(subtype)
 
 
