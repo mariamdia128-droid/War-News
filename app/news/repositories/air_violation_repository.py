@@ -9,7 +9,11 @@ from zoneinfo import ZoneInfo
 
 from app.core.text_sanitizer import strip_emoji_and_pictographs
 from app.core.cache import increment
-from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_ID_TUPLE, AIR_VIOLATION_CONDITION_IDS
+from app.news.constants.air_violation_conditions import (
+    AIR_VIOLATION_CONDITION_ID_TUPLE,
+    AIR_VIOLATION_CONDITION_IDS,
+    AIR_VIOLATION_WARPLANE_CONDITION_ID,
+)
 from app.news.dtos import (
     AirViolationCreateDTO,
     AirViolationDTO,
@@ -49,34 +53,13 @@ AIR_VIOLATION_CAZA_ALIASES: dict[str, tuple[str, str | None]] = {
     "west beqaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
     "west bekaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
 }
-AIR_VIOLATION_PRIORITY_CAZAS = {
-    "nabatiye",
-    "nabatieh",
-    "marjaayoun",
-    "marjayoun",
-    "bint jbeil",
-    "tyre",
-    "sour",
-    "baabda",
-    "hermel",
-    "baalbeck",
-    "baalbek",
-    "saida",
-    "sidon",
-    "west beqaa",
-    "west bekaa",
-}
-AIR_VIOLATION_PRIORITY_CAZA_HOURS = 1
+AIR_VIOLATION_WARPLANE_CAZA_HOURS = 4
 AIR_VIOLATION_DEFAULT_CAZA_HOURS = 1
 
 
-def _normalize_caza_token(value: str) -> str:
-    return re.sub(r"[\W_]+", " ", value.casefold()).strip()
-
-
-def air_violation_caza_window_hours(caza_en: str | None) -> int:
-    if caza_en and _normalize_caza_token(caza_en) in AIR_VIOLATION_PRIORITY_CAZAS:
-        return AIR_VIOLATION_PRIORITY_CAZA_HOURS
+def air_violation_caza_window_hours(caza_en: str | None, condition_id: int | None = None) -> int:
+    if condition_id == AIR_VIOLATION_WARPLANE_CONDITION_ID:
+        return AIR_VIOLATION_WARPLANE_CAZA_HOURS
     return AIR_VIOLATION_DEFAULT_CAZA_HOURS
 
 
@@ -240,6 +223,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
     def _air_violation_window_input(item: dict[str, object]) -> AirViolationWindowInput:
         return AirViolationWindowInput(
             id=int(item["id"]),
+            condition_id=int(item["condition_id"]),
             caza_en=item.get("caza_en"),
             caza_ar=item.get("caza_ar"),
             event_date=item["event_date"],
@@ -649,7 +633,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         condition_id: int,
         khabar: str | None,
     ) -> bool:
-        window_hours = air_violation_caza_window_hours(caza_en)
+        window_hours = air_violation_caza_window_hours(caza_en, condition_id)
         cutoff = occurred_at - timedelta(hours=window_hours)
         filters = [
             AirViolation.condition_id == condition_id,
@@ -739,6 +723,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         grouped = group_air_violation_windows(
             AirViolationWindowInput(
                 id=int(item["id"]),
+                condition_id=int(item["condition_id"]),
                 caza_en=item.get("caza_en"),
                 caza_ar=item.get("caza_ar"),
                 event_date=item["event_date"],

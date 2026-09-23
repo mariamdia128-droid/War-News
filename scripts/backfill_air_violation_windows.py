@@ -49,6 +49,7 @@ def _session() -> Session:
 @dataclass(frozen=True)
 class AirViolationRow:
     id: int
+    condition_id: int
     caza_en: str | None
     caza_ar: str | None
     village_caza_en: str | None
@@ -87,6 +88,7 @@ def fetch_rows(db: Session) -> list[AirViolationRow]:
             f"""
             SELECT
               av.id,
+              av.condition_id,
               av.caza_en,
               av.caza_ar,
               primary_village.caza_en AS village_caza_en,
@@ -119,6 +121,7 @@ def fetch_rows(db: Session) -> list[AirViolationRow]:
     return [
         AirViolationRow(
             id=int(row["id"]),
+            condition_id=int(row["condition_id"]),
             caza_en=row["caza_en"],
             caza_ar=row["caza_ar"],
             village_caza_en=row["village_caza_en"],
@@ -170,6 +173,7 @@ def build_plans(rows: list[AirViolationRow]) -> list[WindowPlan]:
     inputs = [
         AirViolationWindowInput(
             id=row.id,
+            condition_id=row.condition_id,
             caza_en=resolved[row.id][0],
             caza_ar=None,
             event_date=row.event_date,

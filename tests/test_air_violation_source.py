@@ -98,24 +98,28 @@ def test_air_violation_caza_aliases_include_requested_kadaa(text, expected) -> N
 
 
 @pytest.mark.parametrize(
-    ("caza_en", "expected_hours"),
+    ("caza_en", "condition_id", "expected_hours"),
     [
-        ("Nabatiye", 1),
-        ("Marjaayoun", 1),
-        ("Bint Jbeil", 1),
-        ("Tyre", 1),
-        ("Sour", 1),
-        ("Baabda", 1),
-        ("Hermel", 1),
-        ("Baalbeck", 1),
-        ("Saida", 1),
-        ("West Beqaa", 1),
-        ("Akkar", 4),
-        (None, 4),
+        ("Nabatiye", 35, 4),
+        ("Marjaayoun", 35, 4),
+        ("Bint Jbeil", 35, 4),
+        ("Tyre", 35, 4),
+        ("Sour", 35, 4),
+        ("Baabda", 35, 4),
+        ("Hermel", 35, 4),
+        ("Baalbeck", 35, 4),
+        ("Saida", 35, 4),
+        ("West Beqaa", 35, 4),
+        ("Akkar", 35, 4),
+        (None, 35, 4),
+        ("Nabatiye", 36, 1),
+        ("Akkar", 36, 1),
+        ("Nabatiye", 38, 1),
+        ("Akkar", 38, 1),
     ],
 )
-def test_air_violation_caza_window_hours(caza_en, expected_hours) -> None:
-    assert air_violation_caza_window_hours(caza_en) == expected_hours
+def test_air_violation_caza_window_hours(caza_en, condition_id, expected_hours) -> None:
+    assert air_violation_caza_window_hours(caza_en, condition_id) == expected_hours
 
 
 def test_priority_caza_air_violations_are_limited_to_one_per_hour() -> None:
