@@ -1,4 +1,5 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
@@ -13,6 +14,7 @@ from app.news.models import AirViolation, Condition, Incident, RawMessage, Villa
 
 
 router = APIRouter(prefix="/api/filtered-news", tags=["filtered-news"])
+RED_ALERT_SOURCE_NAME = "Red Alert Lebanon"
 
 
 def _war_context_text_filter(text_expr) -> object:
@@ -170,6 +172,8 @@ def list_filtered_news(
     source_name: str | None = Query(None),
     status: str | None = Query(None),
     related_only: bool = Query(False),
+    include_rejected_red_alert: bool = Query(False),
+    last_hours: int | None = Query(None, ge=1, le=8760),
     search: str | None = Query(None),
     _current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -184,13 +188,16 @@ def list_filtered_news(
         time.min,
     )
     event_at = func.coalesce(incident_event_at, air_violation_event_at, raw_event_at)
-    filters = [
-        or_(
-            RawMessage.filter_result["verdict"].as_string() == "relevant",
-            Incident.id.is_not(None),
-            AirViolation.id.is_not(None),
-        ),
-    ]
+    visible_news_filter = or_(
+        RawMessage.filter_result["verdict"].as_string() == "relevant",
+        Incident.id.is_not(None),
+        AirViolation.id.is_not(None),
+    )
+    red_alert_scope = RawMessage.source_name == RED_ALERT_SOURCE_NAME
+    if include_rejected_red_alert and source_name == RED_ALERT_SOURCE_NAME and not related_only:
+        filters = [or_(visible_news_filter, red_alert_scope)]
+    else:
+        filters = [visible_news_filter]
     if related_only:
         filters.append(or_(Incident.id.is_not(None), AirViolation.id.is_not(None)))
         filters.append(
@@ -203,6 +210,11 @@ def list_filtered_news(
         filters.append(func.date(event_at) >= event_date_from)
     if event_date_to is not None:
         filters.append(func.date(event_at) <= event_date_to)
+    if last_hours is not None:
+        cutoff = datetime.now(ZoneInfo("Asia/Beirut")).replace(tzinfo=None) - timedelta(
+            hours=last_hours,
+        )
+        filters.append(event_at >= cutoff)
     if source_name and source_name.strip():
         filters.append(RawMessage.source_name == source_name.strip())
     if status and status.strip():

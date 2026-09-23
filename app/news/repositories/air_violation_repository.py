@@ -52,9 +52,15 @@ AIR_VIOLATION_CAZA_ALIASES: dict[str, tuple[str, str | None]] = {
     "sidon": ("Saida", "\u0635\u064a\u062f\u0627"),
     "west beqaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
     "west bekaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+    "\u0627\u0644\u0628\u0642\u0627\u0639": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+    "\u0627\u0644\u062c\u0646\u0648\u0628": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
 }
 AIR_VIOLATION_WARPLANE_CAZA_HOURS = 4
 AIR_VIOLATION_DEFAULT_CAZA_HOURS = 1
+
+
+def _normalize_caza_token(value: str) -> str:
+    return re.sub(r"[\W_]+", " ", value.casefold()).strip()
 
 
 def air_violation_caza_window_hours(caza_en: str | None, condition_id: int | None = None) -> int:

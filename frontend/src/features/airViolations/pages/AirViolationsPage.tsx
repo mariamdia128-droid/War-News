@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
+import { StatusBadge } from "../../../components/StatusBadge";
 import { Button, ConfirmDialog, DataTable, Dialog, EmptyState, Input, Label, Select, type DataTableColumn } from "../../../components/ui";
 import { useLiveQueryTitleAddon } from "../../../hooks/useLiveQueryTitleAddon";
 import { decodePageParam, encodePageParam } from "../../../lib/encryptedPageParam";
@@ -12,9 +14,12 @@ import { useVillagesQuery } from "../../news/hooks";
 import { acquireAirViolationEditLock, createAirViolation, deleteAirViolation, exportAirViolations, releaseAirViolationEditLock, updateAirViolation } from "../api";
 import type { AirViolation } from "../types";
 import { importAirViolationKhabar } from "../api";
-import type { WorkbookImportSummary } from "../../news/api";
+import { getFilteredNews, type WorkbookImportSummary } from "../../news/api";
+import type { FilteredNewsItem } from "../../news/types";
 
 const PAGE_SIZE = 25;
+const RED_ALERT_SOURCE_NAME = "Red Alert Lebanon";
+const RED_ALERT_NEWS_LIMIT = 75;
 
 const emptyText = "—";
 
@@ -36,6 +41,19 @@ const formatWindowId = (value: string | null) => {
   const caza = value.slice(0, separatorIndex);
   const timestamp = value.slice(separatorIndex + 1);
   return `${caza} - ${formatDateTime(timestamp)}`;
+};
+
+const compactNews = (value: string, maxLength = 140) => {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+};
+
+const statusVariant = (status: string) => {
+  if (status === "materialized") return "success" as const;
+  if (status === "rejected") return "danger" as const;
+  if (status === "duplicate") return "neutral" as const;
+  if (status === "error") return "warning" as const;
+  return "accent" as const;
 };
 
 const recordWindowLabel = (row: AirViolation) => {
@@ -135,6 +153,22 @@ export const AirViolationsPage = () => {
 
   const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } =
     useAirViolationsQuery(filters);
+  const redAlertNewsFilters = useMemo(
+    () => ({
+      limit: RED_ALERT_NEWS_LIMIT,
+      offset: 0,
+      eventDateFrom: eventDateFrom || undefined,
+      eventDateTo: eventDateTo || undefined,
+      lastHours: lastHours || undefined,
+      sourceName: RED_ALERT_SOURCE_NAME,
+      includeRejectedRedAlert: true,
+    }),
+    [eventDateFrom, eventDateTo, lastHours],
+  );
+  const redAlertNewsQuery = useQuery({
+    queryKey: ["air-violations", "red-alert-filtered-news", redAlertNewsFilters],
+    queryFn: () => getFilteredNews(redAlertNewsFilters),
+  });
   const { data: villages = [], isLoading: areCazasLoading } = useVillagesQuery();
   const cazaOptions = useMemo(() => {
     const options = new Map<string, { label: string; arabic: string | null }>();
@@ -168,6 +202,7 @@ export const AirViolationsPage = () => {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rows = data?.items ?? [];
+  const redAlertRows = redAlertNewsQuery.data?.items ?? [];
   const isLockedByAnother = Boolean(
     selectedViolation?.locked_by_user_id
       && selectedViolation.locked_by_user_id !== currentUserId
@@ -312,6 +347,71 @@ export const AirViolationsPage = () => {
           View details
         </Button>
       ),
+    },
+  ];
+
+  const redAlertColumns: Array<DataTableColumn<FilteredNewsItem>> = [
+    {
+      key: "time",
+      header: "Date / Time",
+      className: "w-40 min-w-40",
+      render: (row) => (
+        <div className="space-y-1 whitespace-nowrap">
+          <p>{formatDateTime(row.event_at)}</p>
+          <p className="text-caption text-text-muted">Raw #{row.id}</p>
+        </div>
+      ),
+      sortValue: (row) => new Date(row.event_at).getTime(),
+    },
+    {
+      key: "news",
+      header: "Red Alert news",
+      className: "w-[30rem] min-w-[30rem]",
+      render: (row) => (
+        <p className="whitespace-normal leading-6 text-text-primary" dir="auto">
+          {compactNews(row.khabar)}
+        </p>
+      ),
+      sortValue: (row) => row.khabar,
+    },
+    {
+      key: "linked",
+      header: "Air violation",
+      className: "w-44 min-w-44",
+      render: (row) => row.air_violation_id ? (
+        <span className="font-semibold text-success">Linked #{row.air_violation_id}</span>
+      ) : (
+        <span className="text-text-muted">Not written</span>
+      ),
+    },
+    {
+      key: "location",
+      header: "Location / action",
+      className: "w-56 min-w-56",
+      render: (row) => (
+        <div className="space-y-1">
+          <TextCell value={row.village_name} />
+          <p className="text-small text-text-muted">{row.condition_name || emptyText}</p>
+        </div>
+      ),
+      sortValue: (row) => row.village_name ?? "",
+    },
+    {
+      key: "status",
+      header: "Status",
+      className: "w-36 min-w-36",
+      render: (row) => <StatusBadge label={row.status} variant={statusVariant(row.status)} />,
+    },
+    {
+      key: "reason",
+      header: "Filter reason",
+      className: "w-[24rem] min-w-[24rem]",
+      render: (row) => (
+        <p className="whitespace-normal text-small leading-5 text-text-muted">
+          {row.reasoning || row.verdict || emptyText}
+        </p>
+      ),
+      sortValue: (row) => row.reasoning ?? row.verdict ?? "",
     },
   ];
 
@@ -511,6 +611,48 @@ export const AirViolationsPage = () => {
           />
         }
       />
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-h4 font-semibold text-text-primary">Red Alert filtered news</h2>
+            <p className="mt-1 text-small text-text-muted">
+              {redAlertNewsQuery.data?.total ?? 0} Red Alert items match the selected time filters.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-9"
+            isLoading={redAlertNewsQuery.isFetching}
+            loadingText="Refreshing"
+            onClick={() => redAlertNewsQuery.refetch()}
+          >
+            Refresh Red Alert
+          </Button>
+        </div>
+        <DataTable
+          columns={redAlertColumns}
+          rows={redAlertRows}
+          getRowKey={(row) => String(row.id)}
+          loading={redAlertNewsQuery.isLoading}
+          error={redAlertNewsQuery.isError}
+          minWidth="1420px"
+          clientSort={false}
+          emptyState={
+            <EmptyState
+              title="No Red Alert news in this filter"
+              description="Adjust the time filters above to inspect more Red Alert source messages."
+            />
+          }
+          errorState={
+            <EmptyState
+              title="Could not load Red Alert news"
+              description="The filtered Red Alert list could not be loaded. Please try again."
+            />
+          }
+        />
+      </section>
 
       {selectedViolation ? (
         <Dialog

@@ -37,6 +37,8 @@ export type FilteredNewsFilters = {
   sourceName?: string;
   status?: string;
   relatedOnly?: boolean;
+  includeRejectedRedAlert?: boolean;
+  lastHours?: string;
   search?: string;
 };
 
@@ -51,6 +53,8 @@ export const getFilteredNews = async (
   if (filters.sourceName) params.set("source_name", filters.sourceName);
   if (filters.status) params.set("status", filters.status);
   if (filters.relatedOnly) params.set("related_only", "true");
+  if (filters.includeRejectedRedAlert) params.set("include_rejected_red_alert", "true");
+  if (filters.lastHours) params.set("last_hours", filters.lastHours);
   if (filters.search) params.set("search", filters.search);
   const response = await apiClient.get<FilteredNewsListResponse>(
     `/filtered-news?${params.toString()}`,

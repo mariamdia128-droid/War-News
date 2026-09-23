@@ -45,6 +45,9 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "shahim": 23211,
     "al bazuriya": 62246,
     "al bazuriye": 62246,
+    "burj al shar": 62128,
+    "burj al shamali": 62128,
+    "et taibeh": 73232,
 }
 
 
@@ -259,18 +262,30 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
     location_text = text.rsplit(RED_ZONE_OCR_MARKER, 1)[-1] if RED_ZONE_OCR_MARKER in text else text
     normalized_text = normalize_arabic(location_text)
     normalized_latin_text = normalize_latin_location_token(location_text)
-    alias_matches: list[tuple[Village, str]] = []
-    for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
-        normalized_alias = normalize_arabic(alias)
-        alias_found = (
-            normalized_alias in normalized_text
-            if re.search(r"[\u0600-\u06ff]", alias)
-            else normalize_latin_location_token(alias) in normalized_latin_text
-        )
-        if alias_found:
-            village = next((item for item in villages if item.acs_code == acs_code), None)
-            if village is not None:
-                alias_matches.append((village, alias))
+    def alias_matches_in(candidate_text: str) -> list[tuple[Village, str]]:
+        normalized_candidate = normalize_arabic(candidate_text)
+        normalized_latin_candidate = normalize_latin_location_token(candidate_text)
+        matches: list[tuple[Village, str]] = []
+        for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
+            normalized_alias = normalize_arabic(alias)
+            alias_found = (
+                normalized_alias in normalized_candidate
+                if re.search(r"[\u0600-\u06ff]", alias)
+                else normalize_latin_location_token(alias) in normalized_latin_candidate
+            )
+            if alias_found:
+                village = next((item for item in villages if item.acs_code == acs_code), None)
+                if village is not None:
+                    matches.append((village, alias))
+        return matches
+
+    alias_matches = alias_matches_in(location_text)
+    if not alias_matches and RED_ZONE_OCR_MARKER in text:
+        # Exact, whitelisted OCR aliases sometimes land just outside the focused
+        # red-zone crop. Use the full OCR text only when it names one place.
+        full_alias_matches = alias_matches_in(text)
+        if len({village.id for village, _alias in full_alias_matches}) == 1:
+            alias_matches = full_alias_matches
     if alias_matches:
         if RED_ZONE_OCR_MARKER in text and len({village.id for village, _alias in alias_matches}) > 1:
             return None

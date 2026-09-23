@@ -9,7 +9,6 @@ import { LogsPage } from "../features/logs/pages/LogsPage";
 import { AirViolationsPage } from "../features/airViolations/pages/AirViolationsPage";
 import { IncidentDetailPage } from "../features/news/pages/IncidentDetailPage";
 import { IncidentsPage } from "../features/news/pages/IncidentsPage";
-import { AllNewsPage } from "../features/news/pages/AllNewsPage";
 import { RejectedNewsPage } from "../features/news/pages/RejectedNewsPage";
 import { SettingsPage } from "../features/settings/pages/SettingsPage";
 import { SourcesPage } from "../features/sources/pages/SourcesPage";
