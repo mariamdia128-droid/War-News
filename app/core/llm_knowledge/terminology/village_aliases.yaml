@@ -107,3 +107,28 @@
   category: village_location_alias
   meaning: "acs:71111"
   notes: "Normalized spelling of النبطية city-seat. confidence=proposed; mirrors VillageLocationAliases."
+
+- term: "وادي السلوقي"
+  category: village_location_alias
+  meaning: "acs:73282"
+  notes: "Wadi el-Selouqi recurring southern valley reference -> Touline (Marjaayoun), not Slouqi/Slouky Baalbek. confidence=proposed; production bug 2026-09-23."
+
+- term: "السلوقي"
+  category: village_location_alias
+  meaning: "acs:73282"
+  notes: "Extractor may strip وادي; same Wadi el-Selouqi context -> Touline. confidence=proposed; production bug 2026-09-23."
+
+- term: "وادي سلوقي"
+  category: village_location_alias
+  meaning: "acs:73282"
+  notes: "Spelling variant for Wadi el-Selouqi -> Touline. confidence=proposed; production bug 2026-09-23."
+
+- term: "wadi selouqi"
+  category: village_location_alias
+  meaning: "acs:73282"
+  notes: "Latin variant for Wadi el-Selouqi -> Touline. confidence=proposed; production bug 2026-09-23."
+
+- term: "wadi salouqi"
+  category: village_location_alias
+  meaning: "acs:73282"
+  notes: "Latin variant for Wadi el-Selouqi -> Touline. confidence=proposed; production bug 2026-09-23."

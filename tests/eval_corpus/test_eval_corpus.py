@@ -50,6 +50,17 @@ class _EmptyRepositoryStub:
         return []
 
 
+class _AliasRepositoryStub(_EmptyRepositoryStub):
+    def __init__(self, aliases: dict[str, int]) -> None:
+        self.aliases = aliases
+
+    def resolve_alias(self, normalized_text: str):
+        village_id = self.aliases.get(normalized_text)
+        if village_id is None:
+            return None
+        return SimpleNamespace(id=village_id), 1.0
+
+
 def _extraction(action: str) -> ExtractionResult:
     from datetime import datetime, timezone
 
@@ -144,6 +155,27 @@ def _check_village_lexical_overlap(input_: dict, expected: dict) -> None:
     assert actual == expected["has_overlap"]
 
 
+def _check_village_alias(input_: dict, expected: dict) -> None:
+    from datetime import datetime, timezone
+
+    service = MatchingService(
+        _AliasRepositoryStub(input_["aliases"]),
+        _EmptyRepositoryStub(),
+    )
+    extraction = ExtractionResult(
+        is_relevant=True,
+        village=[input_["mention"]],
+        village_roles=[],
+        action_description=None,
+        model="test",
+        extracted_at=datetime.now(timezone.utc),
+    )
+    result = service.match(extraction)
+    village = result.village_matches[0]
+    assert village.matched_village_id == expected["matched_village_id"]
+    assert village.village_match_status == MatchResultStatus(expected["status"])
+
+
 _CHECKS = {
     "cnrs_fire_attribution": _check_cnrs_fire_attribution,
     "fuzzy_area_collapse": _check_fuzzy_area_collapse,
@@ -153,6 +185,7 @@ _CHECKS = {
     "lebanon_scope": _check_lebanon_scope,
     "condition_attribution": _check_condition_attribution,
     "village_lexical_overlap": _check_village_lexical_overlap,
+    "village_alias": _check_village_alias,
 }
 
 _CASES = _load_cases()

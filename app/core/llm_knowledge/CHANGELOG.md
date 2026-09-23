@@ -11,6 +11,31 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-23 - Non-Lebanon Gaza scope reject + Wadi el-Selouqi Touline alias
+
+**Bugs:** Real production misses from the admin UI:
+- Incident `b8d802ad-baa8-40e7-b5f4-8631062d3278` was materialized as Zaoutar Ech-Charqiye / Bombs even though the bulletin text says the firing was toward Beit Lahia, north Gaza Strip: `... مشروع بيت لا.هيا شمال قطاع غز.ة`.
+- A recurring bulletin phrase `إلقاء قنابل مضيئة معادية باتجاه وادي السلوقي لجهة طلوسة` matched the unrelated ACS row `Slouqi/Slouky` in Baalbek instead of the intended south-Lebanon parent `تولين` / Touline (ACS 73282).
+
+**Rule / knowledge files changed:**
+- `rules/relevance_filter_prompt.md` - added an explicit geographic scope gate requiring the event location to be Lebanon or ambiguous-plausibly Lebanon, plus the Beit Lahia / Gaza negative example.
+- `terminology/village_aliases.yaml` and `Data/VillageLocationAliases.json` - added `وادي السلوقي`, `السلوقي`, `وادي سلوقي`, `wadi selouqi`, and `wadi salouqi` as aliases for Touline (ACS 73282).
+- `rules/village_matching.md` - documented the Wadi el-Selouqi -> Touline collision guard and the Slouqi/Slouky Baalbek false target.
+
+**Code / migration wiring:**
+- `lebanon_scope_filter.py` now includes Gaza obfuscation variants, Beit Lahia, Rafah, Khan Younis, Syria, Iraq, and Yemen markers.
+- `match_incident_action.py` short-circuits explicit non-Lebanon raw text to an unmatched match result before `MatchingService` can fuzzy-match a Lebanese village.
+- Alembic migration `20260923_0060_add_wadi_selouqi_touline_aliases.py` inserts the Touline aliases into `village_location_aliases`; generated only, not run.
+
+**Regression coverage:**
+- `tests/test_trusted_source_bypass.py::test_gaza_beit_lahia_bulletin_overrides_cnrs_include_true`
+- `tests/test_matching_service.py::test_action_short_circuits_non_lebanon_raw_text_before_matching`
+- `tests/test_matching_service.py::test_wadi_selouqi_alias_overrides_baalbek_slouqi_similarity`
+- `tests/eval_corpus/cases/gaza_beit_lahia_scope.json`
+- `tests/eval_corpus/cases/wadi_selouqi_touline_alias.json`
+- `eval/corpus/relevance_filter.jsonl`: `gaza-beit-lahia-non-lebanon-scope`
+- `eval/corpus/village_matching.jsonl`: `wadi-selouqi-touline-alias`
+
 ## 2026-09-21 - Curated matching exceptions and district-hint guard
 
 **Bugs:** Real/confirmed matching-layer failures:
