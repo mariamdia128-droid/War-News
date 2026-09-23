@@ -1,11 +1,8 @@
 """Reject bulletins whose stated location is explicitly outside Lebanon.
 
-Recon: a bulletin about "منطقة العين، غربي رام الله" (Ramallah, West Bank)
-was materialized as a Lebanon incident because the extracted place name
-"العين" happens to also be a real Lebanese village, so trigram similarity
-matched it with high confidence. Text similarity alone cannot see that the
-bulletin itself names a non-Lebanon place; this must be caught before
-extraction ever runs.
+Text similarity alone cannot tell that a non-Lebanon place name is outside the
+incident domain when extraction produces a token that also resembles a Lebanese
+village. This guard runs before extraction and again before matching.
 """
 
 NON_LEBANON_LOCATION_MARKERS: tuple[str, ...] = (
@@ -26,29 +23,33 @@ NON_LEBANON_LOCATION_MARKERS: tuple[str, ...] = (
     "طوباس",
     # Gaza
     "قطاع غزة",
+    "قطاع غز.ة",
     "غزة",
+    "غز.ة",
+    "بيت لاهيا",
+    "بيت لا.هيا",
+    "مشروع بيت لاهيا",
+    "مشروع بيت لا.هيا",
+    "رفح",
+    "خان يونس",
+    # Other explicit non-Lebanon country/location markers requested after the
+    # Gaza/Beit Lahia production miss. Keep these concrete, not inferential.
+    "سوريا",
+    "العراق",
+    "اليمن",
     # Jerusalem (routinely used as a Palestine/West Bank dateline)
     "القدس المحتلة",
     "الضفة المحتلة",
 )
 
-# Deliberately scoped to Palestine/West Bank/Gaza — the confirmed bug — and
-# not to every non-Lebanon country name. A bare country mention ("مصر",
-# "الأردن", "اليمن") is common in real Lebanon bulletins covering regional
-# diplomacy or comparisons without the incident itself happening there;
-# rejecting on those would risk false negatives with no matching confirmed
-# case yet. Broaden this list only against a real recurring example, per
-# the corpus-first policy in app/core/llm_knowledge/CHANGELOG.md.
+# Deliberately scoped to explicit location markers from confirmed/reviewed
+# misses. Do not turn this into a broad country-name geocoder; regional names
+# can appear in Lebanon bulletins as context, and every expansion should be
+# tied to a real corpus example per app/core/llm_knowledge/CHANGELOG.md.
 
 
 def is_non_lebanon_location(text: str | None) -> str | None:
-    """Return the matched marker if the text names a clearly non-Lebanon
-    location, else None. A plain substring check is deliberately used
-    (matching this codebase's other marker-token guards, e.g.
-    CONFLICT_ATTRIBUTION_TOKENS) rather than full geocoding, since these
-    place names have no legitimate Lebanese homonym worth risking a false
-    reject over.
-    """
+    """Return the matched marker if the text names a clearly non-Lebanon location."""
     if not text:
         return None
     for marker in NON_LEBANON_LOCATION_MARKERS:

@@ -1,0 +1,1 @@
+﻿{"input":"عاجل | إطلاق نار من آليات الاح.تلال الاسرا.ئيلي المتمركزة في محيط المستشفى الإندونيسي باتجاه المناطق الشرقية لمشروع بيت لا.هيا شمال قطاع غز.ة","expected_output":{"verdict":"not_relevant","reason":"event location is Beit Lahia / north Gaza Strip, not Lebanon"},"source":"real_bug","bug_ref":"gaza-beit-lahia-non-lebanon-scope"}

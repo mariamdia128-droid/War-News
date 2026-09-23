@@ -206,6 +206,33 @@ async def test_west_bank_bulletin_overrides_cnrs_include_true() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gaza_beit_lahia_bulletin_overrides_cnrs_include_true() -> None:
+    message = _message(
+        18,
+        cnrs_classification={
+            "include": True,
+            "event_domain": "conflict",
+            "event_subtype": "direct_attack",
+            "location_in_lebanon": True,
+        },
+        text=(
+            "🔴 عاجل | إطلاق نار من آليات الاح.تلال الاسرا.ئيلي المتمركزة "
+            "في محيط المستشفى الإندونيسي باتجاه المناطق الشرقية لمشروع "
+            "بيت لا.هيا شمال قطاع غز.ة"
+        ),
+    )
+    repo = _RepoStub([message])
+    action = FilterRelevanceAction(repo, _ClassifierStub(), _KeywordStub())
+
+    summary = await action.execute_async(FilterPendingMessagesData(batch_size=10))
+
+    assert summary.rejected == 1
+    assert summary.relevant == 0
+    assert repo.saved[0]["new_status"] == MessageStatus.rejected
+    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+
+
+@pytest.mark.asyncio
 async def test_untrusted_source_with_keywords_calls_classifier() -> None:
     message = _message(14)
     repo = _RepoStub([message])
