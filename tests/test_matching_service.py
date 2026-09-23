@@ -258,7 +258,7 @@ def test_ungazetteered_place_does_not_silently_match_unrelated_village() -> None
     assert vm.village_review_required is True
 
 
-def test_village_exception_overrides_alias_and_similarity() -> None:
+def test_confirmed_bouyout_sayyad_alias_overrides_similarity() -> None:
     mansouri = SimpleNamespace(
         id=42,
         ref_name_ar="المنصوري",
@@ -277,9 +277,10 @@ def test_village_exception_overrides_alias_and_similarity() -> None:
     )
 
     vm = result.village_matches[0]
-    assert vm.matched_village_id is None
-    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
-    assert vm.village_review_required is True
+    assert vm.matched_village_id == 42
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.village_review_required is False
+    assert vm.alias_matched is True
 
 
 def test_wadi_selouqi_alias_overrides_baalbek_slouqi_similarity() -> None:
@@ -313,6 +314,48 @@ def test_wadi_selouqi_alias_overrides_baalbek_slouqi_similarity() -> None:
     assert vm.village_confidence == 1.0
     assert vm.village_match_status == MatchResultStatus.matched
     assert vm.village_review_required is False
+    assert vm.alias_matched is True
+
+
+@pytest.mark.parametrize(
+    ("raw_name", "expected_id"),
+    [
+        ("وادي راج", 71367),
+        ("الدبشة", 71133),
+        ("جبل الرفيع", 71133),
+    ],
+)
+def test_confirmed_no_acs_aliases_override_similarity(raw_name: str, expected_id: int) -> None:
+    target = SimpleNamespace(
+        id=expected_id,
+        ref_name_ar=raw_name,
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    wrong = SimpleNamespace(
+        id=999,
+        ref_name_ar="الشرفية",
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+    )
+    villages = _GeoVillageRepositoryStub(
+        {raw_name: [(wrong, 0.92)]},
+        aliases={normalize_arabic_text(raw_name): target},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=[raw_name], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.raw_village_text == raw_name
+    assert vm.matched_village_id == expected_id
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.alias_matched is True
 
 
 def test_qada_hint_does_not_force_unrelated_candidate_without_name_overlap() -> None:

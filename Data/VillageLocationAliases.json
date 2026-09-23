@@ -1,163 +1,345 @@
 [
     {
-        "alias_text":  "Ø§Ù„Ù†Ø¨Ø·ÙŠØ©",
-        "parent_acs_code":  71111,
-        "note":  "Bare city/caza-seat mention â†’ Nabatieh Et-Tahta (not a new village row).",
-        "confidence":  "proposed",
-        "evidence":  "recon 2026-09-07: Ø§Ù„Ù†Ø¨Ø·ÙŠØ© fuzzy-matched Douair (543) at 0.615 via Ø§Ù„-suffix trap"
+        "alias_text": "Ø§Ù„Ù†Ø¨Ø·ÙŠØ©",
+        "parent_acs_code": 71111,
+        "note": "Bare city/caza-seat mention â†’ Nabatieh Et-Tahta (not a new village row).",
+        "confidence": "proposed",
+        "evidence": "recon 2026-09-07: Ø§Ù„Ù†Ø¨Ø·ÙŠØ© fuzzy-matched Douair (543) at 0.615 via Ø§Ù„-suffix trap"
     },
     {
-        "alias_text":  "Ù…Ø¯ÙŠÙ†Ø© Ø§Ù„Ù†Ø¨Ø·ÙŠØ©",
-        "parent_acs_code":  71111,
-        "note":  "Explicit city phrasing â†’ Nabatieh Et-Tahta.",
-        "confidence":  "proposed",
-        "evidence":  "recon 2026-09-07: Ù…Ø¯ÙŠÙ†Ø© Ø§Ù„Ù†Ø¨Ø·ÙŠØ© fuzzy-matched Zibdine (1529) at 0.474"
+        "alias_text": "Ù…Ø¯ÙŠÙ†Ø© Ø§Ù„Ù†Ø¨Ø·ÙŠØ©",
+        "parent_acs_code": 71111,
+        "note": "Explicit city phrasing â†’ Nabatieh Et-Tahta.",
+        "confidence": "proposed",
+        "evidence": "recon 2026-09-07: Ù…Ø¯ÙŠÙ†Ø© Ø§Ù„Ù†Ø¨Ø·ÙŠØ© fuzzy-matched Zibdine (1529) at 0.474"
     },
     {
-        "alias_text":  "Ø­ÙŠ Ø§Ù„Ù…Ø³Ù„Ø®",
-        "parent_acs_code":  71111,
-        "note":  "Nabatiyeh-city neighborhood â†’ parent city seat (Et-Tahta), not Masqa.",
-        "confidence":  "proposed",
-        "evidence":  "recon 2026-09-07 maslakh cluster; Masqa (995) is Ø§Ù„Ù…ØªÙ†/Ø¬Ø¨Ù„ Ù„Ø¨Ù†Ø§Ù†"
+        "alias_text": "Ø­ÙŠ Ø§Ù„Ù…Ø³Ù„Ø®",
+        "parent_acs_code": 71111,
+        "note": "Nabatiyeh-city neighborhood â†’ parent city seat (Et-Tahta), not Masqa.",
+        "confidence": "proposed",
+        "evidence": "recon 2026-09-07 maslakh cluster; Masqa (995) is Ø§Ù„Ù…ØªÙ†/Ø¬Ø¨Ù„ Ù„Ø¨Ù†Ø§Ù†"
     },
     {
-        "alias_text":  "Ø§Ù„Ù…Ø³Ù„Ø®",
-        "parent_acs_code":  71111,
-        "note":  "Extractor often strips Ø­ÙŠ; same parent as Ø­ÙŠ Ø§Ù„Ù…Ø³Ù„Ø®.",
-        "confidence":  "proposed",
-        "evidence":  "recon: extracted raw_village_text=Ø§Ù„Ù…Ø³Ù„Ø® â†’ Masqa 0.40"
+        "alias_text": "Ø§Ù„Ù…Ø³Ù„Ø®",
+        "parent_acs_code": 71111,
+        "note": "Extractor often strips Ø­ÙŠ; same parent as Ø­ÙŠ Ø§Ù„Ù…Ø³Ù„Ø®.",
+        "confidence": "proposed",
+        "evidence": "recon: extracted raw_village_text=Ø§Ù„Ù…Ø³Ù„Ø® â†’ Masqa 0.40"
     },
     {
-        "alias_text":  "Ù…Ø­ÙŠØ· Ø§Ù„Ù†Ø¨Ø·ÙŠØ© Ø§Ù„ÙÙˆÙ‚Ø§",
-        "parent_acs_code":  71113,
-        "note":  "Descriptor+name compound seen splitting Houmine vs Douair; pin to El-Faouka.",
-        "confidence":  "proposed",
-        "evidence":  "14d scope: identical Ù‚ØµÙ Ù…Ø­ÙŠØ· Ø§Ù„Ù†Ø¨Ø·ÙŠØ© Ø§Ù„ÙÙˆÙ‚Ø§ â†’ Houmine 703 vs Douair 543"
+        "alias_text": "Ù…Ø­ÙŠØ· Ø§Ù„Ù†Ø¨Ø·ÙŠØ© Ø§Ù„ÙÙˆÙ‚Ø§",
+        "parent_acs_code": 71113,
+        "note": "Descriptor+name compound seen splitting Houmine vs Douair; pin to El-Faouka.",
+        "confidence": "proposed",
+        "evidence": "14d scope: identical Ù‚ØµÙ Ù…Ø­ÙŠØ· Ø§Ù„Ù†Ø¨Ø·ÙŠØ© Ø§Ù„ÙÙˆÙ‚Ø§ â†’ Houmine 703 vs Douair 543"
     },
     {
-        "alias_text":  "Ø¯ÙˆØ­Ø© ÙƒÙØ±Ø±Ù…Ø§Ù†",
-        "parent_acs_code":  71133,
-        "note":  "Neighborhood/compound of Kfar Roummane (Ø¯ÙˆØ­Ø© â€¦).",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 21 msgs, matched_low_confidence â†’ 851 at 0.43"
+        "alias_text": "Ø¯ÙˆØ­Ø© ÙƒÙØ±Ø±Ù…Ø§Ù†",
+        "parent_acs_code": 71133,
+        "note": "Neighborhood/compound of Kfar Roummane (Ø¯ÙˆØ­Ø© â€¦).",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 21 msgs, matched_low_confidence â†’ 851 at 0.43"
     },
     {
-        "alias_text":  "ÙˆØ§Ø¯ÙŠ Ø²Ø¨Ù‚ÙŠÙ†",
-        "parent_acs_code":  62286,
-        "note":  "Valley-of-village compound â†’ Zebqine.",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 9 msgs, matched_low_confidence â†’ 1523 at 0.55"
+        "alias_text": "ÙˆØ§Ø¯ÙŠ Ø²Ø¨Ù‚ÙŠÙ†",
+        "parent_acs_code": 62286,
+        "note": "Valley-of-village compound â†’ Zebqine.",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 9 msgs, matched_low_confidence â†’ 1523 at 0.55"
     },
     {
-        "alias_text":  "Ø­Ø±Ø´ ÙƒÙˆÙ†ÙŠÙ†",
-        "parent_acs_code":  72251,
-        "note":  "Grove descriptor + village â†’ Kounine.",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 3 msgs; descriptor strip still pending"
+        "alias_text": "Ø­Ø±Ø´ ÙƒÙˆÙ†ÙŠÙ†",
+        "parent_acs_code": 72251,
+        "note": "Grove descriptor + village â†’ Kounine.",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 3 msgs; descriptor strip still pending"
     },
     {
-        "alias_text":  "Ø­Ø±Ø´ Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±",
-        "parent_acs_code":  71115,
-        "note":  "Grove descriptor + village â†’ Aali Et-Taher.",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 3 msgs"
+        "alias_text": "Ø­Ø±Ø´ Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±",
+        "parent_acs_code": 71115,
+        "note": "Grove descriptor + village â†’ Aali Et-Taher.",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 3 msgs"
     },
     {
-        "alias_text":  "Ù…Ø­ÙŠØ· Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ",
-        "parent_acs_code":  62296,
-        "note":  "Outskirts phrasing â†’ Mansouri Sour (same pattern as Ù…Ø­ÙŠØ· Ø§Ù„Ù†Ø¨Ø·ÙŠØ© Ø§Ù„ÙÙˆÙ‚Ø§).",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ is top non-Nabatiyeh mention (26 msgs); fuzzy Ù…Ø­ÙŠØ· Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ â†’ 976 at 0.64"
+        "alias_text": "Ù…Ø­ÙŠØ· Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ",
+        "parent_acs_code": 62296,
+        "note": "Outskirts phrasing â†’ Mansouri Sour (same pattern as Ù…Ø­ÙŠØ· Ø§Ù„Ù†Ø¨Ø·ÙŠØ© Ø§Ù„ÙÙˆÙ‚Ø§).",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ is top non-Nabatiyeh mention (26 msgs); fuzzy Ù…Ø­ÙŠØ· Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ â†’ 976 at 0.64"
     },
     {
-        "alias_text":  "Ø£Ø·Ø±Ø§Ù Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ",
-        "parent_acs_code":  62296,
-        "note":  "Outskirts phrasing â†’ Mansouri Sour.",
-        "confidence":  "proposed",
-        "evidence":  "common bulletin phrasing paired with Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ in daily summaries"
+        "alias_text": "Ø£Ø·Ø±Ø§Ù Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ",
+        "parent_acs_code": 62296,
+        "note": "Outskirts phrasing â†’ Mansouri Sour.",
+        "confidence": "proposed",
+        "evidence": "common bulletin phrasing paired with Ø§Ù„Ù…Ù†ØµÙˆØ±ÙŠ in daily summaries"
     },
     {
-        "alias_text":  "Ù…Ø­ÙŠØ· Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±",
-        "parent_acs_code":  71115,
-        "note":  "Outskirts phrasing â†’ Aali Et-Taher.",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø± appears in 10 msgs; same descriptor pattern"
+        "alias_text": "Ù…Ø­ÙŠØ· Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±",
+        "parent_acs_code": 71115,
+        "note": "Outskirts phrasing â†’ Aali Et-Taher.",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø± appears in 10 msgs; same descriptor pattern"
     },
     {
-        "alias_text":  "Ø£Ø·Ø±Ø§Ù Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±",
-        "parent_acs_code":  71115,
-        "note":  "Outskirts phrasing â†’ Aali Et-Taher.",
-        "confidence":  "proposed",
-        "evidence":  "common bulletin phrasing with Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±"
+        "alias_text": "Ø£Ø·Ø±Ø§Ù Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±",
+        "parent_acs_code": 71115,
+        "note": "Outskirts phrasing â†’ Aali Et-Taher.",
+        "confidence": "proposed",
+        "evidence": "common bulletin phrasing with Ø¹Ù„ÙŠ Ø§Ù„Ø·Ø§Ù‡Ø±"
     },
     {
-        "alias_text":  "Ø§Ù„Ù‚Ù†Ø·Ø±Ø©",
-        "parent_acs_code":  73276,
-        "note":  "South-Lebanon Ù‚Ù†Ø·Ø±Ø© (Marjayoun), not Akkar Qantarat Aakkar (ref has Ø§Ù„).",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 11 msgs matched id=1229 Akkar; ACS 73276 ref=Ù‚Ù†Ø·Ø±Ø© caza=Ù…Ø±Ø¬Ø¹ÙŠÙˆÙ†"
+        "alias_text": "Ø§Ù„Ù‚Ù†Ø·Ø±Ø©",
+        "parent_acs_code": 73276,
+        "note": "South-Lebanon Ù‚Ù†Ø·Ø±Ø© (Marjayoun), not Akkar Qantarat Aakkar (ref has Ø§Ù„).",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 11 msgs matched id=1229 Akkar; ACS 73276 ref=Ù‚Ù†Ø·Ø±Ø© caza=Ù…Ø±Ø¬Ø¹ÙŠÙˆÙ†"
     },
     {
-        "alias_text":  "Ø¹ÙŠÙ†Ø§Ø«Ø§",
-        "parent_acs_code":  72119,
-        "note":  "South-Lebanon Ainata (Bint Jbeil), not Metn Aaynab (Ø¹ÙŠÙ†Ø§Ø¨).",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 4 msgs matched_low_confidence â†’ 142 Aaynab; correct ACS 72119 Ø¹ÙŠÙ†Ø§ØªØ§ Ø¨Ù†Øª Ø¬Ø¨ÙŠÙ„"
+        "alias_text": "Ø¹ÙŠÙ†Ø§Ø«Ø§",
+        "parent_acs_code": 72119,
+        "note": "South-Lebanon Ainata (Bint Jbeil), not Metn Aaynab (Ø¹ÙŠÙ†Ø§Ø¨).",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 4 msgs matched_low_confidence â†’ 142 Aaynab; correct ACS 72119 Ø¹ÙŠÙ†Ø§ØªØ§ Ø¨Ù†Øª Ø¬Ø¨ÙŠÙ„"
     },
     {
-        "alias_text":  "Ø¹ÙŠÙ†Ø§ØªØ§",
-        "parent_acs_code":  72119,
-        "note":  "Spelling variant of Ø¹ÙŠÙ†Ø§Ø«Ø§ â†’ Aaynata Bent Jbayl (war-news default; Baalbek Ø¹ÙŠÙ†Ø§ØªØ§ also exists).",
-        "confidence":  "proposed",
-        "evidence":  "same family as Ø¹ÙŠÙ†Ø§Ø«Ø§; war-news southern usage dominates the 14d backlog"
+        "alias_text": "Ø¹ÙŠÙ†Ø§ØªØ§",
+        "parent_acs_code": 72119,
+        "note": "Spelling variant of Ø¹ÙŠÙ†Ø§Ø«Ø§ â†’ Aaynata Bent Jbayl (war-news default; Baalbek Ø¹ÙŠÙ†Ø§ØªØ§ also exists).",
+        "confidence": "proposed",
+        "evidence": "same family as Ø¹ÙŠÙ†Ø§Ø«Ø§; war-news southern usage dominates the 14d backlog"
     },
     {
-        "alias_text":  "Ø§Ù„Ù…Ø¬ÙŠØ¯ÙŠØ©",
-        "parent_acs_code":  74177,
-        "note":  "Majidiye Hasbaya, not MassaaoudiyÃ© (Akkar).",
-        "confidence":  "proposed",
-        "evidence":  "89-pair backlog: 2 msgs matched_low_confidence â†’ 998 Ø§Ù„Ù…Ø³Ø¹ÙˆØ¯ÙŠØ©; ACS 74177 Ù…Ø¬ÙŠØ¯ÙŠØ© Ø­Ø§ØµØ¨ÙŠØ§"
+        "alias_text": "Ø§Ù„Ù…Ø¬ÙŠØ¯ÙŠØ©",
+        "parent_acs_code": 74177,
+        "note": "Majidiye Hasbaya, not MassaaoudiyÃ© (Akkar).",
+        "confidence": "proposed",
+        "evidence": "89-pair backlog: 2 msgs matched_low_confidence â†’ 998 Ø§Ù„Ù…Ø³Ø¹ÙˆØ¯ÙŠØ©; ACS 74177 Ù…Ø¬ÙŠØ¯ÙŠØ© Ø­Ø§ØµØ¨ÙŠØ§"
     },
     {
-        "alias_text":  "Ø­Ø§Ø±ÙˆÙ",
-        "parent_acs_code":  71331,
-        "note":  "Common Arabic spelling of Harouf En-Nabatiyeh; ACS ref_name_ar omits the internal alef.",
-        "confidence":  "proposed",
-        "evidence":  "Confirmed road bulletin spelling Ø­Ø§Ø±ÙˆÙ; gazetteer ACS 71331 stores Ø­Ø±ÙˆÙ."
+        "alias_text": "Ø­Ø§Ø±ÙˆÙ",
+        "parent_acs_code": 71331,
+        "note": "Common Arabic spelling of Harouf En-Nabatiyeh; ACS ref_name_ar omits the internal alef.",
+        "confidence": "proposed",
+        "evidence": "Confirmed road bulletin spelling Ø­Ø§Ø±ÙˆÙ; gazetteer ACS 71331 stores Ø­Ø±ÙˆÙ."
     },
     {
-        "alias_text":  "وادي السلوقي",
-        "parent_acs_code":  73282,
-        "note":  "Wadi el-Selouqi recurring southern valley reference -\u003e Touline (Marjaayoun), not Slouqi/Slouky Baalbek.",
-        "confidence":  "proposed",
-        "evidence":  "Production bug 2026-09-23: وادي السلوقي was matched to ACS Slouqi/Slouky Baalbek instead of Touline."
+        "alias_text": "وادي السلوقي",
+        "parent_acs_code": 73282,
+        "note": "Wadi el-Selouqi recurring southern valley reference -> Touline (Marjaayoun), not Slouqi/Slouky Baalbek.",
+        "confidence": "proposed",
+        "evidence": "Production bug 2026-09-23: وادي السلوقي was matched to ACS Slouqi/Slouky Baalbek instead of Touline."
     },
     {
-        "alias_text":  "السلوقي",
-        "parent_acs_code":  73282,
-        "note":  "Extractor may strip وادي; same Wadi el-Selouqi context -\u003e Touline.",
-        "confidence":  "proposed",
-        "evidence":  "Production bug 2026-09-23."
+        "alias_text": "السلوقي",
+        "parent_acs_code": 73282,
+        "note": "Extractor may strip وادي; same Wadi el-Selouqi context -> Touline.",
+        "confidence": "proposed",
+        "evidence": "Production bug 2026-09-23."
     },
     {
-        "alias_text":  "وادي سلوقي",
-        "parent_acs_code":  73282,
-        "note":  "Spelling variant for Wadi el-Selouqi -\u003e Touline.",
-        "confidence":  "proposed",
-        "evidence":  "Production bug 2026-09-23."
+        "alias_text": "وادي سلوقي",
+        "parent_acs_code": 73282,
+        "note": "Spelling variant for Wadi el-Selouqi -> Touline.",
+        "confidence": "proposed",
+        "evidence": "Production bug 2026-09-23."
     },
     {
-        "alias_text":  "wadi selouqi",
-        "parent_acs_code":  73282,
-        "note":  "Latin variant for Wadi el-Selouqi -\u003e Touline.",
-        "confidence":  "proposed",
-        "evidence":  "Production bug 2026-09-23."
+        "alias_text": "wadi selouqi",
+        "parent_acs_code": 73282,
+        "note": "Latin variant for Wadi el-Selouqi -> Touline.",
+        "confidence": "proposed",
+        "evidence": "Production bug 2026-09-23."
     },
     {
-        "alias_text":  "wadi salouqi",
-        "parent_acs_code":  73282,
-        "note":  "Latin variant for Wadi el-Selouqi -\u003e Touline.",
-        "confidence":  "proposed",
-        "evidence":  "Production bug 2026-09-23."
+        "alias_text": "wadi salouqi",
+        "parent_acs_code": 73282,
+        "note": "Latin variant for Wadi el-Selouqi -> Touline.",
+        "confidence": "proposed",
+        "evidence": "Production bug 2026-09-23."
+    },
+    {
+        "alias_text": "البياضة",
+        "parent_acs_code": 62299,
+        "note": "Confirmed no-ACS local name -> Iskandarouna Sour.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "محمية وادي الحجير",
+        "parent_acs_code": 73262,
+        "note": "Confirmed no-ACS local name -> Qabrikha.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "محرونة",
+        "parent_acs_code": 62215,
+        "note": "Confirmed no-ACS local name -> Mazraat Mechref.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "بيوت السياد",
+        "parent_acs_code": 62296,
+        "note": "Confirmed no-ACS local name -> Mansouri Sour.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "السماعية",
+        "parent_acs_code": 62179,
+        "note": "Confirmed no-ACS local name -> Deir Qanoun El-Aain.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "المعلية",
+        "parent_acs_code": 62179,
+        "note": "Confirmed no-ACS local name -> Deir Qanoun El-Aain.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "المالكية",
+        "parent_acs_code": 62277,
+        "note": "Confirmed no-ACS local name -> Chaaitiye.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "لبونة",
+        "parent_acs_code": 62316,
+        "note": "Confirmed no-ACS local name -> Aalma Ech-Chaab.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "الناقورة",
+        "parent_acs_code": 62312,
+        "note": "Confirmed no-ACS local name -> Borj En-Naqoura.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "الدبشة",
+        "parent_acs_code": 71133,
+        "note": "Confirmed no-ACS local name -> Kfar Roummane.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "جبل الرفيع",
+        "parent_acs_code": 71133,
+        "note": "Confirmed no-ACS local name -> Kfar Roummane.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "وادي راج",
+        "parent_acs_code": 71367,
+        "note": "Confirmed no-ACS local name -> Zaoutar Ech-Charqiye.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "الوزاني",
+        "parent_acs_code": 74141,
+        "note": "Confirmed no-ACS local name -> Salaiyeb.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "وادي الحير",
+        "parent_acs_code": 74118,
+        "note": "Confirmed no-ACS local name -> Rachaiya El-Foukhar.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "وادي إسطبل",
+        "parent_acs_code": 73234,
+        "note": "Confirmed no-ACS local name -> Houla.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "وادي الجمل",
+        "parent_acs_code": 73250,
+        "note": "Confirmed no-ACS local name -> Meiss Ej-Jabal.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "خلة الدواوير",
+        "parent_acs_code": 72229,
+        "note": "Confirmed no-ACS local name -> Chaqra.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "عريض الماريحيا",
+        "parent_acs_code": 73282,
+        "note": "Confirmed no-ACS local name -> Touline.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "حوشين",
+        "parent_acs_code": 73250,
+        "note": "Confirmed no-ACS local name -> Meiss Ej-Jabal.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "خلة الساقية",
+        "parent_acs_code": 73234,
+        "note": "Confirmed no-ACS local name -> Houla.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "ابو مكنا",
+        "parent_acs_code": 73232,
+        "note": "Confirmed no-ACS local name -> Taybet Matjaayoun.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "شانوح",
+        "parent_acs_code": 74160,
+        "note": "Confirmed no-ACS local name -> Kfar Chouba.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "الرمثا",
+        "parent_acs_code": 74160,
+        "note": "Confirmed no-ACS local name -> Kfar Chouba.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "وادي حسن",
+        "parent_acs_code": 62297,
+        "note": "Confirmed no-ACS local name -> Majdelzoun.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "جبل الوردة",
+        "parent_acs_code": 73245,
+        "note": "Confirmed no-ACS local name -> Markaba.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
+    },
+    {
+        "alias_text": "جسر الخردلي",
+        "parent_acs_code": 73151,
+        "note": "Confirmed no-ACS local name -> Qlaiaa.",
+        "confidence": "confirmed",
+        "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
     }
 ]

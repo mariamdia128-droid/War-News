@@ -11,6 +11,29 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-23 - Confirmed no-ACS local place aliases with news-side display names
+
+**Bug / accuracy gap:** The Wadi el-Selouqi -> Touline fix was a one-off. A confirmed ACS reconciliation spreadsheet supplied 28 local/colloquial names with no ACS row of their own, including `وادي راج` -> Zaoutar Ech-Charqiye (ACS 71367), `الدبشة` and `جبل الرفيع` -> Kfar Roummane (ACS 71133), and `بيوت السياد` -> Mansouri Sour (ACS 62296). Without aliases, fuzzy matching could miss, downgrade, or collapse these news-side place names into only the parent ACS village display.
+
+**Rule / knowledge files changed:**
+- `terminology/village_aliases.yaml` and `Data/VillageLocationAliases.json` now include all confirmed no-ACS aliases: `البياضة`, `محمية وادي الحجير`, `محرونة`, `بيوت السياد`, `السماعية`, `المعلية`, `المالكية`, `لبونة`, `الناقورة`, `الدبشة`, `جبل الرفيع`, `وادي راج`, `الوزاني`, `وادي الحير`, `وادي إسطبل`, `وادي الجمل`, `خلة الدواوير`, `عريض الماريحيا`, `حوشين`, `خلة الساقية`, `ابو مكنا`, `شانوح`, `الرمثا`, `وادي حسن`, `جبل الوردة`, and `جسر الخردلي`; existing `وادي السلوقي` remains Touline (ACS 73282).
+- `terminology/village_match_exceptions.yaml` removed `بيوت السياد` from no-fuzzy exceptions because the ACS parent is now confirmed.
+- `rules/village_matching.md` now documents the general pattern: confirmed no-ACS local names resolve to a parent ACS row for geo/matching/dedup, while the incident display preserves the news-side phrase.
+
+**Code / migration wiring:**
+- `MatchResultDTO` carries `alias_matched`; `MatchingService` sets it for exact alias hits.
+- `incidents.village_display_name` preserves the alias/raw news phrase at materialization time; list/detail/realtime display uses it before falling back to the ACS village label.
+- Alembic migration `20260923_0061_confirmed_no_acs_place_aliases.py` adds `incidents.village_display_name` and upserts the confirmed aliases into `village_location_aliases`; generated only, not run.
+
+**Regression coverage:**
+- `tests/test_matching_service.py::test_confirmed_no_acs_aliases_override_similarity`
+- `tests/test_matching_service.py::test_wadi_selouqi_alias_overrides_baalbek_slouqi_similarity`
+- `tests/test_incident_materialization_service.py::test_alias_matched_village_preserves_news_display_name`
+- `tests/test_incident_materialization_service.py::test_direct_village_match_keeps_default_display_fallback`
+- `tests/eval_corpus/cases/wadi_raj_zaoutar_alias.json`
+- `tests/eval_corpus/cases/kfar_roummane_two_local_aliases.json`
+- `eval/corpus/village_matching.jsonl`: `bouyout-sayyad-confirmed-alias`
+
 ## 2026-09-23 - Non-Lebanon Gaza scope reject + Wadi el-Selouqi Touline alias
 
 **Bugs:** Real production misses from the admin UI:

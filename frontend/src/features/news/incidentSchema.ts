@@ -166,13 +166,12 @@ export const incidentFieldGroups: FieldGroup[] = [
   },
 ];
 
-// moh, worker_name, source_link, source_link_2, martyrs — shown in the record
+// moh, worker_name, source_link, martyrs — shown in the record
 // header rather than a collapsible group.
 export const recordInfoFields: FieldDef[] = [
   flag("moh"),
   text("worker_name"),
   text("source_link"),
-  text("source_link_2"),
   text("martyrs"),
 ];
 

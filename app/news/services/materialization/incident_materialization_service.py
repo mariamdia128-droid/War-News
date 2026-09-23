@@ -166,7 +166,8 @@ def _new_incident_payload(incident: Incident) -> str:
         ),
         "condition_id": incident.condition_id,
         "village": (
-            village.ref_name_en or village.cad_name if village is not None else None
+            incident.village_display_name
+            or (village.ref_name_en or village.cad_name if village is not None else None)
         ),
         "condition": condition.action_en if condition is not None else None,
         "condition_ar": condition.action_ar if condition is not None else None,
@@ -484,6 +485,7 @@ class IncidentMaterializationService:
                     representative=representative,
                     casualties=village_casualties,
                     village_id=village_id,
+                    village_display_name=self._village_display_name(village_match),
                     condition_id=condition_id,
                     event_datetime=event_datetime,
                     origin_villages=origin_villages,
@@ -624,6 +626,7 @@ class IncidentMaterializationService:
                 representative=representative,
                 casualties=village_casualties,
                 village_id=village_id,
+                village_display_name=self._village_display_name(village_match),
                 condition_id=condition_id,
                 event_datetime=event_datetime,
                 origin_villages=origin_villages,
@@ -883,6 +886,7 @@ class IncidentMaterializationService:
         representative: RawMessage,
         casualties: ExtractionCasualties,
         village_id: int | None,
+        village_display_name: str | None,
         condition_id: int,
         event_datetime: datetime,
         origin_villages: list[str],
@@ -937,6 +941,7 @@ class IncidentMaterializationService:
         incident = Incident(
             raw_message_id=representative.id,
             village_id=village_id,
+            village_display_name=village_display_name,
             condition_id=condition_id,
             source_id=representative.source_id,
             event_date=event_datetime.date(),
@@ -1274,6 +1279,7 @@ class IncidentMaterializationService:
             incident = Incident(
                 raw_message_id=representative.id,
                 village_id=village_id,
+                village_display_name=self._village_display_name(village_match),
                 condition_id=village_condition_id,
                 source_id=representative.source_id,
                 event_date=event_datetime.date(),
@@ -1403,6 +1409,7 @@ class IncidentMaterializationService:
             ),
             "raw_village_text": match_result.get("raw_village_text"),
             "village_role": match_result.get("village_role", VillageRole.target.value),
+            "alias_matched": match_result.get("alias_matched", False),
         }
         return {**match_result, "village_matches": [village_match]}
 
@@ -1769,6 +1776,16 @@ class IncidentMaterializationService:
             if normalized and normalized not in origin_villages:
                 origin_villages.append(normalized)
         return origin_villages
+
+    @staticmethod
+    def _village_display_name(village_match: dict[str, Any]) -> str | None:
+        if not village_match.get("alias_matched"):
+            return None
+        raw_text = village_match.get("raw_village_text")
+        if not isinstance(raw_text, str):
+            return None
+        normalized = raw_text.strip()
+        return normalized or None
 
     @staticmethod
     def _origin_village_note(origin_villages: list[str]) -> str | None:

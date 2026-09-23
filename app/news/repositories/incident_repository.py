@@ -143,7 +143,11 @@ class IncidentRepository(IncidentRepositoryInterface):
                 Incident.id.label("id"),
                 RawMessage.id.label("raw_message_id"),
                 RawMessage.status.label("raw_status"),
-                func.coalesce(Village.ref_name_en, Village.cad_name).label("village"),
+                func.coalesce(
+                    Incident.village_display_name,
+                    Village.ref_name_en,
+                    Village.cad_name,
+                ).label("village"),
                 Condition.action_en.label("condition"),
                 Condition.action_ar.label("condition_ar"),
                 event_date.label("event_date"),
@@ -307,7 +311,11 @@ class IncidentRepository(IncidentRepositoryInterface):
             select(
                 Incident,
                 Village,
-                func.coalesce(Village.ref_name_en, Village.cad_name).label("village"),
+                func.coalesce(
+                    Incident.village_display_name,
+                    Village.ref_name_en,
+                    Village.cad_name,
+                ).label("village"),
                 Condition.action_en.label("condition"),
                 case(
                     (Source.type == SourceType.telegram, "Telegram"),
@@ -320,6 +328,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                 ).label("source"),
                 self._source_reference_expression().label("source_reference"),
                 RawMessage.source_name.label("source_name"),
+                RawMessage.raw_payload.label("raw_payload"),
                 RawMessage.match_result.label("match_result"),
                 case((self._needs_verification_column(), False), else_=True).label(
                     "matched"
@@ -387,6 +396,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                     select(
                         Village.id,
                         func.coalesce(
+                            Incident.village_display_name,
                             Village.ref_name_en,
                             Village.cad_name,
                             Village.acs_name,
@@ -427,7 +437,8 @@ class IncidentRepository(IncidentRepositoryInterface):
             "moh": incident.moh,
             "martyrs": incident.martyrs,
             "worker_name": incident.worker_name,
-            "source_link": incident.source_link,
+            "source_link": incident.source_link
+            or self._source_link_from_raw_payload(row.raw_payload),
             "source_link_2": incident.source_link_2,
             "total_deaths": incident.total_deaths,
             "total_injuries": incident.total_injuries,
@@ -546,7 +557,11 @@ class IncidentRepository(IncidentRepositoryInterface):
             select(
                 Incident,
                 Condition.action_en.label("condition"),
-                func.coalesce(Village.ref_name_en, Village.cad_name).label("village"),
+                func.coalesce(
+                    Incident.village_display_name,
+                    Village.ref_name_en,
+                    Village.cad_name,
+                ).label("village"),
             )
             .outerjoin(Condition, Condition.id == Incident.condition_id)
             .outerjoin(Village, Village.id == Incident.village_id)
@@ -2107,6 +2122,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                     Village.ref_name_en.ilike(village_pattern),
                     Village.cad_name.ilike(village_pattern),
                     Village.ref_name_ar.ilike(village_pattern),
+                    Incident.village_display_name.ilike(village_pattern),
                 )
             )
         if params.condition:
@@ -2410,6 +2426,18 @@ class IncidentRepository(IncidentRepositoryInterface):
             func.nullif(RawMessage.source_name, ""),
             RawMessage.external_message_id,
         )
+
+    @staticmethod
+    def _source_link_from_raw_payload(raw_payload: Any) -> str | None:
+        if not isinstance(raw_payload, dict):
+            return None
+        for key in ("post_link", "source_link", "link", "url", "post_url"):
+            value = raw_payload.get(key)
+            if isinstance(value, str):
+                value = value.strip()
+                if value:
+                    return value
+        return None
 
     @staticmethod
     def _sanitize_optional_text(value: str | None) -> str | None:

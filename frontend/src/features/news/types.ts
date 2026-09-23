@@ -191,7 +191,6 @@ export type IncidentUpdatePayload = {
   note: string | null;
   worker_name: string | null;
   source_link: string | null;
-  source_link_2: string | null;
   total_deaths: number | null;
   total_injuries: number | null;
   deaths: number | null;

@@ -1,0 +1,18 @@
+{
+  "bug_ref": "wadi-raj-zaoutar-alias",
+  "description": "Confirmed no-ACS local name Wadi Raj must resolve to Zaoutar Ech-Charqiye and retain the news-side display label.",
+  "source": "ACS reconciliation spreadsheet",
+  "check": "village_alias",
+  "input": {
+    "mention": "وادي راج",
+    "aliases": {
+      "وادي راج": 71367
+    }
+  },
+  "expected": {
+    "matched_village_id": 71367,
+    "display_name": "وادي راج",
+    "status": "matched",
+    "alias_matched": true
+  }
+}

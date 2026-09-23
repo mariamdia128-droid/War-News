@@ -49,6 +49,7 @@ class Incident(Base):
         ForeignKey("villages.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    village_display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     condition_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("conditions.id", ondelete="RESTRICT"),

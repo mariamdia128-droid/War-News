@@ -198,7 +198,6 @@ export const fieldLabels: FieldLabel[] = [
   { field_name: "moh", label_en: "MoH cross-checked" },
   { field_name: "worker_name", label_en: "Data worker" },
   { field_name: "source_link", label_en: "Source link" },
-  { field_name: "source_link_2", label_en: "Source link 2" },
   { field_name: "martyrs", label_en: "Martyrs (names)" },
   { field_name: "note", label_en: "Note" },
 ];

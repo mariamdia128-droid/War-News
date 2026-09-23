@@ -314,6 +314,31 @@ def test_low_confidence_village_match_materializes_needing_review() -> None:
     assert service.stats.inserted == 1
 
 
+def test_alias_matched_village_preserves_news_display_name() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    match_result = _match_result()
+    match_result["village_matches"][0]["raw_village_text"] = "الدبشة"
+    match_result["village_matches"][0]["alias_matched"] = True
+
+    result = service.materialize(_representative(match_result=match_result))
+
+    assert len(result) == 1
+    incident = next(value for value in db.committed if isinstance(value, Incident))
+    assert incident.village_id == 976
+    assert incident.village_display_name == "الدبشة"
+
+
+def test_direct_village_match_keeps_default_display_fallback() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+
+    service.materialize(_representative())
+
+    incident = next(value for value in db.committed if isinstance(value, Incident))
+    assert incident.village_display_name is None
+
+
 def test_casualty_fields_map_from_top_level_extraction_result() -> None:
     db = _SessionStub()
     service = IncidentMaterializationService(db)  # type: ignore[arg-type]

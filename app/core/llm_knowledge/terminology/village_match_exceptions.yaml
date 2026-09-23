@@ -1,7 +1,2 @@
 # Village mention exceptions that must not be trusted to fuzzy matching.
 # Shape follows the other terminology YAML catalogs: term/category/meaning/notes/normalized.
-
-- term: "بيوت السياد"
-  category: village_do_not_fuzzy_match
-  meaning: needs_review
-  notes: "Confirmed false match: بيوت السياد -> المنصوري. No ACS row or alias is confirmed for this place name; promote to a real gazetteer/alias entry only after human confirmation."

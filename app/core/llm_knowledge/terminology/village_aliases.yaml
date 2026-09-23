@@ -113,6 +113,138 @@
   meaning: "acs:73282"
   notes: "Wadi el-Selouqi recurring southern valley reference -> Touline (Marjaayoun), not Slouqi/Slouky Baalbek. confidence=proposed; production bug 2026-09-23."
 
+# --- Confirmed no-ACS local/colloquial names (ACS reconciliation spreadsheet) ---
+
+- term: "البياضة"
+  category: village_location_alias
+  meaning: "acs:62299"
+  notes: "Confirmed no-ACS local name -> Iskandarouna Sour."
+
+- term: "محمية وادي الحجير"
+  category: village_location_alias
+  meaning: "acs:73262"
+  notes: "Confirmed no-ACS local name -> Qabrikha."
+
+- term: "محرونة"
+  category: village_location_alias
+  meaning: "acs:62215"
+  notes: "Confirmed no-ACS local name -> Mazraat Mechref."
+
+- term: "بيوت السياد"
+  category: village_location_alias
+  meaning: "acs:62296"
+  notes: "Confirmed no-ACS local name -> Mansouri Sour."
+
+- term: "السماعية"
+  category: village_location_alias
+  meaning: "acs:62179"
+  notes: "Confirmed no-ACS local name -> Deir Qanoun El-Aain."
+
+- term: "المعلية"
+  category: village_location_alias
+  meaning: "acs:62179"
+  notes: "Confirmed no-ACS local name -> Deir Qanoun El-Aain."
+
+- term: "المالكية"
+  category: village_location_alias
+  meaning: "acs:62277"
+  notes: "Confirmed no-ACS local name -> Chaaitiye."
+
+- term: "لبونة"
+  category: village_location_alias
+  meaning: "acs:62316"
+  notes: "Confirmed no-ACS local name -> Aalma Ech-Chaab."
+
+- term: "الناقورة"
+  category: village_location_alias
+  meaning: "acs:62312"
+  notes: "Confirmed no-ACS local name -> Borj En-Naqoura."
+
+- term: "الدبشة"
+  category: village_location_alias
+  meaning: "acs:71133"
+  notes: "Confirmed no-ACS local name -> Kfar Roummane."
+
+- term: "جبل الرفيع"
+  category: village_location_alias
+  meaning: "acs:71133"
+  notes: "Confirmed no-ACS local name -> Kfar Roummane."
+
+- term: "وادي راج"
+  category: village_location_alias
+  meaning: "acs:71367"
+  notes: "Confirmed no-ACS local name -> Zaoutar Ech-Charqiye."
+
+- term: "الوزاني"
+  category: village_location_alias
+  meaning: "acs:74141"
+  notes: "Confirmed no-ACS local name -> Salaiyeb."
+
+- term: "وادي الحير"
+  category: village_location_alias
+  meaning: "acs:74118"
+  notes: "Confirmed no-ACS local name -> Rachaiya El-Foukhar."
+
+- term: "وادي إسطبل"
+  category: village_location_alias
+  meaning: "acs:73234"
+  notes: "Confirmed no-ACS local name -> Houla."
+
+- term: "وادي الجمل"
+  category: village_location_alias
+  meaning: "acs:73250"
+  notes: "Confirmed no-ACS local name -> Meiss Ej-Jabal."
+
+- term: "خلة الدواوير"
+  category: village_location_alias
+  meaning: "acs:72229"
+  notes: "Confirmed no-ACS local name -> Chaqra."
+
+- term: "عريض الماريحيا"
+  category: village_location_alias
+  meaning: "acs:73282"
+  notes: "Confirmed no-ACS local name -> Touline."
+
+- term: "حوشين"
+  category: village_location_alias
+  meaning: "acs:73250"
+  notes: "Confirmed no-ACS local name -> Meiss Ej-Jabal."
+
+- term: "خلة الساقية"
+  category: village_location_alias
+  meaning: "acs:73234"
+  notes: "Confirmed no-ACS local name -> Houla."
+
+- term: "ابو مكنا"
+  category: village_location_alias
+  meaning: "acs:73232"
+  notes: "Confirmed no-ACS local name -> Taybet Matjaayoun."
+
+- term: "شانوح"
+  category: village_location_alias
+  meaning: "acs:74160"
+  notes: "Confirmed no-ACS local name -> Kfar Chouba."
+
+- term: "الرمثا"
+  category: village_location_alias
+  meaning: "acs:74160"
+  notes: "Confirmed no-ACS local name -> Kfar Chouba."
+
+- term: "وادي حسن"
+  category: village_location_alias
+  meaning: "acs:62297"
+  notes: "Confirmed no-ACS local name -> Majdelzoun."
+
+- term: "جبل الوردة"
+  category: village_location_alias
+  meaning: "acs:73245"
+  notes: "Confirmed no-ACS local name -> Markaba."
+
+- term: "جسر الخردلي"
+  category: village_location_alias
+  meaning: "acs:73151"
+  notes: "Confirmed no-ACS local name -> Qlaiaa."
+
 - term: "السلوقي"
   category: village_location_alias
   meaning: "acs:73282"

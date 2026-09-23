@@ -16,7 +16,11 @@ Evidence-backed aliases in `village_location_aliases` resolve exact normalized m
 
 Do not fuzzy-match bare ambiguous tokens without alias when multiple ACS rows tie.
 
-Specific collision guard: «وادي السلوقي», «السلوقي», and spelling/Latin variants in recurring south-Lebanon Wadi el-Selouqi bulletins resolve to Touline / تولين (ACS 73282). Do not allow trigram similarity to resolve those mentions to Slouqi/Slouky Baalbek (ACS 53423).
+No-ACS local/colloquial names that have been confirmed against an ACS parent must be exact aliases, not fuzzy matches. The news-side phrase remains the incident display label, while matching, caza/mohafaza, coordinates, condition logic, and dedup use the parent ACS village row. `terminology/village_aliases.yaml` and `Data/VillageLocationAliases.json` are the source of truth for these mappings.
+
+Specific collision guards:
+- «وادي السلوقي», «السلوقي», and spelling/Latin variants in recurring south-Lebanon Wadi el-Selouqi bulletins resolve to Touline / تولين (ACS 73282). Do not allow trigram similarity to resolve those mentions to Slouqi/Slouky Baalbek (ACS 53423).
+- Confirmed no-ACS aliases such as «وادي راج» -> Zaoutar Ech-Charqiye (ACS 71367), «الدبشة» and «جبل الرفيع» -> Kfar Roummane (ACS 71133), and «بيوت السياد» -> Mansouri Sour (ACS 62296) must resolve through aliases. Preserve each distinct Arabic news phrase as the displayed village name.
 
 ## Geo-context disambiguation
 

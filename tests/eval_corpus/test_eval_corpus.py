@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import ExtractionResult, VillageRoleEntry
 from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
 from app.llm.services.lebanon_scope_filter import is_non_lebanon_location
@@ -159,7 +160,12 @@ def _check_village_alias(input_: dict, expected: dict) -> None:
     from datetime import datetime, timezone
 
     service = MatchingService(
-        _AliasRepositoryStub(input_["aliases"]),
+        _AliasRepositoryStub(
+            {
+                normalize_arabic_text(alias): village_id
+                for alias, village_id in input_["aliases"].items()
+            }
+        ),
         _EmptyRepositoryStub(),
     )
     extraction = ExtractionResult(
@@ -174,6 +180,21 @@ def _check_village_alias(input_: dict, expected: dict) -> None:
     village = result.village_matches[0]
     assert village.matched_village_id == expected["matched_village_id"]
     assert village.village_match_status == MatchResultStatus(expected["status"])
+    if expected.get("alias_matched") is not None:
+        assert village.alias_matched is expected["alias_matched"]
+
+
+def _check_village_alias_display(input_: dict, expected: dict) -> None:
+    for mention in input_["mentions"]:
+        _check_village_alias(
+            {"mention": mention, "aliases": input_["aliases"]},
+            {
+                "matched_village_id": expected["matched_village_id"],
+                "status": expected["status"],
+                "alias_matched": True,
+            },
+        )
+    assert input_["mentions"] == expected["display_names"]
 
 
 _CHECKS = {
@@ -186,6 +207,7 @@ _CHECKS = {
     "condition_attribution": _check_condition_attribution,
     "village_lexical_overlap": _check_village_lexical_overlap,
     "village_alias": _check_village_alias,
+    "village_alias_display": _check_village_alias_display,
 }
 
 _CASES = _load_cases()

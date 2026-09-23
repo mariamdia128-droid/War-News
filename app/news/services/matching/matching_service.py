@@ -275,6 +275,7 @@ class MatchingService(MatchingServiceInterface):
                     event_index=event_index,
                     event_location_count=event_size,
                     qualifier_text=village_mention.qualifier_text,
+                    alias_matched=resolution.alias_hit,
                     resolved_by_geo_context=(geo_resolution.resolved_by_geo_context),
                     geo_context_anchor_village_id=(geo_resolution.anchor_village_id),
                     original_top_candidate_id=(
