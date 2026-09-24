@@ -40,7 +40,7 @@ def test_condition_45_is_not_routed_to_air_violations():
     assert db.mock_calls == []
 
 
-def test_recent_air_violation_duplicate_check_requires_same_news_text():
+def test_recent_drone_air_violation_duplicate_check_requires_same_news_text():
     existing = SimpleNamespace(
         condition_id=36,
         caza_en="Koura",
@@ -66,4 +66,26 @@ def test_recent_air_violation_duplicate_check_requires_same_news_text():
         datetime(2026, 9, 22, 13, 5),
         condition_id=36,
         khabar="Surveillance aircraft over Kfar Hazir",
+    )
+
+
+def test_recent_warplane_air_violation_duplicate_check_suppresses_exact_duplicate():
+    existing = SimpleNamespace(
+        condition_id=35,
+        caza_en="Sour",
+        caza_ar=None,
+        event_date=date(2026, 9, 22),
+        event_time=time(12, 45),
+        khabar="Warplanes over Sour",
+    )
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [existing]
+    repository = AirViolationRepository(db)
+
+    assert repository._has_recent_air_violation(
+        "Sour",
+        None,
+        datetime(2026, 9, 22, 13, 5),
+        condition_id=35,
+        khabar="Warplanes over Sour",
     )

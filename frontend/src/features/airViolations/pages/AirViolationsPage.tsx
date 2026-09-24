@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { StatusBadge } from "../../../components/StatusBadge";
 import { Button, ConfirmDialog, DataTable, Dialog, EmptyState, Input, Label, Select, type DataTableColumn } from "../../../components/ui";
 import { useLiveQueryTitleAddon } from "../../../hooks/useLiveQueryTitleAddon";
 import { decodePageParam, encodePageParam } from "../../../lib/encryptedPageParam";
@@ -19,7 +18,13 @@ import type { FilteredNewsItem } from "../../news/types";
 
 const PAGE_SIZE = 25;
 const RED_ALERT_SOURCE_NAME = "Red Alert Lebanon";
-const RED_ALERT_NEWS_LIMIT = 75;
+const RED_ALERT_NEWS_LIMIT = 500;
+const AIR_VIOLATION_CONDITION_IDS = new Set([35, 36, 38]);
+const WINDOWED_AIR_VIOLATION_CONDITION_IDS = new Set([36, 38]);
+
+type AirViolationTableRow =
+  | { kind: "air"; record: AirViolation }
+  | { kind: "filtered"; record: FilteredNewsItem };
 
 const emptyText = "—";
 
@@ -41,19 +46,6 @@ const formatWindowId = (value: string | null) => {
   const caza = value.slice(0, separatorIndex);
   const timestamp = value.slice(separatorIndex + 1);
   return `${caza} - ${formatDateTime(timestamp)}`;
-};
-
-const compactNews = (value: string, maxLength = 140) => {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
-};
-
-const statusVariant = (status: string) => {
-  if (status === "materialized") return "success" as const;
-  if (status === "rejected") return "danger" as const;
-  if (status === "duplicate") return "neutral" as const;
-  if (status === "error") return "warning" as const;
-  return "accent" as const;
 };
 
 const recordWindowLabel = (row: AirViolation) => {
@@ -89,6 +81,88 @@ const WindowCell = ({ row }: { row: AirViolation }) => {
       <p className="break-words leading-6">{range || emptyText}</p>
     </div>
   );
+};
+
+const filteredNewsDateParts = (row: FilteredNewsItem) => {
+  const eventAt = new Date(row.event_at);
+  return {
+    date: eventAt.toISOString().slice(0, 10),
+    time: eventAt.toTimeString().slice(0, 5),
+  };
+};
+
+const isAirViolationFilteredNews = (row: FilteredNewsItem) => {
+  const text = `${row.condition_name ?? ""} ${row.khabar}`.toLowerCase();
+  if (text.includes("هذه المسيرة") || text.includes("من هذه المسيرة") || text.includes("منذ 20 تشرين الثاني 2025")) {
+    return false;
+  }
+  if (row.condition_id != null && AIR_VIOLATION_CONDITION_IDS.has(row.condition_id)) {
+    return true;
+  }
+  return [
+    "warplane",
+    "surveillance aircraft",
+    "helicopter",
+    "طيران",
+    "استطلاع",
+    "مسيرة",
+    "مسيّرة",
+    "مسير",
+    "مروحي",
+    "مقاتلات",
+    "حربي",
+    "redalert.com.lb",
+  ].some((keyword) => text.includes(keyword));
+};
+
+const filteredNewsTime = (row: FilteredNewsItem) => new Date(row.event_at).getTime();
+
+const filteredNewsMatchesAirWindow = (row: FilteredNewsItem, violation: AirViolation) => {
+  if (!isAirViolationFilteredNews(row)) {
+    return false;
+  }
+  if (row.air_violation_id === violation.id || row.id === violation.raw_message_id) {
+    return true;
+  }
+  if (!violation.window_start || !violation.window_end) {
+    return false;
+  }
+  if (row.condition_id != null && row.condition_id !== violation.condition_id) {
+    return false;
+  }
+  const time = filteredNewsTime(row);
+  return time >= new Date(violation.window_start).getTime()
+    && time <= new Date(violation.window_end).getTime();
+};
+
+const collapseAirRowsByWindow = (items: AirViolation[]) => {
+  const grouped = new Map<string, AirViolation>();
+  const output: AirViolation[] = [];
+  for (const row of items) {
+    const key = row.window_id && WINDOWED_AIR_VIOLATION_CONDITION_IDS.has(row.condition_id)
+      ? row.window_id
+      : `record-${row.id}`;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, row);
+      output.push(row);
+      continue;
+    }
+    const mergedVillages = Array.from(new Set([...(existing.villages ?? []), ...(row.villages ?? [])]));
+    grouped.set(key, {
+      ...existing,
+      villages: mergedVillages,
+      window_violation_count: Math.max(existing.window_violation_count ?? 1, row.window_violation_count ?? 1),
+      window_end: row.window_end && (!existing.window_end || new Date(row.window_end) > new Date(existing.window_end))
+        ? row.window_end
+        : existing.window_end,
+    });
+    const index = output.findIndex((item) => item.id === existing.id);
+    if (index >= 0) {
+      output[index] = grouped.get(key)!;
+    }
+  }
+  return output;
 };
 
 export const AirViolationsPage = () => {
@@ -157,7 +231,7 @@ export const AirViolationsPage = () => {
     () => ({
       limit: RED_ALERT_NEWS_LIMIT,
       offset: 0,
-      eventDateFrom: eventDateFrom || undefined,
+      eventDateFrom: eventDateFrom || (!eventDateTo && !lastHours ? getBeirutDate() : undefined),
       eventDateTo: eventDateTo || undefined,
       lastHours: lastHours || undefined,
       sourceName: RED_ALERT_SOURCE_NAME,
@@ -203,11 +277,45 @@ export const AirViolationsPage = () => {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rows = data?.items ?? [];
   const redAlertRows = redAlertNewsQuery.data?.items ?? [];
+  const exactAirRows = useMemo(
+    () => collapseAirRowsByWindow(rows),
+    [rows],
+  );
+  const tableRows = useMemo<AirViolationTableRow[]>(
+    () => [
+      ...exactAirRows.map((record) => ({ kind: "air" as const, record })),
+    ].sort((left, right) => {
+      const leftDate = left.kind === "air"
+        ? `${left.record.event_date}T${left.record.event_time ?? "00:00:00"}`
+        : left.record.event_at;
+      const rightDate = right.kind === "air"
+        ? `${right.record.event_date}T${right.record.event_time ?? "00:00:00"}`
+        : right.record.event_at;
+      return new Date(rightDate).getTime() - new Date(leftDate).getTime();
+    }),
+    [exactAirRows],
+  );
   const isLockedByAnother = Boolean(
     selectedViolation?.locked_by_user_id
       && selectedViolation.locked_by_user_id !== currentUserId
       && selectedViolation.edit_lock_expires_at
       && new Date(selectedViolation.edit_lock_expires_at).getTime() > Date.now(),
+  );
+  const selectedWindowNews = useMemo(
+    () => selectedViolation
+      ? redAlertRows
+        .filter((row) => filteredNewsMatchesAirWindow(row, selectedViolation))
+        .sort((left, right) => filteredNewsTime(right) - filteredNewsTime(left))
+      : [],
+    [redAlertRows, selectedViolation],
+  );
+  const selectedWindowVillages = useMemo(
+    () => Array.from(new Set([
+      ...(selectedViolation?.villages ?? []),
+      ...(selectedViolation?.village_en ? [selectedViolation.village_en] : []),
+      ...selectedWindowNews.map((row) => row.village_name).filter((name): name is string => Boolean(name)),
+    ])),
+    [selectedViolation, selectedWindowNews],
   );
 
   // Keep an open details dialog synchronized with the live-polled list. Without
@@ -216,11 +324,11 @@ export const AirViolationsPage = () => {
     if (!selectedViolation) {
       return;
     }
-    const refreshed = rows.find((row) => row.id === selectedViolation.id);
+    const refreshed = exactAirRows.find((row) => row.id === selectedViolation.id);
     if (refreshed) {
       setSelectedViolation(refreshed);
     }
-  }, [rows, selectedViolation?.id]);
+  }, [exactAirRows, selectedViolation?.id]);
 
   const updateParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -265,153 +373,107 @@ export const AirViolationsPage = () => {
     setParams(next);
   };
 
-  const columns: Array<DataTableColumn<AirViolation>> = [
+  const columns: Array<DataTableColumn<AirViolationTableRow>> = [
     {
       key: "number",
       header: "#",
       className: "w-14 min-w-14 tabular-nums text-text-muted",
-      render: (row) => offset + rows.indexOf(row) + 1,
+      render: (row) => tableRows.indexOf(row) + 1,
     },
     {
       key: "caza",
       header: "Caza",
       className: "w-40 min-w-40",
-      render: (row) => <span className="font-semibold text-text-primary">{row.caza_en || row.caza_ar || emptyText}</span>,
-      sortValue: (row) => row.caza_en ?? row.caza_ar ?? "",
+      render: (row) => row.kind === "air" ? (
+        <span className="font-semibold text-text-primary">{row.record.caza_en || row.record.caza_ar || emptyText}</span>
+      ) : (
+        <span className="font-semibold text-text-primary">{row.record.village_name || "Pending"}</span>
+      ),
+      sortValue: (row) => row.kind === "air" ? row.record.caza_en ?? row.record.caza_ar ?? "" : row.record.village_name ?? "",
     },
     {
       key: "action-en",
       header: "Action",
       className: "w-52 min-w-52",
-      render: (row) => (
+      render: (row) => row.kind === "air" ? (
         <div>
-          <TextCell value={row.action_en} />
-          <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{row.action_ar}</span>
+          <TextCell value={row.record.action_en} />
+          <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{row.record.action_ar}</span>
         </div>
+      ) : (
+        <TextCell value={row.record.condition_name || "Air violation"} />
       ),
-      sortValue: (row) => row.action_en,
+      sortValue: (row) => row.kind === "air" ? row.record.action_en : row.record.condition_name ?? "",
     },
     {
       key: "news",
       header: "News",
       className: "w-[24rem] min-w-[24rem]",
       render: (row) => {
-        const news = row.khabar.replace(/\s+/g, " ").trim();
+        const news = row.record.khabar.replace(/\s+/g, " ").trim();
         return <span className="block max-w-[22rem] whitespace-normal leading-6 text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}…` : news}</span>;
       },
-      sortValue: (row) => row.khabar,
+      sortValue: (row) => row.record.khabar,
     },
     {
       key: "village",
       header: "Village",
       className: "w-48 min-w-48",
-      render: (row) => (
+      render: (row) => row.kind === "air" ? (
         <div>
-          <TextCell value={row.village_en || row.village_ar} />
-          {row.village_ar && row.village_en ? (
+          <TextCell value={row.record.village_en || row.record.village_ar} />
+          {row.record.village_ar && row.record.village_en ? (
             <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">
-              {row.village_ar}
+              {row.record.village_ar}
             </span>
           ) : null}
         </div>
+      ) : (
+        <TextCell value={row.record.village_name || "Pending classification"} />
       ),
-      sortValue: (row) => row.village_en ?? row.village_ar ?? "",
+      sortValue: (row) => row.kind === "air" ? row.record.village_en ?? row.record.village_ar ?? "" : row.record.village_name ?? "",
     },
     {
       key: "date",
       header: "Date / Time",
       className: "w-36 min-w-36",
-      render: (row) => row.import_enrichment?.date_source === "fallback" ? (
+      render: (row) => row.kind === "air" && row.record.import_enrichment?.date_source === "fallback" ? (
         <span>Date unavailable</span>
+      ) : row.kind === "air" ? (
+        <div className="space-y-1 whitespace-nowrap">
+          <p>{formatDate(row.record.event_date)}</p>
+          <p className="text-text-muted">{formatTime(row.record.event_time)}</p>
+        </div>
       ) : (
         <div className="space-y-1 whitespace-nowrap">
-          <p>{formatDate(row.event_date)}</p>
-          <p className="text-text-muted">{formatTime(row.event_time)}</p>
+          <p>{formatDate(filteredNewsDateParts(row.record).date)}</p>
+          <p className="text-text-muted">{filteredNewsDateParts(row.record).time}</p>
         </div>
       ),
-      sortValue: (row) => new Date(row.event_date).getTime(),
+      sortValue: (row) => row.kind === "air" ? new Date(row.record.event_date).getTime() : new Date(row.record.event_at).getTime(),
     },
     {
       key: "window",
       header: "Window",
       className: "w-[28rem] min-w-[28rem]",
-      render: (row) => <WindowCell row={row} />,
-      sortValue: (row) => row.window_start ?? row.window_id ?? "",
+      render: (row) => row.kind === "air" ? (
+        <WindowCell row={row.record} />
+      ) : (
+        <span className="text-text-muted">{row.record.air_violation_id ? `Linked #${row.record.air_violation_id}` : "Not written"}</span>
+      ),
+      sortValue: (row) => row.kind === "air" ? row.record.window_start ?? row.record.window_id ?? "" : row.record.event_at,
     },
     {
       key: "details",
       header: "Details",
       className: "w-32",
-      render: (row) => (
-        <Button type="button" variant="secondary" className="h-9 whitespace-nowrap" onClick={() => { setActionError(""); setSelectedViolation(row); }}>
+      render: (row) => row.kind === "air" ? (
+        <Button type="button" variant="secondary" className="h-9 whitespace-nowrap" onClick={() => { setActionError(""); setSelectedViolation(row.record); }}>
           View details
         </Button>
-      ),
-    },
-  ];
-
-  const redAlertColumns: Array<DataTableColumn<FilteredNewsItem>> = [
-    {
-      key: "time",
-      header: "Date / Time",
-      className: "w-40 min-w-40",
-      render: (row) => (
-        <div className="space-y-1 whitespace-nowrap">
-          <p>{formatDateTime(row.event_at)}</p>
-          <p className="text-caption text-text-muted">Raw #{row.id}</p>
-        </div>
-      ),
-      sortValue: (row) => new Date(row.event_at).getTime(),
-    },
-    {
-      key: "news",
-      header: "Red Alert news",
-      className: "w-[30rem] min-w-[30rem]",
-      render: (row) => (
-        <p className="whitespace-normal leading-6 text-text-primary" dir="auto">
-          {compactNews(row.khabar)}
-        </p>
-      ),
-      sortValue: (row) => row.khabar,
-    },
-    {
-      key: "linked",
-      header: "Air violation",
-      className: "w-44 min-w-44",
-      render: (row) => row.air_violation_id ? (
-        <span className="font-semibold text-success">Linked #{row.air_violation_id}</span>
       ) : (
-        <span className="text-text-muted">Not written</span>
+        <span className="text-text-muted">Raw #{row.record.id}</span>
       ),
-    },
-    {
-      key: "location",
-      header: "Location / action",
-      className: "w-56 min-w-56",
-      render: (row) => (
-        <div className="space-y-1">
-          <TextCell value={row.village_name} />
-          <p className="text-small text-text-muted">{row.condition_name || emptyText}</p>
-        </div>
-      ),
-      sortValue: (row) => row.village_name ?? "",
-    },
-    {
-      key: "status",
-      header: "Status",
-      className: "w-36 min-w-36",
-      render: (row) => <StatusBadge label={row.status} variant={statusVariant(row.status)} />,
-    },
-    {
-      key: "reason",
-      header: "Filter reason",
-      className: "w-[24rem] min-w-[24rem]",
-      render: (row) => (
-        <p className="whitespace-normal text-small leading-5 text-text-muted">
-          {row.reasoning || row.verdict || emptyText}
-        </p>
-      ),
-      sortValue: (row) => row.reasoning ?? row.verdict ?? "",
     },
   ];
 
@@ -588,8 +650,8 @@ export const AirViolationsPage = () => {
 
       <DataTable
         columns={columns}
-        rows={rows}
-        getRowKey={(row) => String(row.id)}
+        rows={tableRows}
+        getRowKey={(row) => row.kind === "air" ? `air-${row.record.id}` : `filtered-${row.record.id}`}
         loading={isLoading}
         error={isError}
         minWidth="1480px"
@@ -612,48 +674,6 @@ export const AirViolationsPage = () => {
         }
       />
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-h4 font-semibold text-text-primary">Red Alert filtered news</h2>
-            <p className="mt-1 text-small text-text-muted">
-              {redAlertNewsQuery.data?.total ?? 0} Red Alert items match the selected time filters.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            className="h-9"
-            isLoading={redAlertNewsQuery.isFetching}
-            loadingText="Refreshing"
-            onClick={() => redAlertNewsQuery.refetch()}
-          >
-            Refresh Red Alert
-          </Button>
-        </div>
-        <DataTable
-          columns={redAlertColumns}
-          rows={redAlertRows}
-          getRowKey={(row) => String(row.id)}
-          loading={redAlertNewsQuery.isLoading}
-          error={redAlertNewsQuery.isError}
-          minWidth="1420px"
-          clientSort={false}
-          emptyState={
-            <EmptyState
-              title="No Red Alert news in this filter"
-              description="Adjust the time filters above to inspect more Red Alert source messages."
-            />
-          }
-          errorState={
-            <EmptyState
-              title="Could not load Red Alert news"
-              description="The filtered Red Alert list could not be loaded. Please try again."
-            />
-          }
-        />
-      </section>
-
       {selectedViolation ? (
         <Dialog
           title="Air violation"
@@ -667,6 +687,12 @@ export const AirViolationsPage = () => {
             </> : null}
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Caza</dt><dd className="mt-1">{selectedViolation.caza_en || selectedViolation.caza_ar || emptyText}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Village</dt><dd className="mt-1">{selectedViolation.village_en || selectedViolation.village_ar || emptyText}{selectedViolation.village_ar && selectedViolation.village_en ? <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{selectedViolation.village_ar}</span> : null}</dd></div>
+            {selectedWindowVillages.length ? (
+              <div className="sm:col-span-2">
+                <dt className="text-caption font-semibold uppercase text-text-muted">Villages in this window</dt>
+                <dd className="mt-1">{selectedWindowVillages.join(", ")}</dd>
+              </div>
+            ) : null}
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Month</dt><dd className="mt-1">{selectedViolation.event_month || emptyText}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (English)</dt><dd className="mt-1">{selectedViolation.action_en}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (Arabic)</dt><dd className="mt-1 text-right" dir="rtl" lang="ar">{selectedViolation.action_ar}</dd></div>
@@ -678,6 +704,24 @@ export const AirViolationsPage = () => {
             <p className="text-caption font-semibold uppercase text-text-muted">News</p>
             <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{selectedViolation.khabar}</p>
           </div>
+          {selectedWindowNews.length ? (
+            <div className="mt-5 rounded-md border border-border bg-surface p-4">
+              <p className="text-caption font-semibold uppercase text-text-muted">Red Alert news in this window</p>
+              <div className="mt-3 space-y-4">
+                {selectedWindowNews.map((row) => (
+                  <div key={row.id} className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-text-muted">
+                      <span>{formatDateTime(row.event_at)}</span>
+                      <span>Raw #{row.id}</span>
+                      {row.air_violation_id ? <span>Linked #{row.air_violation_id}</span> : <span>Not written</span>}
+                      {row.village_name ? <span>{row.village_name}</span> : null}
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{row.khabar}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <dl className="mt-5 grid gap-5 sm:grid-cols-2">
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Note 1</dt><dd className="mt-1 whitespace-pre-wrap">{selectedViolation.note_1 || emptyText}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Note 2</dt><dd className="mt-1 whitespace-pre-wrap">{selectedViolation.note_2 || emptyText}</dd></div>

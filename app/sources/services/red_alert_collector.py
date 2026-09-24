@@ -117,10 +117,36 @@ NON_EVENT_NOTICE_PARTS = (
     "tawasulra bot",
     "redalertlb twasol bot",
 )
+NON_AIR_DRONE_WORD_PATTERNS = (
+    "جزء من هذه المسيرة",
+    "من هذه المسيرة",
+    "هذه المسيرة",
+    "بدأنا بمجموعه",
+    "بدأنا بمجموعة",
+    "منذ 20 تشرين الثاني 2025",
+)
+BARE_DRONE_KEYWORDS = (
+    "مسيرة",
+    "مسيّرة",
+    "مسيره",
+    "مسير",
+)
+DRONE_CONTEXT_KEYWORDS = (
+    "redalert.com.lb",
+    RED_ZONE_OCR_MARKER,
+    "طيران",
+    "طائرة",
+    "الطيران المسير",
+    "المسير المعادي",
+    "حيطة",
+    "حذر",
+    "فوق",
+    "تحليق",
+)
 
 SUPPORTED_DELIVERY_METHODS = frozenset({"public_preview", "telegram_api"})
-HOURS_FETCH_LIMIT_PER_HOUR = 40
-HOURS_FETCH_LIMIT_CAP = 200
+HOURS_FETCH_LIMIT_PER_HOUR = 60
+HOURS_FETCH_LIMIT_CAP = 1000
 
 
 def fetch_limit_for_hours(hours: int, base_limit: int) -> int:
@@ -223,8 +249,19 @@ def classify_condition(text: str) -> int | None:
     normalized = normalize_arabic(text)
     if any(normalize_arabic(part) in normalized for part in NON_EVENT_NOTICE_PARTS):
         return None
+    if any(normalize_arabic(part) in normalized for part in NON_AIR_DRONE_WORD_PATTERNS):
+        return None
     for condition_id, keywords in AIR_KEYWORDS:
-        if any(normalize_arabic(keyword) in normalized for keyword in keywords):
+        for keyword in keywords:
+            normalized_keyword = normalize_arabic(keyword)
+            if normalized_keyword not in normalized:
+                continue
+            if (
+                condition_id == 36
+                and normalized_keyword in {normalize_arabic(part) for part in BARE_DRONE_KEYWORDS}
+                and not any(normalize_arabic(context) in normalized for context in DRONE_CONTEXT_KEYWORDS)
+            ):
+                continue
             return condition_id
     if (
         "redalert com lb" in normalized
@@ -492,14 +529,38 @@ class RedAlertCollector:
         return self._fetch_posts_from_public_preview()
 
     def _fetch_posts_from_public_preview(self) -> list[RedAlertPost]:
-        response = self.http_get(
-            f"https://t.me/s/{self.channel_username}",
-            follow_redirects=True,
-            timeout=self.request_timeout,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        response.raise_for_status()
-        return parse_public_preview(response.text, self.channel_username)
+        posts_by_id: dict[int, RedAlertPost] = {}
+        before: int | None = None
+        while len(posts_by_id) < self.fetch_limit:
+            url = f"https://t.me/s/{self.channel_username}"
+            if before is not None:
+                url = f"{url}?before={before}"
+            response = self.http_get(
+                url,
+                follow_redirects=True,
+                timeout=self.request_timeout,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+            page_posts = parse_public_preview(response.text, self.channel_username)
+            if not page_posts:
+                break
+            new_posts = 0
+            for post in page_posts:
+                if post.message_id not in posts_by_id:
+                    posts_by_id[post.message_id] = post
+                    new_posts += 1
+            oldest = min(page_posts, key=lambda post: post.message_id)
+            if self.min_message_datetime and all(
+                post.message_datetime < self.min_message_datetime for post in page_posts
+            ):
+                break
+            if new_posts == 0 or oldest.message_id <= 1:
+                break
+            before = oldest.message_id
+        return sorted(posts_by_id.values(), key=lambda post: post.message_id, reverse=True)[
+            : self.fetch_limit
+        ]
 
     def _fetch_posts_from_telegram_api(self) -> list[RedAlertPost]:
         return asyncio.run(self._fetch_posts_from_telegram_api_async())

@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Integer, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.accounts.models import User
@@ -165,7 +165,7 @@ def _item(row) -> FilteredNewsItem:
 
 @router.get("", response_model=FilteredNewsList)
 def list_filtered_news(
-    limit: int = Query(150, ge=1, le=150),
+    limit: int = Query(150, ge=1, le=500),
     offset: int = Query(0, ge=0),
     event_date_from: date | None = Query(None),
     event_date_to: date | None = Query(None),
@@ -248,7 +248,15 @@ def list_filtered_news(
         Condition.action_en,
         case((AirViolation.id.is_not(None), "خرق جوي"), else_=None),
     )
-    resolved_condition_id = func.coalesce(Incident.condition_id, AirViolation.condition_id)
+    raw_matched_condition_id = cast(
+        RawMessage.match_result["matched_condition_id"].astext,
+        Integer,
+    )
+    resolved_condition_id = func.coalesce(
+        Incident.condition_id,
+        AirViolation.condition_id,
+        raw_matched_condition_id,
+    )
     resolved_village_id = func.coalesce(Incident.village_id, AirViolation.village_id)
 
     base = (

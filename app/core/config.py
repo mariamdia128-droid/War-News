@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     red_alert_enabled: bool = False
     red_alert_delivery_method: str = "public_preview"
     red_alert_channel_username: str = "redlinkleb"
-    red_alert_fetch_limit: int = 20
+    red_alert_fetch_limit: int = 500
     red_alert_poll_seconds: float = 10.0
     red_alert_request_timeout_seconds: int = 30
     red_alert_ocr_enabled: bool = True

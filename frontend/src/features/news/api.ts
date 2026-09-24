@@ -56,10 +56,22 @@ export const getFilteredNews = async (
   if (filters.includeRejectedRedAlert) params.set("include_rejected_red_alert", "true");
   if (filters.lastHours) params.set("last_hours", filters.lastHours);
   if (filters.search) params.set("search", filters.search);
-  const response = await apiClient.get<FilteredNewsListResponse>(
-    `/filtered-news?${params.toString()}`,
-  );
-  return response.data;
+  try {
+    const response = await apiClient.get<FilteredNewsListResponse>(
+      `/filtered-news?${params.toString()}`,
+    );
+    return response.data;
+  } catch (error) {
+    const status = (error as { response?: { status?: number } }).response?.status;
+    if (status === 422 && filters.limit > 150) {
+      params.set("limit", "150");
+      const response = await apiClient.get<FilteredNewsListResponse>(
+        `/filtered-news?${params.toString()}`,
+      );
+      return response.data;
+    }
+    throw error;
+  }
 };
 
 export type WorkbookImportSummary = {

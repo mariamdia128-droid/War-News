@@ -84,3 +84,13 @@ def test_keeps_cazas_separate() -> None:
 
     assert len(windows) == 2
 
+
+def test_groups_non_south_drone_reports_within_four_hours() -> None:
+    windows = group_air_violation_windows([
+        _row(1, "Koura", date(2026, 9, 17), time(10, 0)),
+        _row(2, "Koura", date(2026, 9, 17), time(13, 59)),
+    ])
+
+    assert len(windows) == 1
+    assert windows[0].violation_count == 2
+

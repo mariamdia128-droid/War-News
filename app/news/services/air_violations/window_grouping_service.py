@@ -4,10 +4,15 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Iterable
 
-from app.news.constants.air_violation_conditions import AIR_VIOLATION_WARPLANE_CONDITION_ID
+from app.news.constants.air_violation_conditions import (
+    AIR_VIOLATION_DRONE_CONDITION_ID,
+    AIR_VIOLATION_SOUTH_CAZAS,
+    AIR_VIOLATION_WARPLANE_CONDITION_ID,
+)
 from app.news.services.air_violations.caza_alias_resolver import canonicalize_caza
 
-DEFAULT_WINDOW_LENGTH = timedelta(minutes=60)
+DRONE_SOUTH_WINDOW_LENGTH = timedelta(minutes=60)
+STANDARD_WINDOW_LENGTH = timedelta(hours=4)
 WARPLANE_WINDOW_LENGTH = timedelta(hours=4)
 
 
@@ -51,7 +56,7 @@ def group_air_violation_windows(
 
     windows: list[AirViolationWindow] = []
     for (caza, condition_id), items in partitions.items():
-        window_length = _window_length_for_condition(condition_id)
+        window_length = _window_length_for_condition(condition_id, caza)
         ordered = sorted(items, key=lambda item: (_event_datetime(item), item.id))
         current: list[AirViolationWindowInput] = []
         anchor: datetime | None = None
@@ -82,7 +87,7 @@ def assign_air_violation_window_ids(
         partitions.setdefault((caza, row.condition_id), []).append(row)
 
     for (caza, condition_id), items in partitions.items():
-        window_length = _window_length_for_condition(condition_id)
+        window_length = _window_length_for_condition(condition_id, caza)
         ordered = sorted(items, key=lambda item: (_event_datetime(item), item.id))
         anchor: datetime | None = None
         current_window_id: str | None = None
@@ -96,10 +101,15 @@ def assign_air_violation_window_ids(
     return assignments
 
 
-def _window_length_for_condition(condition_id: int) -> timedelta:
+def _window_length_for_condition(condition_id: int, caza_en: str | None = None) -> timedelta:
     if condition_id == AIR_VIOLATION_WARPLANE_CONDITION_ID:
         return WARPLANE_WINDOW_LENGTH
-    return DEFAULT_WINDOW_LENGTH
+    if (
+        condition_id == AIR_VIOLATION_DRONE_CONDITION_ID
+        and canonicalize_caza(caza_en) in AIR_VIOLATION_SOUTH_CAZAS
+    ):
+        return DRONE_SOUTH_WINDOW_LENGTH
+    return STANDARD_WINDOW_LENGTH
 
 
 def _build_window(

@@ -51,7 +51,8 @@ class RedAlertAirViolationService:
             self._reject(message, "No supported air-violation keyword")
             return False
 
-        village_match = self.match_village(text, villages)
+        village_matches = self._match_villages(text, villages)
+        village_match = village_matches[0] if village_matches else self.match_village(text, villages)
         if village_match is None:
             caza_en, caza_ar = self._match_caza(text, villages)
             if not (caza_en or caza_ar):
@@ -81,6 +82,7 @@ class RedAlertAirViolationService:
             text=text,
             condition_id=condition_id,
             village=village,
+            villages=[village for village, _raw_location in village_matches] or [village],
             raw_location=raw_location,
         )
         message.filter_result = self._result(
@@ -94,6 +96,51 @@ class RedAlertAirViolationService:
         message.status = MessageStatus.routed_air_violation
         message.error_message = "red_alert: routed to air_violations; not an incident"
         return wrote_air_violation
+
+    @staticmethod
+    def _normalize_arabic(value: str) -> str:
+        value = re.sub(r"[\u064b-\u065f\u0670]", "", value)
+        value = value.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+        value = value.replace("ى", "ي").replace("ة", "ه")
+        return re.sub(r"[\W_]+", " ", value.casefold()).strip()
+
+    @staticmethod
+    def _normalize_latin(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+    @classmethod
+    def _match_villages(cls, text: str, villages: list[Village]) -> list[tuple[Village, str]]:
+        normalized_text = cls._normalize_arabic(text)
+        normalized_latin_text = cls._normalize_latin(text)
+        matches: dict[int, tuple[Village, str]] = {}
+        for village in villages:
+            names = (
+                getattr(village, "ref_name_ar", None),
+                getattr(village, "ref_name_en", None),
+                getattr(village, "acs_name", None),
+                getattr(village, "cad_name", None),
+            )
+            for name in names:
+                if not name:
+                    continue
+                normalized_name = (
+                    cls._normalize_arabic(name)
+                    if re.search(r"[\u0600-\u06ff]", name)
+                    else cls._normalize_latin(name)
+                )
+                normalized_source = (
+                    normalized_text
+                    if re.search(r"[\u0600-\u06ff]", name)
+                    else normalized_latin_text
+                )
+                if len(normalized_name) >= 4 and re.search(
+                    rf"(?<!\w){re.escape(normalized_name)}(?!\w)",
+                    normalized_source,
+                ):
+                    current = matches.get(village.id)
+                    if current is None or len(name) > len(current[1]):
+                        matches[village.id] = (village, name)
+        return list(matches.values())
 
     @staticmethod
     def _match_caza(text: str, villages: list[Village]) -> tuple[str | None, str | None]:
@@ -130,18 +177,26 @@ class RedAlertAirViolationService:
         condition_id: int,
         village: Village | None,
         raw_location: str | None,
+        villages: list[Village] | None = None,
     ) -> MatchResultDTO:
+        matched_villages = villages or ([village] if village is not None else [])
         village_matches = (
             [
                 VillageMatchResult(
-                    matched_village_id=village.id,
+                    matched_village_id=matched_village.id,
                     village_confidence=1.0,
                     village_match_status=MatchResultStatus.matched,
                     village_review_required=False,
-                    raw_village_text=raw_location,
+                    raw_village_text=raw_location if len(matched_villages) == 1 else (
+                        getattr(matched_village, "ref_name_en", None)
+                        or getattr(matched_village, "acs_name", None)
+                        or getattr(matched_village, "cad_name", None)
+                        or getattr(matched_village, "ref_name_ar", None)
+                    ),
                 )
+                for matched_village in matched_villages
             ]
-            if village is not None
+            if matched_villages
             else []
         )
         return MatchResultDTO(

@@ -4,6 +4,7 @@ import argparse
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -14,6 +15,7 @@ from app.sources.services.red_alert_collector import (
 )
 
 logger = logging.getLogger(__name__)
+BEIRUT_TIMEZONE = ZoneInfo("Asia/Beirut")
 
 
 def _parse_hours_arg(value: str) -> int:
@@ -51,13 +53,22 @@ def collector_kwargs_for_hours(
     *,
     now: datetime | None = None,
 ) -> dict:
+    current = now or datetime.now(timezone.utc)
     kwargs: dict = {
         "fetch_limit": settings.red_alert_fetch_limit,
         "min_message_datetime": None,
     }
     if hours is None:
+        beirut_now = current.astimezone(BEIRUT_TIMEZONE)
+        beirut_midnight = beirut_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight_utc = beirut_midnight.astimezone(timezone.utc)
+        hours_since_midnight = max(1, int((current - midnight_utc).total_seconds() // 3600) + 1)
+        kwargs["fetch_limit"] = fetch_limit_for_hours(
+            hours_since_midnight,
+            settings.red_alert_fetch_limit,
+        )
+        kwargs["min_message_datetime"] = midnight_utc
         return kwargs
-    current = now or datetime.now(timezone.utc)
     kwargs["fetch_limit"] = fetch_limit_for_hours(hours, settings.red_alert_fetch_limit)
     kwargs["min_message_datetime"] = current - timedelta(hours=hours)
     return kwargs

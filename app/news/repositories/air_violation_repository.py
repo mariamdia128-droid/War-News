@@ -255,11 +255,15 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             item_dt = datetime.combine(item["event_date"], item.get("event_time") or time.min)
             stats = window_stats.setdefault(
                 str(window_id),
-                {"start": item_dt, "end": item_dt, "count": 0},
+                {"start": item_dt, "end": item_dt, "count": 0, "villages": []},
             )
             stats["start"] = min(stats["start"], item_dt)
             stats["end"] = max(stats["end"], item_dt)
             stats["count"] = int(stats["count"]) + 1
+            stats["villages"] = list(dict.fromkeys([
+                *stats["villages"],
+                *(item.get("villages") or []),
+            ]))
 
         for item in items:
             item_id = int(item["id"])
@@ -269,6 +273,8 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             item["window_start"] = stats["start"] if stats else None
             item["window_end"] = stats["end"] if stats else None
             item["window_violation_count"] = stats["count"] if stats else None
+            if stats and stats.get("villages"):
+                item["villages"] = stats["villages"]
         return items
 
     @staticmethod

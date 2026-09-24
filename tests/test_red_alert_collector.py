@@ -22,6 +22,7 @@ from app.sources.services.red_alert_collector import (
     parse_public_preview,
     posts_within_window,
 )
+from app.core.scripts.run_red_alert_collector import collector_kwargs_for_hours
 from app.news.models import MessageStatus, RawMessage, Village
 from app.news.models.air_violation import AirViolation
 from app.news.repositories.air_violation_repository import AirViolationRepository
@@ -139,6 +140,39 @@ def test_routes_south_region_air_violation_without_fake_village() -> None:
     assert service.process(message, []) is True
     repository.discard_for_message.assert_not_called()
     repository.route_from_match.assert_called_once()
+
+
+def test_red_alert_air_violation_routes_all_exact_villages_from_ocr_text() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 36, lambda text, villages: None)
+    chiyah = _village(201, "شياح", caza_en="Baabda")
+    chiyah.ref_name_en = "Chiyah"
+    ghobeiry = _village(202, "الغبيري", caza_en="Baabda")
+    ghobeiry.ref_name_en = "Ghobeiry"
+    haret_hreik = _village(203, "حارة حريك", caza_en="Baabda")
+    haret_hreik.ref_name_en = "Haret Hreik"
+    message = SimpleNamespace(
+        id=104,
+        raw_text=(
+            "V7 |RED redalert.com.lb Ghobeiry حارة حريك حيطة وحذر "
+            "__RED_ZONE_TEXT__ Chiyah Ghobeiry Haret Hreik طيران استطلاعي"
+        ),
+        raw_payload={"ocr_text": "Ghobeiry Haret Hreik Chiyah"},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(message, [chiyah, ghobeiry, haret_hreik]) is True
+    routed_result = repository.route_from_match.call_args.args[1]
+
+    assert {match.matched_village_id for match in routed_result.village_matches} == {
+        201,
+        202,
+        203,
+    }
 
 
 def _village(village_id: int, arabic: str, caza_en: str = "Sour") -> SimpleNamespace:
@@ -333,10 +367,19 @@ def _post(message_id: int, when: datetime) -> RedAlertPost:
 
 
 def test_fetch_limit_for_hours_is_capped() -> None:
-    assert fetch_limit_for_hours(1, 20) == 40
-    assert fetch_limit_for_hours(1, 50) == 50
-    assert fetch_limit_for_hours(6, 20) == HOURS_FETCH_LIMIT_CAP
+    assert fetch_limit_for_hours(1, 20) == 60
+    assert fetch_limit_for_hours(1, 50) == 60
+    assert fetch_limit_for_hours(20, 20) == HOURS_FETCH_LIMIT_CAP
     assert fetch_limit_for_hours(100, 20) == HOURS_FETCH_LIMIT_CAP
+
+
+def test_default_red_alert_collection_window_starts_at_beirut_midnight() -> None:
+    now = datetime(2026, 9, 24, 8, 35, tzinfo=timezone.utc)
+
+    kwargs = collector_kwargs_for_hours(None, now=now)
+
+    assert kwargs["min_message_datetime"] == datetime(2026, 9, 23, 21, 0, tzinfo=timezone.utc)
+    assert kwargs["fetch_limit"] == fetch_limit_for_hours(12, 20)
 
 
 def test_posts_within_window_excludes_older_posts() -> None:
