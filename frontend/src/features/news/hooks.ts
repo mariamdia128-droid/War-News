@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { liveListQueryOptions } from "../../lib/liveListPolling";
 import { getConditions, getIncidentById, getIncidentDuplicateCandidate, getIncidents, getVillages } from "./api";
@@ -38,8 +38,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const includesFilterText = (value: string | null, filter?: string) =>
   !filter || Boolean(value?.toLowerCase().includes(filter.toLowerCase()));
 
-const matchesFilters = (incident: IncidentStreamEvent, filters: IncidentFilters) => {
+export const matchesFilters = (incident: IncidentStreamEvent, filters: IncidentFilters) => {
   if (filters.cursor) return false;
+  // Check types and channels are not in the stream event; let the next refetch decide.
+  if (filters.verificationType || filters.sourceName) return false;
   if (!includesFilterText(incident.village, filters.village)) return false;
   if (!includesFilterText(incident.condition, filters.condition)) return false;
   if (filters.sourceType && incident.source?.toLowerCase() !== filters.sourceType.toLowerCase()) return false;
@@ -91,11 +93,7 @@ export const useIncidentStream = (filters: IncidentFilters) => {
           return current;
         }
         if (!shouldPrepend) {
-          return {
-            ...current,
-            total: current.total + 1,
-            latest_incident_at: incident.created_at,
-          };
+          return { ...current, latest_incident_at: incident.created_at };
         }
         const items = sortIncidents([incident, ...current.items], filters.sortOrder).slice(0, current.limit);
         return {
@@ -132,13 +130,19 @@ export const useIncidentStream = (filters: IncidentFilters) => {
   return { isReconnecting };
 };
 
-export const useIncidentQuery = (incidentId: string | undefined) =>
+export const useIncidentQuery = (
+  incidentId: string | undefined,
+  options: { pausePolling?: boolean } = {},
+) =>
   useQuery({
     queryKey: incidentKeys.detail(incidentId ?? ""),
     queryFn: () => getIncidentById(incidentId as string),
     enabled: Boolean(incidentId),
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
+    // Polling while an editor is open would swap in a newer version under
+    // form values captured earlier and defeat the server's version check.
+    refetchInterval: options.pausePolling ? false : 5_000,
+    refetchIntervalInBackground: !options.pausePolling,
+    refetchOnWindowFocus: !options.pausePolling,
   });
 
 export const useIncidentDuplicateCandidateQuery = (
@@ -150,3 +154,20 @@ export const useIncidentDuplicateCandidateQuery = (
     queryFn: () => getIncidentDuplicateCandidate(incidentId as string),
     enabled: Boolean(incidentId) && enabled,
   });
+
+/**
+ * Version the open editor/dialog was built from. Frozen while `isOpen` so a
+ * refetch cannot slip a newer version under stale form values; the server's
+ * version check then reports the conflict (409) instead of overwriting.
+ */
+export const useOpenedVersion = (isOpen: boolean, currentVersion: number | undefined) => {
+  const snapshot = useRef<number | undefined>(undefined);
+  if (!isOpen) {
+    snapshot.current = undefined;
+    return currentVersion;
+  }
+  if (snapshot.current === undefined) {
+    snapshot.current = currentVersion;
+  }
+  return snapshot.current;
+};

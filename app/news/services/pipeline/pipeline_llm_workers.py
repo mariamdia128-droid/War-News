@@ -5,16 +5,20 @@ import logging
 from app.api.factories.action_factory import build_extraction_classifier
 from app.core.database import SessionLocal
 from app.llm.dtos import ExtractionResult
-from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
+from app.llm.services.action_finalization import (
+    final_action_description,
+    finalize_extraction_action,
+)
 from app.llm.services.transient_llm_errors import (
     ExtractionRetryCappedError,
+    Tier2ExtractionFailedError,
     is_transient_llm_error,
 )
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
 from app.news.models import MessageStatus
+from app.news.models.raw_message import FAILED_STAGE_EXTRACTION
 from app.news.repositories.pipeline_claim_repository import PipelineClaimRepository
 from app.news.repositories.raw_message_repository import RawMessageRepository
-from app.news.services.matching.condition_evidence_override import apply_condition_evidence_override
 from app.news.services.incident_details.casualty_gender_evidence import (
     apply_casualty_gender_backstops,
 )
@@ -27,10 +31,7 @@ def _final_action_description(
     extracted_action: str | None,
     cnrs_classification: dict | None,
 ) -> str | None:
-    cnrs_action = trusted_cnrs_action(cnrs_classification, post_text)
-    if cnrs_action is not None:
-        return cnrs_action
-    return apply_condition_evidence_override(post_text, extracted_action)
+    return final_action_description(post_text, extracted_action, cnrs_classification)
 
 
 def run_tier1_extraction_for_message(raw_message_id: int) -> None:
@@ -62,14 +63,10 @@ def run_tier1_extraction_for_message(raw_message_id: int) -> None:
             raw_message_id=raw_message_id,
         )
         result = apply_casualty_gender_backstops(post_text, result)
-        result = result.model_copy(
-            update={
-                "action_description": _final_action_description(
-                    post_text,
-                    result.action_description,
-                    cnrs_classification,
-                ),
-            }
+        result = finalize_extraction_action(
+            result,
+            post_text=post_text,
+            cnrs_classification=cnrs_classification,
         )
     except Exception as exc:
         auth_failure = coerce_ollama_auth_failure(
@@ -111,7 +108,11 @@ def run_tier1_extraction_for_message(raw_message_id: int) -> None:
                     and message.status == MessageStatus.parsed
                     and message.extraction_result is None
                 ):
-                    raw_messages.save_error(message=message, error_message=str(exc))
+                    raw_messages.save_error(
+                        message=message,
+                        error_message=str(exc),
+                        failed_stage=FAILED_STAGE_EXTRACTION,
+                    )
         raise
 
     with SessionLocal() as db:
@@ -155,12 +156,22 @@ def run_tier2_detail_fill_for_message(raw_message_id: int) -> int:
 
     tier2_categories = None
     if extraction.extraction_tier < 2:
-        tier2_categories = classifier.extract_tier2_details(
-            post_text=post_text,
-            presence_category_keys=extraction.presence_category_keys,
-            root_casualties=extraction.casualties,
-            raw_message_id=raw_message_id,
-        )
+        try:
+            tier2_categories = classifier.extract_tier2_details(
+                post_text=post_text,
+                presence_category_keys=extraction.presence_category_keys,
+                root_casualties=extraction.casualties,
+                villages=extraction.village,
+                casualty_scope=extraction.casualty_scope.value,
+                raw_message_id=raw_message_id,
+            )
+        except Tier2ExtractionFailedError as exc:
+            with SessionLocal() as db:
+                Tier2DetailFillService(db, classifier).record_tier2_failure(
+                    raw_message_id,
+                    exc,
+                )
+            raise
 
     with SessionLocal() as db:
         incident_repo = IncidentRepository(db)
@@ -173,3 +184,24 @@ def run_tier2_detail_fill_for_message(raw_message_id: int) -> int:
             raw_message_id,
             tier2_categories=tier2_categories,
         )
+
+
+def run_tier2_detail_fill_for_incident(
+    incident_id,
+    raw_message_id: int | None,
+) -> int:
+    """Tier2 for a claimed incident: its own message, then merged-in sources.
+
+    Incidents without a raw message (manual/imported) skip straight to the
+    merge-source fill, so a merge that flipped ``details_pending`` on them is
+    still completed instead of staying pending forever.
+    """
+    from app.news.services.extraction.merge_detail_fill import (
+        run_merge_detail_fill_for_incident,
+    )
+
+    updated = 0
+    if raw_message_id is not None:
+        updated = run_tier2_detail_fill_for_message(raw_message_id)
+    run_merge_detail_fill_for_incident(incident_id, build_extraction_classifier())
+    return updated

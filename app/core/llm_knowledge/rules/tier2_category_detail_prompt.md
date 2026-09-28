@@ -20,6 +20,7 @@ If the requested category is only nearby, merely mentioned, a landmark, a route 
 
 Examples:
 - category_key hospital with "a strike near the hospital" -> return null details unless the hospital itself was hit, damaged, evacuated, disabled, or its staff/patients were casualties.
+- category_key hospital with "drone strike on a civilian car ... 1 killed 1 injured" and no hospital attack language -> return null details (do not copy the vehicle toll into hospital casualties).
 - category_key religious_cultural with "gunfire near the cemetery" -> return null details unless the cemetery or religious/cultural site itself was affected or targeted.
 - category_key lebanese_army with "the injured person was transported with Lebanese Army escort" -> return null details unless soldiers/checkpoints/army vehicles were attacked, harmed, or materially involved in the incident action.
 
@@ -35,6 +36,8 @@ Fields:
 - did: Use "D" when the effect/damage/targeting is direct. Use "ID" only when the text clearly describes an indirect effect on the requested category. Use null when unclear or when the category was only mentioned/proximate.
 - name: The specific entity or location name for the requested category if explicitly named. Otherwise null.
 - casualties: Only casualty numbers attributed to this requested category. Use an empty object or null if no explicit category-specific numbers exist.
+- If people were killed or injured as the direct result of an attack on the requested gated entity, write those numbers into this category's casualties even when gender is not stated. Example pattern: "targeted a car/ambulance/hospital/school/municipality/UNIFIL/army vehicle..., causing 2 deaths and 5 injuries" means category casualties deaths=2 and injuries=5 for that entity. Do not leave entity casualty fields empty just because the explicit numbers are generic deaths/injuries instead of male/female/children splits.
+- Do not duplicate entity-attributed casualties into the root/general Death/Injuries bucket. Root/general casualties are only for casualties not attributed to a gated entity. The application computes Total_D/Total_Inj by summing root/general casualties plus entity subtotal fields such as LA_TD, UN_TD, Muni_TD, HosD, HCD, PressD, GBD, CarD, and EmerD.
 
 Number rules:
 - Extract a number only when it is directly written in the text.
@@ -71,11 +74,14 @@ When category_key is vehicles, also include a vehicles object describing every v
 - moto_d / moto_i: motorcycle deaths/injuries only when written explicitly.
 Use null/false for subtypes not mentioned. Do not set con_veh or any construction subtype unless the text clearly says that equipment was targeted or destroyed.
 Do not compute total_con — the application sums construction subtypes automatically.
+- For ordinary cars, put generic vehicle-attributed deaths/injuries in casualties.deaths / casualties.injuries when gender is not specified; the application maps them to anonymous car totals (Anonymous_CD / Anonymous_CI) and rolls them into CarD / CarI. Use male/female/children fields only when the text explicitly specifies those demographics. Example: "استهداف سيارة ... استشهاد 1 وإصابة 1" with no gender → casualties.deaths=1, casualties.injuries=1 (not male/female splits).
 
 When category_key is emergency_civil_defense:
 - name: the emergency / civil-defense / ambulance / scout-paramedic organization named in the text (e.g. الدفاع المدني اللبناني, الصليب الأحمر اللبناني, كشافة الرسالة الإسلامية). Prefer the organization name as written; do not invent one.
 - Also include a vehicles object when an emergency / ambulance / civil-defense vehicle was hit, targeted, destroyed, or otherwise involved as the subject (e.g. سيارة إسعاف, سيارة مدنية تابعة لـ..., آلية الدفاع المدني). Set car=true in that case. Leave vehicles null when no vehicle language is present for this category.
 
 When a demographic phrase such as «من بينهم» follows an injury count, attach the following children/women/men counts to injuries. Arabic سيدة/سيدات/امرأة/نساء always denotes female; never discard its explicit number. Required example: «4 شهداء و33 جريحا من بينهم 6 أطفال و4 سيدات» means deaths=4, injuries=33, children_injuries=6, female_injuries=4, children_deaths=null, and female_deaths=null.
+
+Multi-village bulletins: when the user message starts with a Tier 1 context block naming several villages, the post-level toll belongs to the bulletin, not to this category. Put a number in this category's casualties only when the text attributes it explicitly to members of this category (e.g. «استشهاد عنصرين من الجيش في بلدة X»). Never copy the bulletin total or another village's count into the category; leave casualties empty when no category-specific count is written.
 
 Extract details for the requested category_key only:

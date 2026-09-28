@@ -6,11 +6,13 @@ import { Button, ConfirmDialog, Dialog, EmptyState, Input, Label } from "../../.
 import { formatDate, formatDateTime, formatRelativeTime, formatTimeGap } from "../../../lib/formatters";
 import { roleBaseFromPath } from "../../../lib/rolePath";
 import { useAuthStore } from "../../../stores/authStore";
-import { useIncidentDuplicateCandidateQuery, useIncidentQuery } from "../hooks";
+import { useIncidentDuplicateCandidateQuery, useIncidentQuery, useOpenedVersion } from "../hooks";
 import { acquireIncidentEditLock, deleteIncident, releaseIncidentEditLock, resolveIncidentDuplicate, updateIncident, updateIncidentDetails } from "../api";
 import { IncidentCategorySectionFields } from "../components/IncidentCategorySectionFields";
 import { IncidentCategorySectionEditForm } from "../components/IncidentCategorySectionEditForm";
 import { VillageMatchNotice } from "../components/VillageMatchNotice";
+import { useIncidentCasualtyFlags } from "../../casualtyChecks/hooks";
+import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
 import { fieldGroupForSection, incidentCategorySections } from "../incidentCategorySections";
 import type { IncidentCategorySectionKey } from "../incidentCategorySections";
 import { reportedCount } from "../incidentSchema";
@@ -76,10 +78,23 @@ const BackLink = ({ to }: { to: string }) => (
 
 export const IncidentDetailPage = () => {
   const { incidentId } = useParams();
-  const roleBase = roleBaseFromPath(useLocation().pathname);
-  const incidentsPath = `${roleBase}/incidents`;
+  const location = useLocation();
+  const roleBase = roleBaseFromPath(location.pathname);
+  const casualtyFlags = useIncidentCasualtyFlags(incidentId);
+  const incidentsPath = `${roleBase}/incidents${location.search}`;
   const navigate = useNavigate();
-  const { data: incident, isLoading, error, refetch } = useIncidentQuery(incidentId);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingSection, setEditingSection] = useState<IncidentCategorySectionKey | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [isVillageDetailsOpen, setIsVillageDetailsOpen] = useState(false);
+  const [duplicateDecision, setDuplicateDecision] = useState<IncidentDuplicateDecision | null>(null);
+  const isEditorOpen = isEditing || isDeleting || editingSection !== null || duplicateDecision !== null;
+  const { data: incident, isLoading, error, refetch } = useIncidentQuery(incidentId, {
+    pausePolling: isEditorOpen,
+  });
+  const openedVersion = useOpenedVersion(isEditorOpen, incident?.version);
   const {
     data: duplicateCandidate,
     isLoading: isDuplicateCandidateLoading,
@@ -88,13 +103,6 @@ export const IncidentDetailPage = () => {
     incidentId,
     incident?.duplicate_flag === "possible",
   );
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingSection, setEditingSection] = useState<IncidentCategorySectionKey | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [actionError, setActionError] = useState("");
-  const [isVillageDetailsOpen, setIsVillageDetailsOpen] = useState(false);
-  const [duplicateDecision, setDuplicateDecision] = useState<IncidentDuplicateDecision | null>(null);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const villageDetails = incident?.village_details;
   const isLockedByAnother = Boolean(
@@ -272,6 +280,16 @@ export const IncidentDetailPage = () => {
         </dl>
       </section>
 
+      {casualtyFlags.data?.map((flag) => (
+        <CasualtyCheckPanel
+          key={flag.id}
+          id={flag.id}
+          inline
+          onClose={() => undefined}
+          onComplete={async () => { await Promise.all([refetch(), casualtyFlags.refetch()]); }}
+        />
+      ))}
+
       {incident.duplicate_flag === "possible" ? (
         <section className="rounded-lg border border-warning/40 bg-warning/5 p-5 sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -351,7 +369,7 @@ export const IncidentDetailPage = () => {
                   {title === "Suggested main incident" ? (
                     <Link
                       className="mt-2 block font-semibold text-accent hover:text-accent-hover"
-                      to={`${roleBase}/incidents/${value.id}`}
+                      to={`${roleBase}/incidents/${value.id}${location.search}`}
                     >
                       {value.village || "Unknown village"}
                     </Link>
@@ -565,7 +583,7 @@ export const IncidentDetailPage = () => {
               <li key={related.id}>
                 <Link
                   className="text-small font-semibold text-accent hover:text-accent-hover"
-                  to={`${roleBase}/incidents/${related.id}`}
+                  to={`${roleBase}/incidents/${related.id}${location.search}`}
                 >
                   {related.relation === "same_bulletin_other_village"
                     ? `Related: same bulletin, different village${related.village ? ` (${related.village})` : ""}`
@@ -742,7 +760,7 @@ export const IncidentDetailPage = () => {
                   }}
                   onSave={async (fields) => {
                     if (!incidentId) return;
-                    await updateIncidentDetails(incidentId, fields, incident.version);
+                    await updateIncidentDetails(incidentId, fields, openedVersion ?? incident.version);
                     await refetch();
                     setEditingSection(null);
                   }}
@@ -782,7 +800,7 @@ export const IncidentDetailPage = () => {
               setActionError("");
               try {
                 await updateIncident(incidentId, {
-                  version: incident.version,
+                  version: openedVersion ?? incident.version,
                   event_date: String(form.get("event_date")),
                   event_time: nullable("event_time"),
                   khabar: String(form.get("khabar") ?? "").trim(),
@@ -849,7 +867,7 @@ export const IncidentDetailPage = () => {
             if (!incidentId) return;
             setIsSaving(true);
             try {
-              await deleteIncident(incidentId, incident.version);
+              await deleteIncident(incidentId, openedVersion ?? incident.version);
               navigate(incidentsPath, { replace: true });
             } catch {
               setActionError("Could not delete the incident. Please try again.");
@@ -886,11 +904,11 @@ export const IncidentDetailPage = () => {
                 incidentId,
                 duplicateCandidate.match_id,
                 duplicateDecision,
-                incident.version,
+                openedVersion ?? incident.version,
               );
               setDuplicateDecision(null);
               if (result.decision === "confirmed_duplicate") {
-                navigate(`${roleBase}/incidents/${result.canonical_incident_id}`, { replace: true });
+                navigate(`${roleBase}/incidents/${result.canonical_incident_id}${location.search}`, { replace: true });
               } else {
                 await Promise.all([refetch(), refetchDuplicateCandidate()]);
               }

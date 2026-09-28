@@ -7,6 +7,7 @@ import { AdminDashboardPage } from "../features/dashboard/pages/AdminDashboardPa
 import { SuperAdminDashboardPage } from "../features/dashboard/pages/SuperAdminDashboardPage";
 import { LogsPage } from "../features/logs/pages/LogsPage";
 import { AirViolationsPage } from "../features/airViolations/pages/AirViolationsPage";
+import { AllNewsPage } from "../features/news/pages/AllNewsPage";
 import { IncidentDetailPage } from "../features/news/pages/IncidentDetailPage";
 import { IncidentsPage } from "../features/news/pages/IncidentsPage";
 import { RejectedNewsPage } from "../features/news/pages/RejectedNewsPage";
@@ -108,7 +109,7 @@ export const createRoutes = (): RouteObject[] => [
         { path: "dashboard", element: <AdminDashboardPage /> },
         { path: "incidents", element: <IncidentsPage /> },
         { path: "incidents/:incidentId", element: <IncidentDetailPage /> },
-        { path: "filtered-news", element: <Navigate to="/admin/incidents?tab=filtered-news" replace /> },
+        { path: "filtered-news", element: <AllNewsPage /> },
         { path: "rejected-news", element: <RejectedNewsPage /> },
         { path: "air-violations", element: <AirViolationsPage /> },
         { path: "map", element: <Navigate to="/admin/dashboard" replace /> },
@@ -127,7 +128,7 @@ export const createRoutes = (): RouteObject[] => [
         { path: "dashboard", element: <SuperAdminDashboardPage /> },
         { path: "incidents", element: <IncidentsPage /> },
         { path: "incidents/:incidentId", element: <IncidentDetailPage /> },
-        { path: "filtered-news", element: <Navigate to="/superadmin/incidents?tab=filtered-news" replace /> },
+        { path: "filtered-news", element: <AllNewsPage /> },
         { path: "rejected-news", element: <RejectedNewsPage /> },
         { path: "air-violations", element: <AirViolationsPage /> },
         { path: "map", element: <Navigate to="/superadmin/dashboard" replace /> },

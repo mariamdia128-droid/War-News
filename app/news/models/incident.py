@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -6,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CHAR,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -14,11 +16,25 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
 from app.core.database import Base
+
+
+class DeletedReason(str, Enum):
+    """Why an incident was soft-deleted; reconciliation only touches pipeline ones."""
+
+    admin = "admin"
+    duplicate_merge = "duplicate_merge"
+    cluster_subsumption = "cluster_subsumption"
+
+
+PIPELINE_DELETED_REASONS = (
+    DeletedReason.duplicate_merge.value,
+    DeletedReason.cluster_subsumption.value,
+)
 
 if TYPE_CHECKING:
     from app.accounts.models.user import User
@@ -33,6 +49,13 @@ if TYPE_CHECKING:
 
 class Incident(Base):
     __tablename__ = "incidents"
+    __table_args__ = (
+        CheckConstraint(
+            "casualty_status IS NULL OR casualty_status IN "
+            "('none_mentioned', 'explicit_none', 'exact', 'count_missing', 'aggregate_only')",
+            name="ck_incidents_casualty_status",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PgUUID(as_uuid=True),
@@ -82,6 +105,12 @@ class Incident(Base):
     source_link_2: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_deaths: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_injuries: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    casualty_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_deaths_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_injuries_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_status_remaining_total: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    casualty_is_preliminary: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    casualty_status_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     deaths: Mapped[int | None] = mapped_column(Integer, nullable=True)
     injuries: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Meaning unconfirmed, preserve raw value.
@@ -112,6 +141,7 @@ class Incident(Base):
         default=False,
         server_default=text("false"),
     )
+    deleted_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         PgUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

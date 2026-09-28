@@ -1,0 +1,42 @@
+health 200 {"status":"ok"}
+login 200
+S1 NV default range: total=42 rows=42 unique=42 needs_card=42 casualties_card=10 outside=0 types={'duplicate': 3, 'casualty_aggregate_toll': 22, 'casualty_missing_number': 18}
+S1 rows missing badge/chip/reason: ['44f26eb7-fcf2-43c1-a7e8-dfeac1a5b06e', '5bebb17e-4be4-4cb4-9ba5-ec21a69bc3dd']
+S1 list ids not visibly NV in DB: []
+S2 {}: all.total=1378 all.needs_card=42 nv.total=42 all.casualties_card=48 casualties.total=48 ok=True
+S2 {'village': 'Nabatieh'}: all.total=22 all.needs_card=2 nv.total=2 all.casualties_card=3 casualties.total=3 ok=True
+S2 {'has_casualties': 'true'}: all.total=48 all.needs_card=10 nv.total=10 all.casualties_card=48 casualties.total=48 ok=True
+S2 {'condition': 'air'}: all.total=0 all.needs_card=0 nv.total=0 all.casualties_card=0 casualties.total=0 ok=True
+S2 {'event_date_from': '2026-09-05', 'event_date_to': '2026-09-07'}: all.total=374 all.needs_card=26 nv.total=26 all.casualties_card=39 casualties.total=39 ok=True
+S2 {'sort_order': 'oldest'}: all.total=1378 all.needs_card=42 nv.total=42 all.casualties_card=48 casualties.total=48 ok=True
+S2 channel filter ok= True 2 2
+S3 verified: total=0 rows=0 unique=0 needs_card=0 casualties_card=0 outside=0 types={}
+S3 flagged in verified: []
+S3 all states: total=1378 rows=1378 unique=1378 needs_card=42 casualties_card=48 outside=0 types={'duplicate': 3, 'casualty_aggregate_toll': 22, 'casualty_missing_number': 18}
+S3 flagged rows in 'all' missing badge/chip: []
+S3 flagged in all = 42 vs NV list 42
+S4 type=duplicate: total=3 rows=3 unique=3 needs_card=3 casualties_card=0 outside=0 types={'duplicate': 3}
+S4 type=duplicate+NV: total=3 rows=3 unique=3 needs_card=3 casualties_card=0 outside=0 types={'duplicate': 3}
+S4 type=duplicate+verified: total=0 rows=0 unique=0 needs_card=0 casualties_card=0 outside=0 types={}
+  wrong type rows: [], same set with NV: True
+S4 type=casualty_missing_number: total=18 rows=18 unique=18 needs_card=18 casualties_card=4 outside=0 types={'casualty_missing_number': 18, 'casualty_aggregate_toll': 1}
+S4 type=casualty_missing_number+NV: total=18 rows=18 unique=18 needs_card=18 casualties_card=4 outside=0 types={'casualty_missing_number': 18, 'casualty_aggregate_toll': 1}
+S4 type=casualty_missing_number+verified: total=0 rows=0 unique=0 needs_card=0 casualties_card=0 outside=0 types={}
+  wrong type rows: [], same set with NV: True
+S4 type=casualty_aggregate_toll: total=22 rows=22 unique=22 needs_card=22 casualties_card=7 outside=0 types={'casualty_aggregate_toll': 22, 'casualty_missing_number': 1}
+S4 type=casualty_aggregate_toll+NV: total=22 rows=22 unique=22 needs_card=22 casualties_card=7 outside=0 types={'casualty_aggregate_toll': 22, 'casualty_missing_number': 1}
+S4 type=casualty_aggregate_toll+verified: total=0 rows=0 unique=0 needs_card=0 casualties_card=0 outside=0 types={}
+  wrong type rows: [], same set with NV: True
+S5 from 2026-09-06: in-range 20 outside notice 22 db upper bound 22
+S5 default range outside: 0
+S5 show all dates: total 42 outside 0
+S5 no verification filter -> outside = 0
+S6 size=50 newest: total=42 fetched=42 unique=42 first_date=2026-09-11
+S6 size=50 oldest: total=42 fetched=42 unique=42 first_date=2026-09-04
+S6 size=100 newest: total=42 fetched=42 unique=42 first_date=2026-09-11
+S6 size=100 oldest: total=42 fetched=42 unique=42 first_date=2026-09-04
+S6 size=150 newest: total=42 fetched=42 unique=42 first_date=2026-09-11
+S6 size=150 oldest: total=42 fetched=42 unique=42 first_date=2026-09-04
+S7 two-flag incidents: [(UUID('8bf5fa89-00a6-4e87-923c-388c4b707443'), ['count_missing', 'aggregate_no_breakdown'])]
+S10 hidden NV rows: 405 leaked into NV list: 0 shown as NV in all-states: 0
+U1 flag detail 200 {"reason_code": "count_missing", "status": "open", "summary": "Injuries reported but no exact number: «🔴اصابات في الغارة الحربية على بلدة كفررمان في جبل عامل ،الاحتلال استهدف بناية ماهولة»"}

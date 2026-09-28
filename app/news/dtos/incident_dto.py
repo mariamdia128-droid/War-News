@@ -1,11 +1,26 @@
+import logging
 from datetime import date, datetime, time
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 INCIDENTS_START_DATE = date(2026, 8, 20)
+
+logger = logging.getLogger(__name__)
+
+# "segment" is written by app/news/services/dedup/segment_review_dedup.py.
+DuplicateLevel = Literal["low", "medium", "high", "segment"]
+_DUPLICATE_LEVELS = frozenset(get_args(DuplicateLevel))
+
+
+def _display_duplicate_level(value: Any) -> Any:
+    """Read models only: an unknown stored level must not fail a whole list page."""
+    if value is None or value in _DUPLICATE_LEVELS:
+        return value
+    logger.warning("Unknown incident duplicate_level %r shown as empty", value)
+    return None
 
 
 class IncidentListItemDTO(BaseModel):
@@ -28,10 +43,12 @@ class IncidentListItemDTO(BaseModel):
     matched: bool
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] = "auto_processed"
     verification_reason: str | None = None
+    verification_types: list[str] = Field(default_factory=list)
+    open_flags: list[dict[str, Any]] = Field(default_factory=list)
     verified_by_user_id: UUID | None = None
     verified_at: datetime | None = None
     duplicate_flag: Literal["none", "possible"]
-    duplicate_level: Literal["low", "medium", "high"] | None = None
+    duplicate_level: DuplicateLevel | None = None
     duplicate_similarity_score: float | None = None
     details_pending: bool
     created_at: datetime
@@ -40,6 +57,11 @@ class IncidentListItemDTO(BaseModel):
     edit_lock_expires_at: datetime | None = None
     village_id: int | None = None
     story_group_id: UUID | None = None
+
+    @field_validator("duplicate_level", mode="before")
+    @classmethod
+    def _tolerant_duplicate_level(cls, value: Any) -> Any:
+        return _display_duplicate_level(value)
 
 
 class IncidentListParams(BaseModel):
@@ -55,6 +77,7 @@ class IncidentListParams(BaseModel):
     event_date_to: date | None = None
     flagged_only: bool = False
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] | None = None
+    verification_type: Literal["duplicate", "casualty_missing_number", "casualty_aggregate_toll"] | None = None
     duplicate_only: bool = False
     has_casualties: bool = False
     sort_order: Literal["newest", "oldest"] = "newest"
@@ -70,6 +93,7 @@ class IncidentListResponse(BaseModel):
     latest_incident_at: datetime | None = None
     needs_verification_count: int = 0
     casualties_count: int = 0
+    needs_verification_outside_range_count: int = 0
 
 
 class CasualtyDemographicsDTO(BaseModel):
@@ -150,6 +174,11 @@ class RelatedIncidentDTO(BaseModel):
 class IncidentDetailDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True, frozen=True)
 
+    @field_validator("duplicate_level", mode="before")
+    @classmethod
+    def _tolerant_duplicate_level(cls, value: Any) -> Any:
+        return _display_duplicate_level(value)
+
     id: UUID
     village: str | None
     village_details: IncidentVillageDetailDTO | None = None
@@ -177,10 +206,12 @@ class IncidentDetailDTO(BaseModel):
     matched: bool
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] = "auto_processed"
     verification_reason: str | None = None
+    verification_types: list[str] = Field(default_factory=list)
+    open_flags: list[dict[str, Any]] = Field(default_factory=list)
     verified_by_user_id: UUID | None = None
     verified_at: datetime | None = None
     duplicate_flag: Literal["none", "possible"]
-    duplicate_level: Literal["low", "medium", "high"] | None = None
+    duplicate_level: DuplicateLevel | None = None
     duplicate_similarity_score: float | None = None
     village_review_required: bool = False
     any_village_low_confidence: bool = False
@@ -193,6 +224,7 @@ class IncidentDetailDTO(BaseModel):
     bulletin_group: BulletinCasualtyGroupDTO | None = None
     toll_revisions: list[TollRevisionDTO] = Field(default_factory=list)
     related_incidents: list[RelatedIncidentDTO] = Field(default_factory=list)
+    open_casualty_flags_count: int = 0
     lebanese_army: IncidentCategorySectionDTO | None = None
     unifil: IncidentCategorySectionDTO | None = None
     municipality: IncidentCategorySectionDTO | None = None

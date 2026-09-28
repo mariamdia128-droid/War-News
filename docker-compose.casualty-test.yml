@@ -1,0 +1,72 @@
+# Scratch stack for the casualty verification test run. Untracked; do not commit.
+# Static data only: no pipeline, polling, Telegram, CNRS or Ollama workers.
+#   docker compose -f docker-compose.casualty-test.yml up -d
+#   docker compose -f docker-compose.casualty-test.yml down -v   (drops the scratch DB)
+name: war_news_casualty_test
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg2://postgres:casualty_test@db:5432/war_news_casualty_test
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: casualty_test
+  POSTGRES_DB: war_news_casualty_test
+  REDIS_URL: redis://redis:6379/0
+  CASUALTY_FLAGS_ENABLED: "true"
+  CASUALTY_FLAG_GRACE_MINUTES: "0"
+  # Unreachable on purpose: nothing may call external sources.
+  OLLAMA_BASE_URL: http://127.0.0.1:9
+  CNRS_API_BASE_URL: http://127.0.0.1:9
+  CNRS_API_KEY: disabled
+  CNRS_WEBHOOK_SECRET: scratch-only-disabled
+  RED_ALERT_ENABLED: "false"
+  PIPELINE_ROLE: api
+  PG_APPLICATION_NAME: casualty-test-backend
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: casualty_test
+      POSTGRES_DB: war_news_casualty_test
+    volumes:
+      - casualty_test_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d war_news_casualty_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+
+  backend:
+    image: war-news-casualty-test:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *backend-env
+    ports:
+      - "8002:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  frontend:
+    image: war-news-casualty-test-frontend:latest
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: /api
+      VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_USE_POLLING: "true"
+    ports:
+      - "5175:5173"
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  casualty_test_pgdata:

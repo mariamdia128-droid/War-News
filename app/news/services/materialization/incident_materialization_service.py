@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -14,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.text_normalization import normalize_arabic_text
 from app.core.text_sanitizer import strip_emoji_and_pictographs
 from app.llm.dtos import (
     CasualtyScope,
@@ -47,6 +49,11 @@ from app.news.services.incident_details.category_mapper import (
     map_categories,
     suppress_category_casualties,
 )
+from app.news.services.incident_details.casualty_status import (
+    status_for_incident_row,
+    target_location_count_from_extraction,
+)
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 from app.news.services.matching.emergency_organization_matching_service import (
     EmergencyOrganizationMatchingService,
 )
@@ -77,6 +84,7 @@ def _initial_verification_status(
     duplicate_flag: bool = False,
     insufficient_score: bool = False,
     low_confidence_village_match: bool = False,
+    condition_review_required: bool = False,
 ) -> str:
     """Return the initial review state for materialized incidents.
 
@@ -87,7 +95,12 @@ def _initial_verification_status(
     """
     return (
         "needs_verification"
-        if (duplicate_flag or insufficient_score or low_confidence_village_match)
+        if (
+            duplicate_flag
+            or insufficient_score
+            or low_confidence_village_match
+            or condition_review_required
+        )
         else "auto_processed"
     )
 
@@ -128,6 +141,14 @@ def _incident_event_datetime(value: datetime) -> datetime:
     return value.astimezone(BEIRUT_TIMEZONE)
 
 
+def _extraction_review_reason(extraction: ExtractionResult) -> str | None:
+    if extraction.casualty_scope_needs_review:
+        return extraction.casualty_scope_review_reason
+    if extraction.needs_review:
+        return extraction.review_reason
+    return None
+
+
 EXACT_HASH_CONSTRAINT = "uq_incidents_exact_hash_active"
 AMBIGUOUS_SUB_EVENT_SCOPE_REVIEW_REASON = (
     "Multiple sub-events lack explicit location binding in a multi-village bulletin; "
@@ -166,7 +187,7 @@ def _new_incident_payload(incident: Incident) -> str:
         ),
         "condition_id": incident.condition_id,
         "village": (
-            incident.village_display_name
+            getattr(incident, "village_display_name", None)
             or (village.ref_name_en or village.cad_name if village is not None else None)
         ),
         "condition": condition.action_en if condition is not None else None,
@@ -308,6 +329,18 @@ class IncidentMaterializationService:
             for village_match in village_matches
             if self._materializes_village_match(village_match)
         ]
+        village_matches, target_matches, extraction = (
+            self._collapse_plain_between_targets(
+                representative.raw_text,
+                village_matches,
+                target_matches,
+                extraction,
+            )
+        )
+        target_matches = self._dedupe_village_matches_by_village(
+            target_matches,
+            extraction=extraction,
+        )
         is_multi_village = self._distinct_target_village_count(target_matches) > 1
         if self._has_ambiguous_sub_event_scope(
             extraction,
@@ -436,6 +469,7 @@ class IncidentMaterializationService:
                     village_injuries=village_injuries,
                     origin_villages=origin_villages,
                     is_multi_village=is_multi_village,
+                    village_id=village_id,
                     similarity_score=1.0,
                     similarity_method="story",
                 )
@@ -463,8 +497,10 @@ class IncidentMaterializationService:
                         village_deaths=revision_casualties.deaths,
                         village_injuries=revision_casualties.injuries,
                         is_multi_village=is_multi_village,
+                        village_id=village_id,
                     ),
                     raw_message_id=representative.id,
+                    heuristic_only=story_route.classification.heuristic_only,
                 )
                 self.db.commit()
                 logger.info(
@@ -483,6 +519,9 @@ class IncidentMaterializationService:
                 # matched active incident with a pending duplicate_matches entry.
                 incident = self._insert_fast_incident(
                     representative=representative,
+                    casualty_status_values=self._casualty_status_values(
+                        representative, extraction, village_casualties, village_id
+                    ),
                     casualties=village_casualties,
                     village_id=village_id,
                     village_display_name=self._village_display_name(village_match),
@@ -494,13 +533,15 @@ class IncidentMaterializationService:
                     deaths=village_deaths,
                     injuries=village_injuries,
                     duplicate_flag=True,
-                    scope_review_reason=(
-                        extraction.casualty_scope_review_reason
-                        if extraction.casualty_scope_needs_review
-                        else None
-                    ),
+                    scope_review_reason=_extraction_review_reason(extraction),
                     low_confidence_village_match=(
                         village_status == "matched_low_confidence"
+                    ),
+                    condition_review_required=bool(
+                        village_match.get("condition_review_required")
+                    ),
+                    condition_review_reason=village_match.get(
+                        "condition_review_reason"
                     ),
                     hash_suffix=unit.hash_suffix,
                     story_group_id=unit.story_group_id,
@@ -570,6 +611,9 @@ class IncidentMaterializationService:
                                     item.model_dump(mode="json")
                                     for item in extraction.casualty_transitions
                                 ],
+                                **self._casualty_status_values(
+                                    representative, extraction, village_casualties, village_id
+                                ),
                             },
                             raw_message_id=representative.id,
                         )
@@ -624,6 +668,9 @@ class IncidentMaterializationService:
 
             incident = self._insert_fast_incident(
                 representative=representative,
+                casualty_status_values=self._casualty_status_values(
+                    representative, extraction, village_casualties, village_id
+                ),
                 casualties=village_casualties,
                 village_id=village_id,
                 village_display_name=self._village_display_name(village_match),
@@ -634,14 +681,14 @@ class IncidentMaterializationService:
                 location_ambiguity_note=self._location_ambiguity_note(extraction),
                 deaths=village_deaths,
                 injuries=village_injuries,
-                scope_review_reason=(
-                    extraction.casualty_scope_review_reason
-                    if extraction.casualty_scope_needs_review
-                    else None
-                ),
+                scope_review_reason=_extraction_review_reason(extraction),
                 low_confidence_village_match=(
                     village_status == "matched_low_confidence"
                 ),
+                condition_review_required=bool(
+                    village_match.get("condition_review_required")
+                ),
+                condition_review_reason=village_match.get("condition_review_reason"),
                 hash_suffix=unit.hash_suffix,
                 story_group_id=unit.story_group_id,
             )
@@ -691,6 +738,18 @@ class IncidentMaterializationService:
             )
             return created
 
+        if (
+            not created
+            and representative.status == MessageStatus.parsed
+            and self.fast_stats.skipped_duplicate_hash > 0
+            and self._has_live_incident(representative.id)
+        ):
+            # Retry of a partial multi-village failure: every remaining village
+            # already exists, so the message is complete rather than empty.
+            self._mark_materialized(representative, fast_path=True)
+            self.db.commit()
+            return created
+
         if not created and representative.status == MessageStatus.parsed:
             reason = (
                 ERROR_EXACT_HASH
@@ -719,6 +778,7 @@ class IncidentMaterializationService:
         village_injuries: int | None,
         origin_villages: list[str],
         is_multi_village: bool,
+        village_id: int | None,
         similarity_score: float,
         similarity_method: str,
     ) -> None:
@@ -743,6 +803,9 @@ class IncidentMaterializationService:
             "casualty_transitions": [
                 item.model_dump(mode="json") for item in extraction.casualty_transitions
             ],
+            **self._casualty_status_values(
+                representative, extraction, village_casualties, village_id
+            ),
         }
         incidents = (
             getattr(fast_dedup, "incidents", None) or self.story_router.incidents
@@ -790,6 +853,7 @@ class IncidentMaterializationService:
         village_deaths: int | None,
         village_injuries: int | None,
         is_multi_village: bool,
+        village_id: int | None,
     ) -> dict[str, Any]:
         mapped_fields = map_categories(
             extraction.categories,
@@ -814,6 +878,9 @@ class IncidentMaterializationService:
             "female_i": village_casualties.female_injuries,
             "children_d": village_casualties.children_deaths,
             "children_i": village_casualties.children_injuries,
+            **self._casualty_status_values(
+                representative, extraction, village_casualties, village_id
+            ),
         }
 
     @staticmethod
@@ -869,7 +936,22 @@ class IncidentMaterializationService:
         representative.low_confidence_relevance = True
         representative.fast_path_completed_at = datetime.now(timezone.utc)
         representative.error_message = reason
+        # Leaving status=parsed let later stages materialize the held row anyway.
+        representative.status = MessageStatus.held_for_review
         self.db.commit()
+
+    def _has_live_incident(self, raw_message_id: int) -> bool:
+        return (
+            self.db.scalar(
+                select(Incident.id)
+                .where(
+                    Incident.raw_message_id == raw_message_id,
+                    Incident.is_deleted.is_(False),
+                )
+                .limit(1)
+            )
+            is not None
+        )
 
     @staticmethod
     def _mark_materialized(representative: RawMessage, *, fast_path: bool) -> None:
@@ -880,10 +962,40 @@ class IncidentMaterializationService:
             representative.fast_path_completed_at = now
         representative.materialized_at = now
 
+    @staticmethod
+    def _casualty_status_values(
+        representative: RawMessage,
+        extraction: ExtractionResult,
+        row_casualties: ExtractionCasualties,
+        village_id: int | None,
+    ) -> dict[str, Any]:
+        target_count = target_location_count_from_extraction(
+            extraction.village,
+            extraction.village_roles,
+            extraction.sub_events,
+        )
+        result = status_for_incident_row(
+            representative.raw_text or "",
+            extraction,
+            row_casualties,
+            target_location_count=target_count,
+            row_village_id=village_id,
+            match_result=representative.match_result,
+        )
+        return {
+            "casualty_status": result.status,
+            "casualty_deaths_status": result.deaths_status,
+            "casualty_injuries_status": result.injuries_status,
+            "casualty_status_remaining_total": result.remaining_total,
+            "casualty_is_preliminary": result.is_preliminary,
+            "casualty_status_evidence": result.evidence,
+        }
+
     def _insert_fast_incident(
         self,
         *,
         representative: RawMessage,
+        casualty_status_values: dict[str, Any],
         casualties: ExtractionCasualties,
         village_id: int | None,
         village_display_name: str | None,
@@ -897,6 +1009,8 @@ class IncidentMaterializationService:
         duplicate_flag: bool = False,
         scope_review_reason: str | None = None,
         low_confidence_village_match: bool = False,
+        condition_review_required: bool = False,
+        condition_review_reason: str | None = None,
         hash_suffix: str | None = None,
         story_group_id: UUID | None = None,
     ) -> Incident | None:
@@ -924,6 +1038,7 @@ class IncidentMaterializationService:
             # duplicate flag, before its audit record is persisted.
             insufficient_score=duplicate_flag,
             low_confidence_village_match=low_confidence_village_match,
+            condition_review_required=condition_review_required,
         )
         if scope_review_reason:
             verification_status = "needs_verification"
@@ -933,6 +1048,7 @@ class IncidentMaterializationService:
                 duplicate_flag=duplicate_flag,
                 insufficient_score=duplicate_flag,
                 low_confidence_village_match=low_confidence_village_match,
+                condition_review_reason=condition_review_reason,
             )
             if verification_status == "needs_verification"
             else None
@@ -957,6 +1073,7 @@ class IncidentMaterializationService:
             total_injuries=total_injuries,
             deaths=deaths,
             injuries=injuries,
+            **casualty_status_values,
             exact_hash=exact_hash,
             duplicate_flag=duplicate_flag,
             details_pending=True,
@@ -987,6 +1104,7 @@ class IncidentMaterializationService:
             )
             self._mark_materialized(representative, fast_path=True)
             _notify_new_incident(self.db, incident)
+            evaluate_casualty_flags_safely(self.db, incident.id)
             self.db.commit()
             self.fast_stats.inserted += 1
             logger.info(
@@ -1067,6 +1185,18 @@ class IncidentMaterializationService:
             for village_match in village_matches
             if self._materializes_village_match(village_match)
         ]
+        village_matches, target_matches, extraction = (
+            self._collapse_plain_between_targets(
+                representative.raw_text,
+                village_matches,
+                target_matches,
+                extraction,
+            )
+        )
+        target_matches = self._dedupe_village_matches_by_village(
+            target_matches,
+            extraction=extraction,
+        )
         is_multi_village = self._distinct_target_village_count(target_matches) > 1
         category_casualties_suppressed = False
         if is_multi_village:
@@ -1098,7 +1228,7 @@ class IncidentMaterializationService:
             if len(event_indexes) >= 2 or (event_indexes and len(target_matches) >= 2)
             else None
         )
-        for village_match in village_matches:
+        for village_match in target_matches:
             if not self._materializes_village_match(village_match):
                 logger.info(
                     "raw_message_id=%s village suppressed from materialization: role=%r text=%r",
@@ -1210,6 +1340,9 @@ class IncidentMaterializationService:
                                     item.model_dump(mode="json")
                                     for item in extraction.casualty_transitions
                                 ],
+                                **self._casualty_status_values(
+                                    representative, extraction, village_casualties, village_id
+                                ),
                             },
                             raw_message_id=representative.id,
                         )
@@ -1254,12 +1387,16 @@ class IncidentMaterializationService:
                 low_confidence_village_match=(
                     village_status == "matched_low_confidence"
                 ),
+                condition_review_required=bool(
+                    village_match.get("condition_review_required")
+                ),
             )
-            if category_casualties_suppressed or extraction.casualty_scope_needs_review:
+            extraction_review_reason = _extraction_review_reason(extraction)
+            if category_casualties_suppressed or extraction_review_reason:
                 verification_status = "needs_verification"
             verification_reason = (
-                extraction.casualty_scope_review_reason
-                if extraction.casualty_scope_needs_review
+                extraction_review_reason
+                if extraction_review_reason
                 else "Category casualties require manual per-village confirmation "
                 "for a multi-target bulletin"
                 if category_casualties_suppressed
@@ -1270,6 +1407,9 @@ class IncidentMaterializationService:
                     duplicate_similarity_score=duplicate_score,
                     low_confidence_village_match=(
                         village_status == "matched_low_confidence"
+                    ),
+                    condition_review_reason=village_match.get(
+                        "condition_review_reason"
                     ),
                 )
                 if verification_status == "needs_verification"
@@ -1295,6 +1435,9 @@ class IncidentMaterializationService:
                 total_injuries=total_injuries,
                 deaths=village_deaths,
                 injuries=village_injuries,
+                **self._casualty_status_values(
+                    representative, extraction, village_casualties, village_id
+                ),
                 exact_hash=exact_hash,
                 duplicate_flag=duplicate_flag,
                 duplicate_level=duplicate_level,
@@ -1339,6 +1482,7 @@ class IncidentMaterializationService:
                 )
                 self._mark_materialized(representative, fast_path=False)
                 _notify_new_incident(self.db, incident)
+                evaluate_casualty_flags_safely(self.db, incident.id)
                 self.db.commit()
                 self.stats.inserted += 1
                 created.append(incident)
@@ -1563,11 +1707,16 @@ class IncidentMaterializationService:
         village_match: dict[str, Any],
         fallback: int,
     ) -> int | None:
+        """Prefer a per-village/sub-event condition; otherwise use message-level.
+
+        Sub-events often carry ``event_index`` even when condition matching for
+        that clause failed (``unmatched``). Dropping those villages left
+        multi-event bulletins (ACCSTUDY-002) as a single row. Falling back to
+        the message-level matched condition keeps one row per village.
+        """
         condition_id = cls._optional_int(village_match.get("matched_condition_id"))
         if condition_id is not None:
             return condition_id
-        if village_match.get("event_index") is not None:
-            return None
         return fallback
 
     @staticmethod
@@ -1603,6 +1752,87 @@ class IncidentMaterializationService:
                 is not None
             }
         )
+
+    @classmethod
+    def _dedupe_village_matches_by_village(
+        cls,
+        village_matches: list[dict[str, Any]],
+        *,
+        extraction: ExtractionResult | None = None,
+    ) -> list[dict[str, Any]]:
+        """Drop Cartesian duplicates without collapsing distinct same-village actions.
+
+        ACCSTUDY-005-style extractions put every list village into each
+        sub-event's ``locations``, so matching emits the same village under
+        many ``event_index`` values. Keep every match whose sub-event action
+        names that village (distinct actions on one place stay), otherwise
+        prefer sole-location clauses, else the first occurrence.
+        """
+        if len(village_matches) < 2:
+            return list(village_matches)
+
+        sub_events = extraction.sub_events if extraction is not None else []
+
+        def _action_mentions(match: dict[str, Any]) -> bool:
+            raw = match.get("raw_village_text")
+            if not isinstance(raw, str) or not raw.strip():
+                return False
+            index = cls._optional_int(match.get("event_index"))
+            if index is None or not 0 <= index < len(sub_events):
+                return False
+            action = (
+                getattr(sub_events[index], "action_text", None)
+                or getattr(sub_events[index], "action_description", None)
+                or ""
+            ).strip()
+            return bool(action) and raw.strip() in action
+
+        def _is_sole_location(match: dict[str, Any]) -> bool:
+            location_count = cls._optional_int(match.get("event_location_count"))
+            if location_count is not None:
+                return location_count <= 1
+            index = cls._optional_int(match.get("event_index"))
+            if index is None:
+                return True
+            same_event = sum(
+                1
+                for other in village_matches
+                if cls._optional_int(other.get("event_index")) == index
+            )
+            return same_event <= 1
+
+        groups: dict[str, list[dict[str, Any]]] = {}
+        order: list[str] = []
+        for match in village_matches:
+            village_id = cls._optional_int(match.get("matched_village_id"))
+            if village_id is not None:
+                key = f"id:{village_id}"
+            else:
+                raw = match.get("raw_village_text")
+                if not isinstance(raw, str) or not raw.strip():
+                    continue
+                key = f"text:{raw.strip()}"
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(match)
+
+        deduped: list[dict[str, Any]] = []
+        for key in order:
+            group = groups[key]
+            if len(group) == 1:
+                deduped.append(group[0])
+                continue
+            mentioned = [match for match in group if _action_mentions(match)]
+            if mentioned:
+                deduped.extend(mentioned)
+                continue
+            sole = [match for match in group if _is_sole_location(match)]
+            if sole:
+                deduped.extend(sole)
+                continue
+            deduped.append(group[0])
+        return deduped
 
     @classmethod
     def _event_casualties_for_match(
@@ -1776,6 +2006,107 @@ class IncidentMaterializationService:
             if normalized and normalized not in origin_villages:
                 origin_villages.append(normalized)
         return origin_villages
+
+    @classmethod
+    def _collapse_plain_between_targets(
+        cls,
+        raw_text: str | None,
+        village_matches: list[dict[str, Any]],
+        target_matches: list[dict[str, Any]],
+        extraction: ExtractionResult,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], ExtractionResult]:
+        """Collapse plain بين/محيط/قرب phrasing to one reviewable target village."""
+        if cls._distinct_target_village_count(target_matches) <= 1:
+            return village_matches, target_matches, extraction
+
+        fuzzy = cls._plain_fuzzy_area_target_order(raw_text, target_matches)
+        if fuzzy is None:
+            return village_matches, target_matches, extraction
+
+        primary, alternate_matches, evidence = fuzzy
+        alternatives = [
+            str(item.get("raw_village_text") or "").strip()
+            for item in alternate_matches
+            if str(item.get("raw_village_text") or "").strip()
+        ]
+        collapsed_primary = {
+            **primary,
+            "village_match_status": "matched_low_confidence",
+            "village_review_required": True,
+            "qualifier_text": primary.get("qualifier_text")
+            or f"fuzzy area; alternate: {', '.join(alternatives)}",
+        }
+        primary_id = id(primary)
+        alternate_ids = {id(item) for item in alternate_matches}
+        collapsed_village_matches: list[dict[str, Any]] = []
+        for item in village_matches:
+            if id(item) == primary_id:
+                collapsed_village_matches.append(collapsed_primary)
+            elif id(item) in alternate_ids:
+                continue
+            else:
+                collapsed_village_matches.append(item)
+
+        merged_alternatives = list(extraction.location_alternatives)
+        merged_alternatives.extend(
+            item for item in alternatives if item not in merged_alternatives
+        )
+        collapsed_extraction = extraction.model_copy(
+            update={
+                "location_ambiguity": True,
+                "location_alternatives": merged_alternatives,
+                "location_ambiguity_evidence": (
+                    extraction.location_ambiguity_evidence or evidence
+                ),
+            }
+        )
+        collapsed_target_matches = [
+            collapsed_primary if id(item) == primary_id else item
+            for item in target_matches
+            if id(item) not in alternate_ids
+        ]
+        return collapsed_village_matches, collapsed_target_matches, collapsed_extraction
+
+    @staticmethod
+    def _plain_fuzzy_area_target_order(
+        raw_text: str | None,
+        target_matches: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], str] | None:
+        normalized_text = normalize_arabic_text(raw_text or "")
+        if not normalized_text:
+            return None
+        marker = re.search(
+            r"(?:^|\s)(?:في\s+)?(?:المنطقه\s+الواقعه\s+)?"
+            r"(?:محيط|قرب|بالقرب\s+من|بين(?:\s+بلدتي)?)\s+",
+            normalized_text,
+        )
+        if marker is None:
+            return None
+        before = normalized_text[max(0, marker.start() - 16) : marker.start()]
+        if "طريق" in before or "مسار" in before:
+            return None
+
+        tail = re.split(r"[،؛:.!؟\n]", normalized_text[marker.end() :], maxsplit=1)[0]
+        ordered = sorted(
+            (
+                (tail.find(name), item, name)
+                for item in target_matches
+                if (
+                    name := normalize_arabic_text(
+                        str(item.get("raw_village_text") or "")
+                    )
+                )
+                and name in tail
+            ),
+            key=lambda value: value[0],
+        )
+        if len(ordered) < 2:
+            return None
+
+        primary = ordered[0][1]
+        alternatives = [ordered[1][1]]
+        evidence = normalized_text[marker.start() :].strip()
+        return primary, alternatives, evidence
 
     @staticmethod
     def _village_display_name(village_match: dict[str, Any]) -> str | None:

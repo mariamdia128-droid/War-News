@@ -59,20 +59,36 @@ def trusted_cnrs_action(
     """Map a supported CNRS subtype to its trusted incident condition."""
     if not classification or classification.get("include") is not True:
         return None
-    if verdict_from_cnrs_classification(classification) != ClassificationVerdict.relevant:
-        return None
     subtype = str(classification.get("event_subtype") or "").strip().lower()
+    if subtype == "fire_incident":
+        # verdict_from_cnrs_classification rejects domain=fire outright unless
+        # mentions_israeli_actor is set (39f79d5f), which made this branch dead:
+        # a fire attributed only in the post text (e.g. "قصف مدفعي إسرائيلي",
+        # "درون معادية القت مواد حارقة") could never reach has_conflict_attribution.
+        # Fires require explicit war/conflict causal attribution (flag OR text)
+        # to avoid civilian/traffic false positives; check that directly instead
+        # of the domain-based verdict gate.
+        if not has_conflict_attribution(classification, post_text):
+            return None
+    elif verdict_from_cnrs_classification(classification) != ClassificationVerdict.relevant:
+        return None
     if subtype == "direct_attack":
         return (
             "Tank Fire"
             if any(marker in post_text for marker in _TANK_MARKERS)
             else "Bombs"
         )
-    if subtype == "fire_incident":
-        # Fires require explicit war/conflict causal attribution to avoid civilian/traffic false positives.
-        if not has_conflict_attribution(classification, post_text):
-            return None
     return SUBTYPE_ACTIONS.get(subtype)
+
+
+def _has_text_grounded_action(result: ExtractionResult) -> bool:
+    if (result.action_description or "").strip():
+        return True
+    return any(
+        (sub_event.action_text or "").strip()
+        or (sub_event.evidence_span or "").strip()
+        for sub_event in result.sub_events
+    )
 
 
 class CnrsExtractionFallback(ExtractionClassifierInterface):
@@ -133,8 +149,10 @@ class CnrsExtractionFallback(ExtractionClassifierInterface):
         post_text: str,
     ) -> ExtractionResult:
         location = str(classification.get("location") or "").strip()
+        subtype = str(classification.get("event_subtype") or "").strip().lower() or None
         action = trusted_cnrs_action(classification, post_text)
         villages, village_roles = cls._merge_location(result, location)
+        has_text_grounded_action = _has_text_grounded_action(result)
 
         categories = dict(result.categories)
         presence_keys = list(result.presence_category_keys)
@@ -161,7 +179,20 @@ class CnrsExtractionFallback(ExtractionClassifierInterface):
                 ),
                 "village": villages,
                 "village_roles": village_roles,
-                "action_description": action or result.action_description,
+                "action_description": (
+                    result.action_description
+                    if has_text_grounded_action
+                    else action or result.action_description
+                ),
+                "action_source": (
+                    "llm_text"
+                    if has_text_grounded_action
+                    else "cnrs_subtype_fallback"
+                    if action is not None
+                    else result.action_source
+                ),
+                "source_event_subtype": subtype,
+                "source_action_hint": action,
                 "categories": categories,
                 "presence_category_keys": presence_keys,
             }

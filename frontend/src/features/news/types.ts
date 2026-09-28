@@ -25,10 +25,12 @@ export type Incident = {
   matched: boolean;
   verification_status: "auto_processed" | "needs_verification" | "verified" | "rejected";
   verification_reason: string | null;
+  verification_types?: Array<"duplicate" | "casualty_missing_number" | "casualty_aggregate_toll">;
+  open_flags?: Array<{ flag_id: string; reason_code: string; label: string; severity: string; summary: string; evidence_sentence: string | null }>;
   verified_by_user_id: string | null;
   verified_at: string | null;
   duplicate_flag: "none" | "possible";
-  duplicate_level?: "low" | "medium" | "high" | null;
+  duplicate_level?: "low" | "medium" | "high" | "segment" | null;
   duplicate_similarity_score?: number | null;
   details_pending: boolean;
   created_at: string;
@@ -47,6 +49,7 @@ export type IncidentListResponse = {
   latest_incident_at: string | null;
   needs_verification_count: number;
   casualties_count: number;
+  needs_verification_outside_range_count?: number;
 };
 
 export type IncidentStreamEvent = Incident & {
@@ -66,6 +69,7 @@ export type IncidentFilters = {
   eventDateTo?: string;
   flaggedOnly?: boolean;
   verificationStatus?: "auto_processed" | "needs_verification" | "verified" | "rejected";
+  verificationType?: "duplicate" | "casualty_missing_number" | "casualty_aggregate_toll";
   duplicateOnly?: boolean;
   hasCasualties?: boolean;
   sortOrder?: "newest" | "oldest";

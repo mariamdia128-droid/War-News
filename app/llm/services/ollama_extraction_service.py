@@ -26,8 +26,12 @@ from app.llm.dtos import (
     VillageRoleEntry,
 )
 from app.llm.interfaces import ExtractionClassifierInterface
-from app.llm.services.ollama_category_detail_service import OllamaCategoryDetailService
+from app.llm.services.ollama_category_detail_service import (
+    OllamaCategoryDetailService,
+    tier2_scope_context,
+)
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
+from app.llm.services.transient_llm_errors import Tier2ExtractionFailedError
 from app.llm.services.ollama_presence_gate_service import (
     LOW_TEMPERATURE,
     PRESENCE_GATE_RESPONSE_SCHEMA,
@@ -36,6 +40,14 @@ from app.llm.services.ollama_presence_gate_service import (
 from app.llm.services.ollama_relevance_classifier_service import is_valid_reason_text
 from app.news.services.incident_details.casualty_count_backstop import (
     apply_casualty_count_backstop,
+)
+from app.news.services.incident_details.casualty_count_fill import (
+    fill_counts_from_count_words,
+)
+from app.news.services.incident_details.casualty_status import (
+    derive_casualty_status,
+    status_fields,
+    target_location_count_from_extraction,
 )
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
@@ -57,6 +69,30 @@ _BETWEEN_ROUTE_RE = re.compile(
     r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
     r"(?=$|[\n،؛.!؟])"
 )
+MULTI_VILLAGE_NO_SUBEVENTS_REVIEW_REASON = "multi_village_no_subevents"
+_ACTION_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("sweeping", ("تمشيط", "مشط", "مشطت", "sweep", "sweeping")),
+    (
+        "illumination_incendiary",
+        (
+            "قنابل مضيئة",
+            "قنابل حارقة",
+            "مضيئة وحارقة",
+            "انارة",
+            "اناره",
+            "incendiary",
+            "illumination",
+            "flare",
+            "flares",
+        ),
+    ),
+    ("shelling", ("قصف", "قذائف", "مدفعي", "shell", "shelling")),
+    ("airstrike", ("غارة", "اغارة", "استهدفت", "استهداف", "airstrike", "raid", "strike")),
+    ("fire", ("حريق", "احراق", "أحرق", "حرق", "fire", "burn")),
+    ("drone", ("مسيرة", "مسيّرة", "درون", "drone")),
+    ("gunfire", ("اطلاق نار", "رشقات", "رصاص", "gunfire", "shooting")),
+    ("movement", ("تحرك", "آليات", "اليات", "توغل", "دورية", "movement", "incursion")),
+)
 _DASH_QUALIFIER_RE = re.compile(
     r"(?P<prefix>بلدة|مزرعة|خراج)\s+"
     r"(?P<left>[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}?)"
@@ -64,12 +100,34 @@ _DASH_QUALIFIER_RE = re.compile(
     r"(?P<right>[\u0600-\u06ff][\u0600-\u06ff\s]{1,80}?)"
     r"(?=$|[\n،؛.!؟])"
 )
+_BALDA_VILLAGE_RE = re.compile(
+    r"(?:^|[^\u0600-\u06ff])"
+    r"(?:بلدة|بلدات)\s+"
+    r"(?P<village>[\u0600-\u06ff][\u0600-\u06ff\s]{0,40}?)"
+    r"(?=\s*(?:[،؛.!؟\n]|$)|(?:\s+(?:أسفر|أدى|مما|في\s+قضاء)))"
+)
+# Shared-toll bulletin lists: «بلدات حولا، مارون الراس، … ويارون»
+_BALDAT_LIST_RE = re.compile(
+    r"بلدات\s+"
+    r"(?P<body>[\u0600-\u06ff][\u0600-\u06ff\s،,]{2,200}?)"
+    r"(?=\s*(?:،\s*)?(?:ما\s+)?(?:أسفر|أدى|مما)|[\n.!؟]|$)"
+)
 _SECONDARY_STRIKE_RE = re.compile(
     r"كما\s+طال(?:ت)?\s+(?:القصف|الغارة|الاستهداف)\s+"
     r"(?:حرج|خراج|أطراف|محيط)?\s*"
     r"بلدة\s+"
     r"(?P<village>[؀-ۿ][؀-ۿ\s]{1,40}?)"
     r"(?=\s+(?:في\s+)?قضاء|[\n،؛.!؟]|$)"
+)
+# Accuracy-study / bulletin connectors: «كما غارة أخرى في بلدة X»
+_SECONDARY_EVENT_CONNECTOR_RE = re.compile(
+    r"(?:كما|أيضا|بالإضافة(?:\s+إلى)?|من\s+جهة\s+أخرى|وفي\s+سياق\s+متصل)\s+"
+    r"(?:غارة|قصف|استهداف|قصفًا|غارات)?\s*"
+    r"(?:أخرى\s+)?"
+    r"(?:في\s+|على\s+)?"
+    r"بلدة\s+"
+    r"(?P<village>[\u0600-\u06ff][\u0600-\u06ff\s]{1,40}?)"
+    r"(?=\s*(?:[،؛.!؟\n]|$)|(?:\s+(?:أدى|أسفر|مما|في\s+قضاء)))"
 )
 _ROUTE_AREA_PREFIXES = terms_by_category(
     "terminology/role_terms.yaml",
@@ -490,11 +548,6 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             list(general_response.casualty_evidence),
             raw_message_id=raw_message_id,
         )
-        categories: dict[ExtractionCategoryKey, ExtractionCategory] = {}
-        self._inject_casualty_demographics_from_root(
-            categories,
-            casualties,
-        )
         village_roles = self._validated_village_roles(
             general_response.village_roles,
             post_text=post_text,
@@ -549,6 +602,18 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 sub_event.model_copy(update={"locations": event_locations})
             )
         sub_events = normalized_sub_events
+        casualties, casualty_evidence = fill_counts_from_count_words(
+            post_text,
+            casualties,
+            casualty_evidence,
+            target_villages=self._count_fill_targets(villages, village_roles, sub_events),
+            raw_message_id=raw_message_id,
+        )
+        categories: dict[ExtractionCategoryKey, ExtractionCategory] = {}
+        self._inject_casualty_demographics_from_root(
+            categories,
+            casualties,
+        )
         scope, scope_evidence, scope_needs_review, scope_reason = (
             self._validated_casualty_scope(
                 general_response,
@@ -557,8 +622,13 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 raw_message_id=raw_message_id,
             )
         )
+        needs_review, review_reason = self._multi_village_action_scope_review(
+            post_text,
+            village_roles=village_roles,
+            sub_events=sub_events,
+        )
 
-        return ExtractionResult(
+        result = ExtractionResult(
             is_relevant=general_response.is_relevant,
             village=villages,
             village_roles=village_roles,
@@ -579,11 +649,95 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             casualty_scope_evidence=scope_evidence,
             casualty_scope_needs_review=scope_needs_review,
             casualty_scope_review_reason=scope_reason,
+            needs_review=needs_review,
+            review_reason=review_reason,
             presence_category_keys=list(categories_present),
             extraction_tier=1,
             model=self.client.model,
             extracted_at=datetime.now(timezone.utc),
         )
+        casualty_status = derive_casualty_status(
+            post_text,
+            casualties,
+            village_roles=village_roles,
+            sub_events=sub_events,
+            target_location_count=target_location_count_from_extraction(
+                villages, village_roles, sub_events
+            ),
+        )
+        return result.model_copy(update=status_fields(casualty_status))
+
+    @staticmethod
+    def _count_fill_targets(
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+        sub_events: list[ExtractionSubEvent],
+    ) -> list[str]:
+        """Target locations for the count-word fill; empty means "do not fill".
+
+        Several sub-events split casualties across actions, so their root
+        totals are not a single-location count.
+        """
+        if len(sub_events) > 1:
+            return []
+        targets = [
+            role.village for role in village_roles if role.role == VillageRole.target
+        ] or list(villages or [])
+        targets.extend(
+            location.village
+            for sub_event in sub_events
+            for location in sub_event.locations
+            if location.role == VillageRole.target
+        )
+        return targets
+
+    @classmethod
+    def _multi_village_action_scope_review(
+        cls,
+        post_text: str,
+        *,
+        village_roles: list[VillageRoleEntry],
+        sub_events: list[ExtractionSubEvent],
+    ) -> tuple[bool, str | None]:
+        if sub_events:
+            return False, None
+        target_names = []
+        seen: set[str] = set()
+        for role in village_roles:
+            if role.role != VillageRole.target:
+                continue
+            key = normalize_arabic_text(role.village, compact=True).lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            target_names.append(role.village)
+        if len(target_names) < 2:
+            return False, None
+
+        families_by_village: dict[str, frozenset[str]] = {}
+        for village in target_names:
+            families = cls._action_families_near_village(post_text, village)
+            if families:
+                families_by_village[village] = families
+        distinct_families = set(families_by_village.values())
+        if len(distinct_families) >= 2:
+            return True, MULTI_VILLAGE_NO_SUBEVENTS_REVIEW_REASON
+        return False, None
+
+    @classmethod
+    def _action_families_near_village(cls, text: str, village: str) -> frozenset[str]:
+        normalized_text = normalize_arabic_text(text).lower()
+        normalized_village = normalize_arabic_text(village).lower()
+        if not normalized_village:
+            return frozenset()
+        families: set[str] = set()
+        for clause in re.split(r"[\n.،؛;!؟]+", normalized_text):
+            if normalized_village not in clause:
+                continue
+            for family, terms in _ACTION_FAMILIES:
+                if any(normalize_arabic_text(term).lower() in clause for term in terms):
+                    families.add(family)
+        return frozenset(families)
 
     def extract_tier2_details(
         self,
@@ -592,10 +746,14 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         *,
         root_casualties: ExtractionCasualties | None = None,
         raw_message_id: int | None = None,
+        villages: list[str] | None = None,
+        casualty_scope: str | None = None,
     ) -> dict[ExtractionCategoryKey, ExtractionCategory]:
         """Run Tier-2 category detail extraction for keys detected in Tier 1."""
         if not presence_category_keys:
             return {}
+
+        scope_context = tier2_scope_context(villages, casualty_scope)
 
         if settings.tier2_use_batched_category_detail:
             return self._extract_tier2_details_batched(
@@ -603,16 +761,19 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 presence_category_keys,
                 root_casualties=root_casualties,
                 raw_message_id=raw_message_id,
+                scope_context=scope_context,
             )
 
         category_details: dict[str, ExtractionCategory] = {}
         failed_categories: list[str] = []
+        last_error: BaseException | None = None
         for category_key in presence_category_keys:
             try:
                 category_detail = self.category_detail.extract_detail(
                     post_text,
                     category_key=category_key,
                     raw_message_id=raw_message_id,
+                    scope_context=scope_context,
                 )
             except Exception as exc:
                 auth_failure = coerce_ollama_auth_failure(
@@ -635,6 +796,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                     error,
                 )
                 failed_categories.append(category_key.value)
+                last_error = exc
                 continue
 
             if self._is_empty_category_detail(category_detail):
@@ -655,6 +817,9 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 failed_categories,
                 list(category_details.keys()),
             )
+            # A failed LLM call is not an empty answer: finalizing a partial
+            # result would permanently drop the failed categories.
+            raise Tier2ExtractionFailedError(failed_categories, last_error)
 
         return self._finalize_tier2_categories(
             category_details,
@@ -669,12 +834,14 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         *,
         root_casualties: ExtractionCasualties | None,
         raw_message_id: int | None,
+        scope_context: str | None = None,
     ) -> dict[ExtractionCategoryKey, ExtractionCategory]:
         try:
             batched = self.category_detail.extract_details_batch(
                 post_text,
                 presence_category_keys,
                 raw_message_id=raw_message_id,
+                scope_context=scope_context,
             )
         except Exception as exc:
             auth_failure = coerce_ollama_auth_failure(
@@ -688,7 +855,10 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 raw_message_id,
                 exc,
             )
-            return {}
+            raise Tier2ExtractionFailedError(
+                [key.value for key in presence_category_keys],
+                exc,
+            ) from exc
 
         category_details: dict[str, ExtractionCategory] = {}
         for category_key in presence_category_keys:
@@ -1115,7 +1285,160 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             villages,
             village_roles,
         )
+        villages, village_roles = cls._recover_connector_event_villages(
+            post_text,
+            villages,
+            village_roles,
+        )
+        villages, village_roles = cls._recover_baldat_list_villages(
+            post_text,
+            villages,
+            village_roles,
+        )
+        villages, village_roles = cls._recover_missing_balda_villages(
+            post_text,
+            villages,
+            village_roles,
+        )
         return villages, village_roles
+
+    @staticmethod
+    def _merge_recovered_villages(
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+        recovered: list[str],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        if not recovered:
+            return villages, village_roles
+        existing_names = list(villages or [])
+        existing_names.extend(entry.village for entry in village_roles)
+        existing_norms = {
+            normalize_arabic_text(name)
+            for name in existing_names
+            if normalize_arabic_text(name)
+        }
+        merged_villages = list(villages or [])
+        merged_roles = list(village_roles)
+        for village in recovered:
+            normalized = normalize_arabic_text(village)
+            if not normalized or normalized in existing_norms:
+                continue
+            if normalized in {"البلدة", "بلدة", "بلدات"}:
+                continue
+            existing_norms.add(normalized)
+            merged_villages.append(village)
+            merged_roles.append(
+                VillageRoleEntry(village=village, role=VillageRole.target)
+            )
+        return merged_villages or villages, merged_roles
+
+    @staticmethod
+    def _split_arabic_place_list(body: str) -> list[str]:
+        text = body.strip().strip("،,")
+        if not text:
+            return []
+        # Final «و» before the last place: «الخردلي ويارون» (often no space after و)
+        text = re.sub(r"\s+و\s*", "، ", text)
+        parts: list[str] = []
+        seen: set[str] = set()
+        for raw in re.split(r"[،,]", text):
+            place = raw.strip().strip("،,")
+            normalized = normalize_arabic_text(place)
+            if not normalized or normalized in seen:
+                continue
+            if normalized in {"البلدة", "بلدة", "بلدات"}:
+                continue
+            seen.add(normalized)
+            parts.append(place)
+        return parts
+
+    @classmethod
+    def _recover_baldat_list_villages(
+        cls,
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Recover every named place in a «بلدات A، B، C وD» bulletin list.
+
+        ACCSTUDY-003-style aggregates name many villages in one ``بلدات`` clause;
+        the model (and the single-balda backstop) often keep only the first.
+        """
+        match = _BALDAT_LIST_RE.search(post_text or "")
+        if match is None:
+            return villages, village_roles
+        recovered = cls._split_arabic_place_list(match.group("body"))
+        if len(recovered) < 2:
+            return villages, village_roles
+        return cls._merge_recovered_villages(villages, village_roles, recovered)
+
+    @classmethod
+    def _recover_connector_event_villages(
+        cls,
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Recover villages introduced by كما/أيضا-style event connectors.
+
+        ACCSTUDY-002: «كما غارة أخرى في بلدة عيناتا» / «كما غارة أخرى في بلدة طيرحرفا».
+        """
+        recovered = [
+            match.group("village").strip()
+            for match in _SECONDARY_EVENT_CONNECTOR_RE.finditer(post_text or "")
+            if match.group("village") and match.group("village").strip()
+        ]
+        return cls._merge_recovered_villages(villages, village_roles, recovered)
+
+    @staticmethod
+    def _recover_missing_balda_villages(
+        post_text: str,
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+    ) -> tuple[list[str] | None, list[VillageRoleEntry]]:
+        """Recover explicit «بلدة/بلدات X» when the model left village null/empty.
+
+        ACCSTUDY-001: the model returned village=null for
+        «استهداف ... لسيارة في بلدة دبل» even though the place phrase is
+        unambiguous. Matching cannot alias a missing extraction.
+        """
+        if villages:
+            return villages, village_roles
+        if any(entry.village.strip() for entry in village_roles):
+            return villages, village_roles
+
+        recovered: list[str] = []
+        seen: set[str] = set()
+        for match in _BALDA_VILLAGE_RE.finditer(post_text):
+            village = match.group("village").strip().strip("،؛")
+            # Truncate list connectors: «بلدات حولا ومارون» -> حولا only here;
+            # multi-village fan-out remains a Tier-1 model responsibility.
+            for connector in (" و", "،", " و "):
+                if connector in village:
+                    village = village.split(connector, 1)[0].strip()
+            normalized = normalize_arabic_text(village)
+            if not normalized or normalized in seen:
+                continue
+            # Skip bare administrative words mistaken for place names.
+            if normalized in {"البلدة", "بلدة", "بلدات"}:
+                continue
+            seen.add(normalized)
+            recovered.append(village)
+
+        if not recovered:
+            return villages, village_roles
+
+        merged_roles = list(village_roles)
+        existing_role_norms = {
+            normalize_arabic_text(entry.village) for entry in merged_roles
+        }
+        for village in recovered:
+            if normalize_arabic_text(village) in existing_role_norms:
+                continue
+            merged_roles.append(
+                VillageRoleEntry(village=village, role=VillageRole.target)
+            )
+        return recovered, merged_roles
 
     @staticmethod
     def _recover_secondary_strike_location(

@@ -22,10 +22,26 @@ import { useConditionsQuery, useIncidentStream, useIncidentsQuery, useVillagesQu
 import { createIncident, reviewIncident } from "../api";
 import { useContentSourcesQuery } from "../../sources/hooks";
 import type { Incident } from "../types";
+import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
+import {
+  ALL_DATES_RANGE,
+  hasNonDefaultFilters,
+  isVerificationView,
+  outsideRangeNotice,
+  verificationTypeFromSearch,
+  verificationTypeLabel,
+} from "../verificationLogic";
 
 const DEFAULT_PAGE_SIZE = 150;
+const PAGE_SIZE_OPTIONS = new Set([50, 100, 150]);
+const DEFAULT_EVENT_DATE_FROM = "2026-08-20";
 const twoLineClampClass =
   "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]";
+
+const parsePageSize = (value: string | null) => {
+  const parsed = Number(value);
+  return PAGE_SIZE_OPTIONS.has(parsed) ? parsed : DEFAULT_PAGE_SIZE;
+};
 
 const relatedSourceNotes = (row: Incident, pageRows: Incident[]): string[] => {
   const notes: string[] = [];
@@ -86,6 +102,10 @@ const PreMaterializationStatusBadge = ({ row }: { row: Incident }) => {
   ) : null;
 };
 
+const openVerificationTypes = (row: Incident) => row.verification_types ?? [];
+
+const openVerificationFlags = (row: Incident) => row.open_flags ?? [];
+
 const PlusIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
     <path
@@ -100,30 +120,38 @@ const PlusIcon = () => (
 
 export const IncidentsPage = () => {
   const navigate = useNavigate();
-  const roleBase = roleBaseFromPath(useLocation().pathname);
+  const location = useLocation();
+  const roleBase = roleBaseFromPath(location.pathname);
   const [params, setParams] = useSearchParams();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [reviewRow, setReviewRow] = useState<Incident | null>(null);
   const [reviewError, setReviewError] = useState("");
   const [isReviewing, setIsReviewing] = useState(false);
+  const [casualtyReview, setCasualtyReview] = useState<{ row: Incident; index: number } | null>(null);
+
   const cursor = cursorHistory.at(-1);
   const page = cursorHistory.length + 1;
   const village = params.get("village") ?? "";
   const condition = params.get("condition") ?? "";
   const sourceName = params.get("source_name") ?? "";
   const verificationStatus = params.get("verification_status") as Incident["verification_status"] | "";
-  const eventDateFrom = normalizeDateInputValue(params.get("event_date_from")) || getBeirutDate();
+  const verificationType = verificationTypeFromSearch(location.search) ?? "";
+  const eventDateFrom = normalizeDateInputValue(params.get("event_date_from")) || DEFAULT_EVENT_DATE_FROM;
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to")) || getBeirutDate();
   const sortOrder = (params.get("sort_order") as "newest" | "oldest" | null) ?? "newest";
   const duplicateOnly = params.get("duplicate_only") === "true";
   const hasCasualties = params.get("has_casualties") === "true";
-  const hasFilters = Boolean(
-    village || condition || sourceName || verificationStatus || eventDateFrom || eventDateTo || duplicateOnly || hasCasualties,
+  const pageSize = parsePageSize(params.get("page_size"));
+  const hasFilters = hasNonDefaultFilters(
+    { village, condition, sourceName, verificationStatus, verificationType, duplicateOnly, hasCasualties },
+    eventDateFrom,
+    eventDateTo,
+    { from: DEFAULT_EVENT_DATE_FROM, to: getBeirutDate() },
   );
+  const verificationView = isVerificationView(verificationStatus, verificationType);
 
   const filters = useMemo(
     () => ({
@@ -133,6 +161,7 @@ export const IncidentsPage = () => {
       condition,
       sourceName,
       verificationStatus: verificationStatus || undefined,
+      verificationType: verificationType || undefined,
       eventDateFrom,
       eventDateTo,
       duplicateOnly,
@@ -150,6 +179,7 @@ export const IncidentsPage = () => {
       sortOrder,
       sourceName,
       verificationStatus,
+      verificationType,
       village,
     ],
   );
@@ -176,14 +206,22 @@ export const IncidentsPage = () => {
   const total = data?.total ?? 0;
   const flaggedCount = data?.needs_verification_count ?? 0;
   const casualtiesCount = data?.casualties_count ?? 0;
+  const outsideRangeText = verificationView
+    ? outsideRangeNotice(data?.needs_verification_outside_range_count)
+    : null;
   const verificationOptions: SelectOption[] = [
     { value: "needs_verification", label: "Needs verification" },
     { value: "verified", label: "Verified" },
   ];
+  const verificationTypeOptions: SelectOption[] = [
+    { value: "duplicate", label: "Duplicate" },
+    { value: "casualty_missing_number", label: "Missing number" },
+    { value: "casualty_aggregate_toll", label: "Aggregate toll" },
+  ];
   const verificationBadge = (row: Incident) => {
     if (row.verification_status === "verified") return { label: "Verified", variant: "success" as const };
     if (row.verification_status === "rejected") return { label: "Rejected", variant: "danger" as const };
-    if (row.verification_status === "needs_verification" && row.duplicate_flag === "possible") {
+    if (row.verification_status === "needs_verification") {
       return { label: "Needs verification", variant: "warning" as const };
     }
     return null;
@@ -303,6 +341,7 @@ export const IncidentsPage = () => {
       render: (row) => (
         <div className="space-y-1">
           {verificationBadge(row) ? <StatusBadge {...verificationBadge(row)!} /> : null}
+          <div className="flex flex-wrap gap-1">{openVerificationTypes(row).map((type) => <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />)}</div>
           {row.verification_reason ? <p className="text-caption text-text-muted">{row.verification_reason}</p> : null}
         </div>
       ),
@@ -375,7 +414,6 @@ export const IncidentsPage = () => {
         </div>
       </section>
 
-      <>
           <section className="overflow-visible rounded-[1.125rem] border border-border bg-surface-raised shadow-raised">
             <div className="flex flex-col gap-4 rounded-t-[1.125rem] border-b border-border bg-[linear-gradient(180deg,rgba(234,242,251,0.82)_0%,rgba(255,255,255,0.98)_100%)] px-4 py-4 sm:px-5 lg:flex-row lg:items-end lg:justify-between lg:px-6">
               <div className="space-y-2">
@@ -445,6 +483,17 @@ export const IncidentsPage = () => {
                   />
                 </div>
                 <div className="space-y-2 xl:col-span-1">
+                  <Label htmlFor="incident-verification-type-filter">Check type</Label>
+                  <Select
+                    id="incident-verification-type-filter"
+                    value={verificationType}
+                    placeholder="All types"
+                    options={verificationTypeOptions}
+                    className="w-full"
+                    onChange={(value) => updateParam("verification_type", value)}
+                  />
+                </div>
+                <div className="space-y-2 xl:col-span-1">
                   <Label htmlFor="incident-source-filter">Channel</Label>
                   <Select
                     id="incident-source-filter"
@@ -500,8 +549,10 @@ export const IncidentsPage = () => {
                     placeholder="150 per page"
                     className="w-full"
                     onChange={(value) => {
-                      setPageSize(Number(value) || DEFAULT_PAGE_SIZE);
-                      setCursorHistory([]);
+                      updateParam(
+                        "page_size",
+                        value === String(DEFAULT_PAGE_SIZE) ? "" : value,
+                      );
                     }}
                   />
                 </div>
@@ -527,12 +578,16 @@ export const IncidentsPage = () => {
                       type="button"
                       variant="ghost"
                       className="h-11 w-full rounded-xl px-4 sm:w-auto"
-                      onClick={() =>
-                        setParams({
-                          event_date_from: getBeirutDate(),
-                          event_date_to: getBeirutDate(),
-                        })
-                      }
+                      onClick={() => {
+                        const next = new URLSearchParams();
+                        next.set("event_date_from", DEFAULT_EVENT_DATE_FROM);
+                        next.set("event_date_to", getBeirutDate());
+                        if (pageSize !== DEFAULT_PAGE_SIZE) {
+                          next.set("page_size", String(pageSize));
+                        }
+                        setCursorHistory([]);
+                        setParams(next);
+                      }}
                     >
                       Clear filters
                     </Button>
@@ -551,9 +606,31 @@ export const IncidentsPage = () => {
                 </h2>
                 <p className="text-small text-text-muted">
                   {total} result{total === 1 ? "" : "s"}
+                  {verificationView
+                    ? ` | sorted by event date, ${sortOrder === "oldest" ? "oldest" : "newest"} first`
+                    : ""}
                 </p>
               </div>
             </div>
+            {outsideRangeText ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-warning/40 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-small text-text-primary">{outsideRangeText}</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-9"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.set("event_date_from", ALL_DATES_RANGE.from);
+                    next.set("event_date_to", ALL_DATES_RANGE.to);
+                    setCursorHistory([]);
+                    setParams(next);
+                  }}
+                >
+                  Show all dates
+                </Button>
+              </div>
+            ) : null}
 
             <DataTable
               columns={columns}
@@ -581,11 +658,13 @@ export const IncidentsPage = () => {
               actions={(row) => (
                 <div className="flex flex-nowrap justify-end gap-2">
                 {row.id && row.verification_status === "needs_verification" ? (
-                  row.duplicate_flag === "possible" ? (
+                  openVerificationFlags(row).length ? (
+                    <Button type="button" className="h-9" onClick={() => setCasualtyReview({ row, index: 0 })}>Review</Button>
+                  ) : row.duplicate_flag === "possible" ? (
                     <Button
                       type="button"
                       className="h-9 whitespace-nowrap"
-                      onClick={() => navigate(`${roleBase}/incidents/${row.id}`)}
+                      onClick={() => navigate(`${roleBase}/incidents/${row.id}${location.search}`)}
                     >
                       Resolve duplicate
                     </Button>
@@ -606,7 +685,7 @@ export const IncidentsPage = () => {
                   disabled={!row.id}
                   onClick={() => {
                     if (row.id) {
-                      navigate(`${roleBase}/incidents/${row.id}`);
+                      navigate(`${roleBase}/incidents/${row.id}${location.search}`);
                     }
                   }}
                 >
@@ -745,8 +824,18 @@ export const IncidentsPage = () => {
               </form>
             </Dialog>
           ) : null}
-        </>
+          {casualtyReview ? (
+            <CasualtyCheckPanel
+              id={openVerificationFlags(casualtyReview.row)[casualtyReview.index]?.flag_id ?? ""}
+              onClose={() => setCasualtyReview(null)}
+              onComplete={async () => {
+                const nextIndex = casualtyReview.index + 1;
+                await refetch();
+                if (nextIndex < openVerificationFlags(casualtyReview.row).length) setCasualtyReview({ ...casualtyReview, index: nextIndex });
+                else setCasualtyReview(null);
+              }}
+            />
+          ) : null}
     </div>
   );
 };
-

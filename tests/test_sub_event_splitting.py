@@ -74,6 +74,30 @@ class _ConditionByTextStub:
         return [(SimpleNamespace(id=1), 0.93)]
 
 
+class _TalloussaBeitYahounVillageStub:
+    def find_similar(self, text: str, limit: int = 5):
+        village_id = 1001 if text == "Talloussa" else 1002
+        return [
+            (
+                SimpleNamespace(
+                    id=village_id,
+                    ref_name_ar=text,
+                    caza_ar=None,
+                    caza_en=None,
+                    coord_x=None,
+                    coord_y=None,
+                ),
+                1.0,
+            )
+        ]
+
+
+class _TalloussaBeitYahounConditionStub:
+    def find_similar(self, text: str, limit: int = 5):
+        condition_id = 18 if "sweep" in text.lower() else 46
+        return [(SimpleNamespace(id=condition_id), 1.0)]
+
+
 class _RouteVillageRepositoryStub:
     def find_similar(self, text: str, limit: int = 5):
         village_id = 652 if "حاروف" in text else 1529
@@ -199,6 +223,59 @@ def test_message_10395_creates_only_declared_location_action_pairs() -> None:
     assert male_deaths == {1, None}
 
 
+def test_talloussa_beit_yahoun_materializes_distinct_conditions() -> None:
+    db = _SessionStub()
+    service = IncidentMaterializationService(db)  # type: ignore[arg-type]
+    extraction = ExtractionResult(
+        is_relevant=True,
+        village=["Talloussa", "Beit Yahoun"],
+        village_roles=[
+            VillageRoleEntry(village="Talloussa"),
+            VillageRoleEntry(village="Beit Yahoun"),
+        ],
+        action_description="multiple actions across 2 villages",
+        sub_events=[
+            ExtractionSubEvent(
+                locations=[VillageRoleEntry(village="Talloussa")],
+                action_text="sweeping operations",
+                casualties=ExtractionCasualties(),
+                evidence_span="Sweeping operations near Talloussa",
+            ),
+            ExtractionSubEvent(
+                locations=[VillageRoleEntry(village="Beit Yahoun")],
+                action_text="illumination and incendiary shelling",
+                casualties=ExtractionCasualties(),
+                evidence_span="Illumination and incendiary shelling near Beit Yahoun",
+            ),
+        ],
+        casualties=ExtractionCasualties(),
+        model="test",
+        extracted_at=datetime.now(timezone.utc),
+    )
+    match_result = MatchingService(
+        _TalloussaBeitYahounVillageStub(),
+        _TalloussaBeitYahounConditionStub(),
+    ).match(extraction)
+    representative = _representative(match_result=match_result.model_dump(mode="json"))
+    representative.extraction_result = extraction.model_dump(mode="json")
+    fast_dedup = SimpleNamespace(
+        decide_for_village=lambda **_kwargs: SimpleNamespace(
+            outcome=FastPathDedupOutcome.materialize,
+            representative_raw_message_id=None,
+            canonical_incident_id=None,
+        )
+    )
+
+    created = service.process_fast_path(representative, fast_dedup)  # type: ignore[arg-type]
+
+    incidents = [value for value in db.committed if isinstance(value, Incident)]
+    assert len(created) == 2
+    assert sorted((incident.village_id, incident.condition_id) for incident in incidents) == [
+        (1001, 18),
+        (1002, 46),
+    ]
+
+
 def test_single_action_extraction_does_not_split() -> None:
     result = MatchingService(
         _SimilarRepositoryStub(11, 0.7),
@@ -266,6 +343,75 @@ def test_raw_9302_route_scoped_casualty_is_not_copied_to_both_endpoints() -> Non
     assert created[0].story_group_id is not None
 
 
+def test_bulletin_aggregate_materializes_one_row_per_target_village() -> None:
+    extraction = ExtractionResult(
+        is_relevant=True,
+        village=["ميس الجبل", "يارون", "رامية"],
+        village_roles=[
+            VillageRoleEntry(village="ميس الجبل"),
+            VillageRoleEntry(village="يارون"),
+            VillageRoleEntry(village="رامية"),
+        ],
+        action_description="سلسلة غارات متزامنة",
+        casualty_scope=CasualtyScope.bulletin_aggregate,
+        casualty_scope_evidence=(
+            "سلسلة غارات طالت بلدات ميس الجبل ويارون ورامية، ما أسفر عن "
+            "شهيدين و6 جرحى في حصيلة إجمالية"
+        ),
+        casualties=ExtractionCasualties(total_deaths=2, total_injuries=6),
+        model="test",
+        extracted_at=datetime.now(timezone.utc),
+    )
+    match_result = {
+        "matched_condition_id": 1,
+        "condition_match_status": "matched",
+        "village_matches": [
+            {
+                "matched_village_id": 101,
+                "village_match_status": "matched",
+                "village_role": "target",
+                "raw_village_text": "ميس الجبل",
+            },
+            {
+                "matched_village_id": 102,
+                "village_match_status": "matched",
+                "village_role": "target",
+                "raw_village_text": "يارون",
+            },
+            {
+                "matched_village_id": 103,
+                "village_match_status": "matched",
+                "village_role": "target",
+                "raw_village_text": "رامية",
+            },
+        ],
+    }
+    representative = _representative(match_result=match_result)
+    representative.raw_text = extraction.casualty_scope_evidence
+    representative.extraction_result = extraction.model_dump(mode="json")
+    db = _SessionStub()
+
+    created = IncidentMaterializationService(db).process_fast_path(  # type: ignore[arg-type]
+        representative,
+        SimpleNamespace(
+            decide_for_village=lambda **_kwargs: SimpleNamespace(
+                outcome=FastPathDedupOutcome.materialize,
+                representative_raw_message_id=None,
+                canonical_incident_id=None,
+            )
+        ),
+    )
+
+    assert len(created) == 3
+    assert {incident.village_id for incident in created} == {101, 102, 103}
+    assert {(incident.deaths, incident.injuries) for incident in created} == {
+        (None, None)
+    }
+    assert {
+        (incident.total_deaths, incident.total_injuries) for incident in created
+    } == {(None, None)}
+
+
 def test_locationless_multi_village_sub_events_are_flagged_not_multiplied() -> None:
     extraction = ExtractionResult(
         is_relevant=True,
@@ -305,7 +451,7 @@ def test_locationless_multi_village_sub_events_are_flagged_not_multiplied() -> N
 
     assert created == []
     assert not any(isinstance(value, Incident) for value in db.committed)
-    assert representative.status == MessageStatus.parsed
+    assert representative.status == MessageStatus.held_for_review
     assert representative.low_confidence_relevance is True
     assert representative.filter_result["needs_review"] is True
     assert "lack explicit location binding" in representative.error_message
@@ -389,3 +535,98 @@ def test_raw_11553_materializes_only_declared_location_action_pairs() -> None:
     assert all(
         match.raw_village_text != "كفرشوبا" for match in match_result.village_matches
     )
+
+
+def test_plain_between_clause_does_not_collapse_unrelated_action_villages() -> None:
+    raw_text = (
+        "القصف المدفعي: صربين علي الطاهر حداثا حاريص "
+        "التفجيرات المعادية: بين برعشيت و كونين"
+    )
+    extraction = ExtractionResult(
+        is_relevant=True,
+        village=["صربين", "علي الطاهر", "حداثا", "حاريص", "برعشيت", "كونين"],
+        action_description="multiple actions across 6 villages",
+        sub_events=[
+            ExtractionSubEvent(
+                locations=[
+                    VillageRoleEntry(village="صربين"),
+                    VillageRoleEntry(village="علي الطاهر"),
+                    VillageRoleEntry(village="حداثا"),
+                    VillageRoleEntry(village="حاريص"),
+                ],
+                action_text="قصف مدفعي",
+                evidence_span="القصف المدفعي: صربين علي الطاهر حداثا حاريص",
+            ),
+            ExtractionSubEvent(
+                locations=[
+                    VillageRoleEntry(village="برعشيت"),
+                    VillageRoleEntry(village="كونين"),
+                ],
+                action_text="تلغيم وتفجير",
+                evidence_span="التفجيرات المعادية: بين برعشيت و كونين",
+            ),
+        ],
+        model="test",
+        extracted_at=datetime.now(timezone.utc),
+    )
+    village_matches = []
+    for village_id, village, condition_id, event_index, event_size in [
+        (1, "صربين", 5, 0, 4),
+        (2, "علي الطاهر", 5, 0, 4),
+        (3, "حداثا", 5, 0, 4),
+        (4, "حاريص", 5, 0, 4),
+        (5, "برعشيت", 21, 1, 2),
+        (6, "كونين", 21, 1, 2),
+    ]:
+        village_matches.append(
+            {
+                "raw_village_text": village,
+                "matched_village_id": village_id,
+                "village_confidence": 1.0,
+                "village_match_status": "matched",
+                "village_review_required": False,
+                "village_role": "target",
+                "matched_condition_id": condition_id,
+                "condition_match_status": "matched",
+                "condition_review_required": False,
+                "event_index": event_index,
+                "event_location_count": event_size,
+            }
+        )
+    representative = _representative(
+        match_result={
+            "village_matches": village_matches,
+            "any_village_low_confidence": False,
+            "raw_condition_text": "multiple actions across 6 villages",
+            "condition_confidence": 0.8,
+            "matched_condition_id": 5,
+            "condition_match_status": "matched",
+            "condition_review_required": False,
+        }
+    )
+    representative.raw_text = raw_text
+    representative.extraction_result = extraction.model_dump(mode="json")
+    db = _SessionStub()
+
+    created = IncidentMaterializationService(db).process_fast_path(  # type: ignore[arg-type]
+        representative,
+        SimpleNamespace(
+            decide_for_village=lambda **_kwargs: SimpleNamespace(
+                outcome=FastPathDedupOutcome.materialize,
+                representative_raw_message_id=None,
+                canonical_incident_id=None,
+            )
+        ),
+    )
+
+    assert sorted((incident.village_id, incident.condition_id) for incident in created) == [
+        (1, 5),
+        (2, 5),
+        (3, 5),
+        (4, 5),
+        (5, 21),
+    ]
+    assert all(incident.village_id != 6 for incident in created)
+    mining = next(incident for incident in created if incident.condition_id == 21)
+    assert mining.verification_status == "needs_verification"
+    assert "كونين" in (mining.note or "")

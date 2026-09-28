@@ -9,9 +9,11 @@ from app.llm.services.transient_llm_errors import (
     ExtractionRetryCappedError,
     is_transient_llm_error,
 )
+from app.llm.services.action_finalization import finalize_extraction_action
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.models import MessageStatus
+from app.news.models.raw_message import FAILED_STAGE_EXTRACTION
 from app.news.services.incident_details.casualty_gender_evidence import (
     apply_casualty_gender_backstops,
 )
@@ -47,6 +49,11 @@ class ExtractIncidentsAction:
                     message.raw_text or "",
                     result,
                 )
+                result = finalize_extraction_action(
+                    result,
+                    post_text=message.raw_text or "",
+                    cnrs_classification=message.cnrs_classification,
+                )
                 self.raw_messages.save_extraction_result(
                     message=message,
                     result=result,
@@ -78,6 +85,7 @@ class ExtractIncidentsAction:
                     self.raw_messages.save_error(
                         message=message,
                         error_message=str(exc),
+                        failed_stage=FAILED_STAGE_EXTRACTION,
                     )
 
         return ExtractionBatchSummary(
@@ -106,6 +114,11 @@ class ExtractIncidentsAction:
                 message.raw_text or "",
                 result,
             )
+            result = finalize_extraction_action(
+                result,
+                post_text=message.raw_text or "",
+                cnrs_classification=message.cnrs_classification,
+            )
             self.raw_messages.save_extraction_result(
                 message=message,
                 result=result,
@@ -132,5 +145,6 @@ class ExtractIncidentsAction:
                 self.raw_messages.save_error(
                     message=message,
                     error_message=str(exc),
+                    failed_stage=FAILED_STAGE_EXTRACTION,
                 )
             raise exc

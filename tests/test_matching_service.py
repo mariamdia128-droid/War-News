@@ -48,6 +48,16 @@ class _MultiSimilarRepositoryStub:
         ]
 
 
+class _TextSimilarRepositoryStub:
+    def __init__(self, candidates_by_text) -> None:
+        self.candidates_by_text = candidates_by_text
+        self.calls: list[tuple[str, int]] = []
+
+    def find_similar(self, text: str, limit: int = 5):
+        self.calls.append((text, limit))
+        return self.candidates_by_text.get(text, [])[:limit]
+
+
 def _extraction(
     village: list[str] | None = None,
     action: str | None = "غارة جوية",
@@ -323,6 +333,8 @@ def test_wadi_selouqi_alias_overrides_baalbek_slouqi_similarity() -> None:
         ("وادي راج", 71367),
         ("الدبشة", 71133),
         ("جبل الرفيع", 71133),
+        ("دبل", 72281),
+        ("الجبين", 62292),
     ],
 )
 def test_confirmed_no_acs_aliases_override_similarity(raw_name: str, expected_id: int) -> None:
@@ -483,6 +495,60 @@ def test_effect_defined_conditions_require_conflict_attribution(
     assert positive.condition_match_status == MatchResultStatus.matched
 
 
+def test_cnrs_conflict_classification_allows_effect_defined_condition() -> None:
+    villages = _SimilarRepositoryStub(None, None)
+    conditions = _SimilarRepositoryStub(27, 1.0)
+    service = MatchingService(villages, conditions)
+
+    result = service.match(
+        _extraction(village=[], action="حريق كبير"),
+        cnrs_classification={
+            "include": True,
+            "event_domain": "conflict",
+            "event_subtype": "airstrike",
+        },
+    )
+
+    assert result.matched_condition_id == 27
+    assert result.condition_match_status == MatchResultStatus.matched
+
+
+def test_cnrs_ordinary_fire_classification_does_not_allow_effect_defined_condition() -> None:
+    villages = _SimilarRepositoryStub(None, None)
+    conditions = _SimilarRepositoryStub(27, 1.0)
+    service = MatchingService(villages, conditions)
+
+    result = service.match(
+        _extraction(village=[], action="حريق كبير"),
+        cnrs_classification={
+            "include": True,
+            "event_domain": "fire",
+            "event_subtype": "fire_incident",
+            "mentions_israeli_actor": False,
+        },
+    )
+
+    assert result.matched_condition_id is None
+    assert result.condition_match_status == MatchResultStatus.unmatched
+
+
+def test_source_hint_cannot_restore_unattributed_effect_defined_condition() -> None:
+    villages = _SimilarRepositoryStub(None, None)
+    conditions = _SimilarRepositoryStub(21, 1.0)
+    service = MatchingService(villages, conditions)
+
+    extraction = _extraction(
+        village=["Aabbassiyet Sour"],
+        action="النيران تلتهم سيارة في العباسية... حريق كبير شرق صور",
+    ).model_copy(update={"source_action_hint": "Mining & Detonation"})
+
+    result = service.match(extraction)
+
+    assert result.matched_condition_id is None
+    assert result.condition_match_status == MatchResultStatus.unmatched
+    assert result.condition_action_source == "unclassified"
+
+
 def test_effect_defined_canonical_cnrs_override_can_still_match() -> None:
     result = MatchingService(
         _SimilarRepositoryStub(None, None),
@@ -537,7 +603,13 @@ class _MatchingServiceStub:
         self.result = result
         self.received: ExtractionResult | None = None
 
-    def match(self, extraction_result: ExtractionResult) -> MatchResultDTO:
+    def match(
+        self,
+        extraction_result: ExtractionResult,
+        *,
+        cnrs_classification: dict | None = None,
+    ) -> MatchResultDTO:
+        # MatchIncidentAction passes CNRS context since 8ebac94.
         self.received = extraction_result
         return self.result
 
@@ -1021,6 +1093,51 @@ def test_sub_event_locations_receive_scoped_conditions() -> None:
     assert len(result.village_matches) == 1
     assert result.village_matches[0].matched_condition_id == 5
     assert result.village_matches[0].event_index == 0
+
+
+def test_sub_event_locations_fall_back_to_matched_root_condition() -> None:
+    villages = _MultiSimilarRepositoryStub([(976, 1.0), (1153, 0.9)])
+    conditions = _TextSimilarRepositoryStub(
+        {
+            # The mention is passed as-is; the real repository lower()s English
+            # labels in SQL, so the stub is keyed by the text actually sent.
+            "Bombs": [(SimpleNamespace(id=46), 1.0)],
+            normalize_arabic_text(
+                "اغار الطيران الحربي المعادي مستهدفا المنصوري والنبطية الفوقا"
+            ): [],
+        }
+    )
+    extraction = _extraction(village=[], action="Bombs")
+    extraction = extraction.model_copy(
+        update={
+            "sub_events": [
+                ExtractionSubEvent(
+                    locations=[
+                        VillageRoleEntry(village="المنصوري", role=VillageRole.target),
+                        VillageRoleEntry(
+                            village="النبطية الفوقا",
+                            role=VillageRole.target,
+                        ),
+                    ],
+                    action_description=(
+                        "اغار الطيران الحربي المعادي مستهدفا المنصوري والنبطية الفوقا"
+                    ),
+                    evidence_span=(
+                        "اغار الطيران الحربي المعادي مستهدفا المنصوري والنبطية الفوقا"
+                    ),
+                    casualties=ExtractionCasualties(),
+                )
+            ]
+        }
+    )
+
+    result = MatchingService(villages, conditions).match(extraction)
+
+    assert len(result.village_matches) == 2
+    assert {match.matched_condition_id for match in result.village_matches} == {46}
+    assert {
+        match.condition_match_status for match in result.village_matches
+    } == {MatchResultStatus.matched}
 
 
 def test_exact_duplicate_without_anchor_keeps_low_confidence_winner() -> None:
