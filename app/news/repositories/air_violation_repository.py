@@ -752,7 +752,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         message: RawMessage,
         result: MatchResultDTO,
     ) -> bool:
-        return cls._has_strong_message_identity(message) and bool(result.village_matches)
+        return False
 
     @staticmethod
     def _requires_exact_duplicate_text(result: MatchResultDTO) -> bool:

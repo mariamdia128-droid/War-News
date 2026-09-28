@@ -98,6 +98,8 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "zebdine": 71122,
     "zibdin": 71122,
     "zebdin": 71122,
+    "\u0645\u064a\u0641\u062f\u0648\u0646": 71344,
+    "mayfadoun": 71344,
     "\u0632\u0628\u0642\u064a\u0646": 62286,
     "zibqine": 62286,
     "zebqine": 62286,
@@ -138,6 +140,7 @@ BROKEN_RED_ALERT_MESSAGE_FALLBACKS: dict[int, str] = {
     45726: "\u062f\u064a\u0631 \u0646\u0637\u0627\u0631 Deir Ntar \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
     45730: "\u0628\u0627\u0641\u0644\u064a\u0647 Bafliye \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
     45731: "\u062a\u0648\u0644\u064a\u0646 Touline \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+    45806: "\u0634\u0648\u0643\u064a\u0646 Choukine \u0645\u064a\u0641\u062f\u0648\u0646 Mayfadoun \u0632\u0648\u0637\u0631 \u0627\u0644\u063a\u0631\u0628\u064a\u0629 Zaoutar El-Gharbiye \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
 }
 
 IGNORED_RED_ALERT_MESSAGE_IDS: set[int] = {
