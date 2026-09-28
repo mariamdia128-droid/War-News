@@ -372,6 +372,12 @@ def merge_casualty_status(
     incoming_evidence: str | None,
     *,
     incoming_is_newest: bool,
+    current_deaths_status: str | None = None,
+    incoming_deaths_status: str | None = None,
+    current_injuries_status: str | None = None,
+    incoming_injuries_status: str | None = None,
+    current_remaining_total: dict[str, int] | None = None,
+    incoming_remaining_total: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Merge status while preventing downgrades and clearing stale prelim flags."""
     current = current_status if current_status in _MERGE_PRIORITY else "none_mentioned"
@@ -389,8 +395,34 @@ def merge_casualty_status(
         if incoming_is_newest
         else bool(current_is_preliminary)
     )
-    return {
+    result = {
         "casualty_status": status,
         "casualty_is_preliminary": preliminary,
         "casualty_status_evidence": evidence,
     }
+    for field, current_value, incoming_value in (
+        ("casualty_deaths_status", current_deaths_status, incoming_deaths_status),
+        ("casualty_injuries_status", current_injuries_status, incoming_injuries_status),
+    ):
+        current_type = current_value if current_value in _MERGE_PRIORITY else None
+        incoming_type = incoming_value if incoming_value in _MERGE_PRIORITY else None
+        if incoming_type is not None and (
+            current_type is None
+            or _MERGE_PRIORITY[incoming_type] > _MERGE_PRIORITY[current_type]
+            or (
+                incoming_is_newest
+                and incoming_type in {"explicit_none", "count_missing", "exact"}
+            )
+        ):
+            result[field] = incoming_type
+        elif current_type is not None:
+            result[field] = current_type
+        elif incoming_type is not None:
+            result[field] = incoming_type
+    if current_remaining_total is not None or incoming_remaining_total is not None:
+        result["casualty_status_remaining_total"] = dict(
+            incoming_remaining_total
+            if incoming_is_newest or current_remaining_total is None
+            else current_remaining_total
+        )
+    return result

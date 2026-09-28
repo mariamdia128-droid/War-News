@@ -37,7 +37,12 @@ class IncidentVerificationFlag(Base):
             unique=True,
             postgresql_where=text("status = 'open'"),
         ),
-        Index("ix_incident_verification_flags_type_status", "flag_type", "status"),
+        Index(
+            "ix_incident_verification_flags_type_status_visible_after",
+            "flag_type",
+            "status",
+            "visible_after",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -51,6 +56,7 @@ class IncidentVerificationFlag(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="open", server_default="open"
     )
+    visible_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     source_message_id: Mapped[int | None] = mapped_column(

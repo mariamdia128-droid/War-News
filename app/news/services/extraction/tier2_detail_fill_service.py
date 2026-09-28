@@ -299,6 +299,9 @@ class Tier2DetailFillService:
                 ),
             )
             incident.casualty_status = row_status.status
+            incident.casualty_deaths_status = row_status.deaths_status
+            incident.casualty_injuries_status = row_status.injuries_status
+            incident.casualty_status_remaining_total = row_status.remaining_total
             incident.casualty_is_preliminary = row_status.is_preliminary
             incident.casualty_status_evidence = row_status.evidence
             self._apply_dedup_backstop(

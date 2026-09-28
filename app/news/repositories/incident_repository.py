@@ -1183,6 +1183,11 @@ class IncidentRepository(IncidentRepositoryInterface):
                     canonical,
                     {
                         "casualty_status": incident.casualty_status,
+                        "casualty_deaths_status": getattr(incident, "casualty_deaths_status", None),
+                        "casualty_injuries_status": getattr(incident, "casualty_injuries_status", None),
+                        "casualty_status_remaining_total": getattr(
+                            incident, "casualty_status_remaining_total", None
+                        ),
                         "casualty_is_preliminary": incident.casualty_is_preliminary,
                         "casualty_status_evidence": incident.casualty_status_evidence,
                     },
@@ -2720,6 +2725,11 @@ class IncidentRepository(IncidentRepositoryInterface):
     def _snapshot_merge_fields(incident: Incident) -> dict[str, Any]:
         return {
             "casualty_status": incident.casualty_status,
+            "casualty_deaths_status": getattr(incident, "casualty_deaths_status", None),
+            "casualty_injuries_status": getattr(incident, "casualty_injuries_status", None),
+            "casualty_status_remaining_total": getattr(
+                incident, "casualty_status_remaining_total", None
+            ),
             "casualty_is_preliminary": incident.casualty_is_preliminary,
             "casualty_status_evidence": incident.casualty_status_evidence,
             "deaths": incident.deaths,
@@ -2747,8 +2757,17 @@ class IncidentRepository(IncidentRepositoryInterface):
             bool(incoming.get("casualty_is_preliminary")),
             incoming.get("casualty_status_evidence"),
             incoming_is_newest=incoming_is_newest,
+            current_deaths_status=getattr(incident, "casualty_deaths_status", None),
+            incoming_deaths_status=incoming.get("casualty_deaths_status"),
+            current_injuries_status=getattr(incident, "casualty_injuries_status", None),
+            incoming_injuries_status=incoming.get("casualty_injuries_status"),
+            current_remaining_total=getattr(incident, "casualty_status_remaining_total", None),
+            incoming_remaining_total=incoming.get("casualty_status_remaining_total"),
         )
         incident.casualty_status = merged["casualty_status"]
+        incident.casualty_deaths_status = merged.get("casualty_deaths_status")
+        incident.casualty_injuries_status = merged.get("casualty_injuries_status")
+        incident.casualty_status_remaining_total = merged.get("casualty_status_remaining_total")
         incident.casualty_is_preliminary = merged["casualty_is_preliminary"]
         incident.casualty_status_evidence = merged["casualty_status_evidence"]
 

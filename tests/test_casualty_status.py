@@ -2,6 +2,7 @@ from app.llm.dtos import ExtractionCasualties, VillageRoleEntry
 from app.news.services.incident_details.casualty_status import (
     derive_casualty_status,
     merge_casualty_status,
+    status_fields,
 )
 
 
@@ -177,3 +178,38 @@ def test_merge_status_unmentioned_to_aggregate_and_preliminary_clears() -> None:
     assert aggregate["casualty_status"] == "aggregate_only"
     assert final["casualty_is_preliminary"] is False
     assert final["casualty_status_evidence"] == "final toll"
+
+
+def test_merge_preserves_and_updates_type_statuses_and_remaining_total() -> None:
+    merged = merge_casualty_status(
+        "exact",
+        False,
+        "known figures",
+        "aggregate_only",
+        False,
+        "aggregate bulletin",
+        incoming_is_newest=True,
+        current_deaths_status="exact",
+        incoming_deaths_status="aggregate_only",
+        current_injuries_status="exact",
+        incoming_injuries_status="count_missing",
+        current_remaining_total={},
+        incoming_remaining_total={"deaths": 2},
+    )
+
+    assert merged["casualty_deaths_status"] == "exact"
+    assert merged["casualty_injuries_status"] == "count_missing"
+    assert merged["casualty_status_remaining_total"] == {"deaths": 2}
+
+
+def test_status_fields_include_persistable_type_statuses() -> None:
+    result = derive_casualty_status(
+        "أدى القصف إلى شهيد وجرحى",
+        {"deaths": 1, "injuries": None},
+        target_location_count=1,
+    )
+
+    fields = status_fields(result)
+    assert fields["casualty_deaths_status"] == "exact"
+    assert fields["casualty_injuries_status"] == "count_missing"
+    assert fields["casualty_status_remaining_total"] == {}

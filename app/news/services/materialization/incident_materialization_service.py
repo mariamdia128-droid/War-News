@@ -976,6 +976,9 @@ class IncidentMaterializationService:
         )
         return {
             "casualty_status": result.status,
+            "casualty_deaths_status": result.deaths_status,
+            "casualty_injuries_status": result.injuries_status,
+            "casualty_status_remaining_total": result.remaining_total,
             "casualty_is_preliminary": result.is_preliminary,
             "casualty_status_evidence": result.evidence,
         }

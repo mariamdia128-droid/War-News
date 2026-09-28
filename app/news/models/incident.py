@@ -16,7 +16,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -106,6 +106,9 @@ class Incident(Base):
     total_deaths: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_injuries: Mapped[int | None] = mapped_column(Integer, nullable=True)
     casualty_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_deaths_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_injuries_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_status_remaining_total: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     casualty_is_preliminary: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     casualty_status_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     deaths: Mapped[int | None] = mapped_column(Integer, nullable=True)

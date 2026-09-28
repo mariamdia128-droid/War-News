@@ -163,6 +163,11 @@ class BulletinReconciliationService:
                 "deaths": incident.deaths,
                 "injuries": incident.injuries,
                 "casualty_status": getattr(incident, "casualty_status", None),
+                "casualty_deaths_status": getattr(incident, "casualty_deaths_status", None),
+                "casualty_injuries_status": getattr(incident, "casualty_injuries_status", None),
+                "casualty_status_remaining_total": getattr(
+                    incident, "casualty_status_remaining_total", None
+                ),
                 "casualty_is_preliminary": getattr(
                     incident, "casualty_is_preliminary", None
                 ),
@@ -186,8 +191,19 @@ class BulletinReconciliationService:
                     incoming_extraction.casualty_is_preliminary,
                     incoming_extraction.casualty_status_evidence,
                     incoming_is_newest=True,
+                    current_deaths_status=getattr(incident, "casualty_deaths_status", None),
+                    incoming_deaths_status=incoming_extraction.casualty_deaths_status,
+                    current_injuries_status=getattr(incident, "casualty_injuries_status", None),
+                    incoming_injuries_status=incoming_extraction.casualty_injuries_status,
+                    current_remaining_total=getattr(incident, "casualty_status_remaining_total", None),
+                    incoming_remaining_total=incoming_extraction.casualty_status_remaining_total,
                 )
                 incident.casualty_status = merged_status["casualty_status"]
+                incident.casualty_deaths_status = merged_status.get("casualty_deaths_status")
+                incident.casualty_injuries_status = merged_status.get("casualty_injuries_status")
+                incident.casualty_status_remaining_total = merged_status.get(
+                    "casualty_status_remaining_total"
+                )
                 incident.casualty_is_preliminary = merged_status[
                     "casualty_is_preliminary"
                 ]
@@ -204,6 +220,11 @@ class BulletinReconciliationService:
                         "deaths": incident.deaths,
                         "injuries": incident.injuries,
                         "casualty_status": getattr(incident, "casualty_status", None),
+                        "casualty_deaths_status": getattr(incident, "casualty_deaths_status", None),
+                        "casualty_injuries_status": getattr(incident, "casualty_injuries_status", None),
+                        "casualty_status_remaining_total": getattr(
+                            incident, "casualty_status_remaining_total", None
+                        ),
                         "casualty_is_preliminary": getattr(
                             incident, "casualty_is_preliminary", None
                         ),
