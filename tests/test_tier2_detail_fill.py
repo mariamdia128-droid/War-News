@@ -45,9 +45,10 @@ def test_fill_for_raw_message_merges_details_and_clears_pending() -> None:
         condition_id=2,
         event_date=datetime(2026, 8, 18).date(),
         deaths=1,
-        injuries=0,
-        total_deaths=0,
-        total_injuries=0,
+        # Not stated yet: None (0 would be a stated zero that Tier 2 keeps).
+        injuries=None,
+        total_deaths=None,
+        total_injuries=None,
         khabar="خبر",
         khabar_embedding=None,
         details_pending=True,
@@ -349,3 +350,14 @@ def test_single_village_still_backfills_root_toll() -> None:
 
     assert only.deaths == 5
     assert only.injuries == 3
+
+
+def test_single_village_stated_zero_is_not_overwritten_by_root_toll() -> None:
+    """Tier 2 used to treat 0 like None and overwrite it with the root toll."""
+    zero = _incident_stub(village_id=101, injuries=0, total_injuries=0)
+
+    _multi_village_fill([zero], single_village=True)
+
+    assert zero.injuries == 0
+    assert zero.total_injuries == 0
+    assert zero.deaths == 5

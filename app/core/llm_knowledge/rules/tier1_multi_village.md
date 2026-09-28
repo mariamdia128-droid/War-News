@@ -18,7 +18,8 @@ Load when the message appears to name multiple target locations.
 1. Each target village gets its own `village_roles` entry.
 2. Route endpoints (`طريق X - Y`, `طريق عام X - Y`, or `طريق بين X و Y`): emit both `X` and `Y` as separate target locations (and inside the same `sub_event.locations` if a single route action occurred). Plain `بين X و Y`, `بين بلدتي X و Y`, and `في المنطقة الواقعة بين X و Y` without a road/route are one fuzzy target attributed to the first village with the other village kept as review context.
 3. For every non-route dash phrase, emit only the left side as the target and preserve the entire right side as `qualifier_text`, including any `و`-joined parts.
-4. Copy per-village deaths/injuries only from that village's sentence or phrase.
+4. Copy per-village deaths/injuries only from that village's sentence or phrase. Singular/dual words are exact counts for that village: «النبطية الفوقا: شهيدان وجريحان» → deaths=2, injuries=2; «الريحان قضاء جزين: شهيد» → deaths=1. «مصابين» is plural, not a count.
+   A number in parentheses after a place in a strike/shelling/demolition list is a strike count, never casualties: «عمليات التفجير: • حولا (٢)» → deaths null. Vague wording («وقوع إصابات»، «عشرات الجرحى»، «سقوط ضحايا») stays null.
 5. If only a shared toll is given covering all villages → `casualty_scope: bulletin_aggregate`.
 6. Put shared figures in `casualties.total_deaths` / `total_injuries`; leave `deaths`/`injuries` null.
 7. `casualty_scope_evidence` must be the full clause showing whether the toll is shared or per-village.
