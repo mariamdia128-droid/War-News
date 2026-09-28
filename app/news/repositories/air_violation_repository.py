@@ -53,7 +53,13 @@ AIR_VIOLATION_CAZA_ALIASES: dict[str, tuple[str, str | None]] = {
     "west beqaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
     "west bekaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
     "\u0627\u0644\u0628\u0642\u0627\u0639": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
-    "\u0627\u0644\u062c\u0646\u0648\u0628": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+    "\u0627\u0644\u062c\u0646\u0648\u0628": ("South Lebanon", "\u062c\u0646\u0648\u0628 \u0644\u0628\u0646\u0627\u0646"),
+    "\u062c\u0646\u0648\u0628": ("South Lebanon", "\u062c\u0646\u0648\u0628 \u0644\u0628\u0646\u0627\u0646"),
+    "\u062c\u0646\u0648\u0628 \u0644\u0628\u0646\u0627\u0646": ("South Lebanon", "\u062c\u0646\u0648\u0628 \u0644\u0628\u0646\u0627\u0646"),
+    "\u0627\u0644\u0642\u0637\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+    "\u0627\u0644\u0642\u0637\u0627\u0639 \u0627\u0644\u0634\u0631\u0642\u064a": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+    "\u0627\u0644\u0642\u0637\u0627\u0639 \u0627\u0644\u0627\u0648\u0633\u0637": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+    "\u0627\u0644\u0642\u0637\u0627\u0639 \u0627\u0644\u0623\u0648\u0633\u0637": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
 }
 AIR_VIOLATION_WARPLANE_CAZA_HOURS = 4
 AIR_VIOLATION_DEFAULT_CAZA_HOURS = 1
@@ -88,24 +94,46 @@ def air_violation_news_text(
     message: RawMessage,
     village: Village | None,
     condition: Condition | None,
+    villages: list[Village] | None = None,
 ) -> str:
     """Return readable news text while keeping raw OCR in the source record."""
     payload = message.raw_payload or {}
     if not payload.get("ocr_text") or condition is None:
         return clean_air_violation_news(message.raw_text or "")
 
-    if village is None:
+    matched_villages = villages or ([village] if village is not None else [])
+    if not matched_villages:
         return f"{condition.action_ar} - الموقع بحاجة إلى التحقق"
-    village_name = (
-        getattr(village, "ref_name_ar", None)
-        or getattr(village, "ref_name_en", None)
-        or getattr(village, "acs_name", None)
-        or getattr(village, "cad_name", None)
+    village_names = list(dict.fromkeys(
+        (
+            getattr(matched_village, "ref_name_ar", None)
+            or getattr(matched_village, "ref_name_en", None)
+            or getattr(matched_village, "acs_name", None)
+            or getattr(matched_village, "cad_name", None)
+        )
+        for matched_village in matched_villages
+        if (
+            getattr(matched_village, "ref_name_ar", None)
+            or getattr(matched_village, "ref_name_en", None)
+            or getattr(matched_village, "acs_name", None)
+            or getattr(matched_village, "cad_name", None)
+        )
+    ))
+    primary = matched_villages[0]
+    caza_pairs = {
+        (matched_village.caza_en, matched_village.caza_ar)
+        for matched_village in matched_villages
+        if matched_village.caza_en or matched_village.caza_ar
+    }
+    caza_name = (
+        "مناطق متعددة"
+        if len(caza_pairs) > 1
+        else primary.caza_ar or primary.caza_en
     )
-    caza_name = village.caza_ar or village.caza_en
+    village_text = "، ".join(village_names)
     summary = (
-        f"{condition.action_ar} فوق {village_name} في قضاء {caza_name}"
-        if village_name
+        f"{condition.action_ar} فوق {village_text} في قضاء {caza_name}"
+        if village_text
         else f"{condition.action_ar} في قضاء {caza_name}"
     )
     raw_text = message.raw_text or ""
@@ -175,15 +203,23 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             item["import_location_text"] = payload.get("location_text") if item["is_imported"] else None
             result = item.pop("raw_match_result", None) or {}
             matches = result.get("village_matches") or []
+            raw_match_village_ids = [
+                int(match["matched_village_id"])
+                for match in matches
+                if isinstance(match, dict) and match.get("matched_village_id") is not None
+            ]
             matched_village_id = (
                 matches[0].get("matched_village_id")
                 if matches
                 else result.get("matched_village_id")
             )
+            for village_id in raw_match_village_ids:
+                village_ids.add(village_id)
             if matched_village_id is not None:
                 village_id = int(matched_village_id)
                 item.setdefault("matched_village_id", village_id)
                 village_ids.add(village_id)
+            item["raw_match_village_ids"] = raw_match_village_ids
             if item.get("village_id") is not None:
                 village_ids.add(int(item["village_id"]))
 
@@ -205,6 +241,12 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         } if village_ids else {}
         for item in data:
             location_ids = location_ids_by_air.get(int(item["id"]), []) if item.get("id") is not None else []
+            if not location_ids:
+                location_ids = [
+                    village_id
+                    for village_id in item.get("raw_match_village_ids", [])
+                    if isinstance(village_id, int)
+                ]
             location_villages = [villages[village_id] for village_id in location_ids if village_id in villages]
             primary_village_id = item.get("village_id") or item.pop("matched_village_id", None)
             village = villages.get(primary_village_id)
@@ -222,6 +264,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 for village in location_villages
                 if village.ref_name_en or village.ref_name_ar or village.acs_name or village.cad_name
             ] or ([item["village_en"]] if item.get("village_en") else [])
+            item.pop("raw_match_village_ids", None)
             item.pop("import_location_text", None)
         return data
 
@@ -603,6 +646,25 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             village.caza_ar if village else None,
             known_cazas,
         )
+        matched_village_ids = [
+            vm.matched_village_id
+            for vm in result.village_matches
+            if vm.matched_village_id is not None
+        ]
+        matched_villages = [
+            self.db.get(Village, village_id)
+            for village_id in dict.fromkeys(matched_village_ids)
+        ]
+        matched_villages = [item for item in matched_villages if item is not None]
+        matched_cazas = {
+            (matched_village.caza_en, matched_village.caza_ar)
+            for matched_village in matched_villages
+            if matched_village.caza_en or matched_village.caza_ar
+        }
+        if len(matched_cazas) > 1:
+            caza_en, caza_ar = "Multiple regions", "مناطق متعددة"
+        elif len(matched_cazas) == 1:
+            caza_en, caza_ar = next(iter(matched_cazas))
         values = {
             "condition_id": result.matched_condition_id,
             "source_id": message.source_id,
@@ -611,17 +673,26 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             "event_month": occurred_at.strftime("%B"),
             "event_date": occurred_at.date(),
             "event_time": occurred_at.time().replace(tzinfo=None),
-            "khabar": air_violation_news_text(message, village, condition),
+            "khabar": air_violation_news_text(message, village, condition, matched_villages),
             "note_1": payload.get("note_1") or payload.get("note"),
             "note_2": payload.get("note_2"),
             "source_link": str(link) if link else None,
         }
-        if existing is None and self._has_recent_air_violation(
-            caza_en,
-            caza_ar,
-            occurred_at,
-            condition_id=result.matched_condition_id,
-            khabar=values["khabar"],
+        duplicate_khabar = (
+            values["khabar"]
+            if self._requires_exact_duplicate_text(result)
+            else None
+        )
+        if (
+            existing is None
+            and not self._should_bypass_recent_duplicate_check(message, result)
+            and self._has_recent_air_violation(
+                caza_en,
+                caza_ar,
+                occurred_at,
+                condition_id=result.matched_condition_id,
+                khabar=duplicate_khabar,
+            )
         ):
             return False
         if existing is None:
@@ -635,6 +706,34 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         self.db.commit()
         increment(AIR_VIOLATION_CACHE_VERSION_KEY)
         return True
+
+    @staticmethod
+    def _has_strong_message_identity(message: RawMessage) -> bool:
+        payload = message.raw_payload or {}
+        identity = message.external_message_id or payload.get("external_message_id")
+        return bool(
+            identity
+            and (
+                message.source_platform == "telegram"
+                or str(identity).startswith("telegram:")
+                or payload.get("source_link")
+                or payload.get("link")
+                or payload.get("url")
+                or payload.get("post_url")
+            )
+        )
+
+    @classmethod
+    def _should_bypass_recent_duplicate_check(
+        cls,
+        message: RawMessage,
+        result: MatchResultDTO,
+    ) -> bool:
+        return cls._has_strong_message_identity(message) and bool(result.village_matches)
+
+    @staticmethod
+    def _requires_exact_duplicate_text(result: MatchResultDTO) -> bool:
+        return bool(result.village_matches)
 
     def _has_recent_air_violation(
         self,
@@ -665,7 +764,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         normalized_khabar = _normalize_duplicate_text(khabar)
         return any(
             cutoff_naive <= _air_violation_event_datetime(record) <= occurred_naive
-            and _normalize_duplicate_text(record.khabar) == normalized_khabar
+            and (
+                normalized_khabar == ""
+                or _normalize_duplicate_text(record.khabar) == normalized_khabar
+            )
             for record in existing_records
         )
     @staticmethod

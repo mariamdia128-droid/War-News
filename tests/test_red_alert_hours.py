@@ -13,14 +13,15 @@ def test_omitted_hours_keeps_default_fetch_limit() -> None:
     args = build_parser().parse_args([])
     assert args.hours is None
     assert args.once is False
-    kwargs = collector_kwargs_for_hours(None)
-    assert kwargs["min_message_datetime"] is None
+    now = datetime(2026, 9, 28, 8, 35, tzinfo=timezone.utc)
+    kwargs = collector_kwargs_for_hours(None, now=now)
+    assert kwargs["min_message_datetime"] == datetime(2026, 9, 27, 21, 0, tzinfo=timezone.utc)
 
 
 def test_hours_raises_fetch_limit_and_sets_cutoff() -> None:
     now = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
     kwargs = collector_kwargs_for_hours(6, now=now)
-    assert kwargs["fetch_limit"] == HOURS_FETCH_LIMIT_CAP
+    assert kwargs["fetch_limit"] == 500
     assert kwargs["min_message_datetime"] == datetime(
         2026, 8, 24, 6, 0, tzinfo=timezone.utc
     )

@@ -11,12 +11,20 @@ from app.news.services.air_violations.air_violation_exclusions import air_violat
 
 ConditionClassifier = Callable[[str], int | None]
 VillageMatcher = Callable[[str, list[Village]], tuple[Village, str] | None]
+VillageListMatcher = Callable[[str, list[Village]], list[tuple[Village, str]]]
 CAZA_ONLY_ALIASES: dict[str, tuple[str, str | None]] = {
     "bekaa": ("West Bekaa", "البقاع الغربي"),
     "west bekaa": ("West Bekaa", "البقاع الغربي"),
     "west beqaa": ("West Bekaa", "البقاع الغربي"),
     "البقاع": ("West Bekaa", "البقاع الغربي"),
-    "الجنوب": ("Multiple regions", "مناطق متعددة"),
+    "الجنوب": ("South Lebanon", "جنوب لبنان"),
+    "جنوب لبنان": ("South Lebanon", "جنوب لبنان"),
+    "جنوب": ("South Lebanon", "جنوب لبنان"),
+    "شمال لبنان": ("Multiple regions", "مناطق متعددة"),
+    "القطاع الغربي": ("Multiple regions", "مناطق متعددة"),
+    "القطاع الشرقي": ("Multiple regions", "مناطق متعددة"),
+    "القطاع الاوسط": ("Multiple regions", "مناطق متعددة"),
+    "القطاع الأوسط": ("Multiple regions", "مناطق متعددة"),
 }
 
 
@@ -28,13 +36,16 @@ class RedAlertAirViolationService:
         air_violations: AirViolationRepositoryInterface,
         classify_condition: ConditionClassifier,
         match_village: VillageMatcher,
+        match_villages: VillageListMatcher | None = None,
     ) -> None:
         self.air_violations = air_violations
         self.classify_condition = classify_condition
         self.match_village = match_village
+        self.match_villages = match_villages
 
     def process(self, message: RawMessage, villages: list[Village]) -> bool:
         text = message.raw_text or ""
+        primary_text = self._primary_text(message) or text
         exclusion = air_violation_exclusion(text)
         if exclusion is not None:
             self.air_violations.discard_for_message(message)
@@ -51,10 +62,22 @@ class RedAlertAirViolationService:
             self._reject(message, "No supported air-violation keyword")
             return False
 
-        village_matches = self._match_villages(text, villages)
-        village_match = village_matches[0] if village_matches else self.match_village(text, villages)
+        primary_village_matches = self._combined_village_matches(primary_text, villages)
+        primary_village_match = (
+            primary_village_matches[0]
+            if primary_village_matches
+            else self.match_village(primary_text, villages)
+        )
+        if primary_village_match is not None:
+            village_matches = primary_village_matches
+            village_match = primary_village_match
+        else:
+            village_matches = self._combined_village_matches(text, villages)
+            village_match = village_matches[0] if village_matches else self.match_village(text, villages)
         if village_match is None:
-            caza_en, caza_ar = self._match_caza(text, villages)
+            caza_en, caza_ar = self._match_caza(primary_text, villages)
+            if not (caza_en or caza_ar):
+                caza_en, caza_ar = self._match_caza(text, villages)
             if not (caza_en or caza_ar):
                 self.air_violations.discard_for_message(message)
                 self._reject(message, self._missing_village_reason(message))
@@ -98,6 +121,33 @@ class RedAlertAirViolationService:
         return wrote_air_violation
 
     @staticmethod
+    def _primary_text(message: RawMessage) -> str | None:
+        payload = message.raw_payload or {}
+        preview_text = payload.get("preview_text")
+        if isinstance(preview_text, str) and preview_text.strip():
+            return preview_text
+        raw_payload_text = payload.get("raw_text")
+        if (
+            isinstance(raw_payload_text, str)
+            and raw_payload_text.strip()
+            and not payload.get("ocr_text")
+        ):
+            return raw_payload_text
+        return None
+
+    def _combined_village_matches(self, text: str, villages: list[Village]) -> list[tuple[Village, str]]:
+        matches = [
+            *(self.match_villages(text, villages) if self.match_villages else []),
+            *self._match_villages(text, villages),
+        ]
+        unique: dict[int, tuple[Village, str]] = {}
+        for village, raw_location in matches:
+            current = unique.get(village.id)
+            if current is None or len(raw_location or "") > len(current[1] or ""):
+                unique[village.id] = (village, raw_location)
+        return list(unique.values())
+
+    @staticmethod
     def _normalize_arabic(value: str) -> str:
         value = re.sub(r"[\u064b-\u065f\u0670]", "", value)
         value = value.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
@@ -133,7 +183,7 @@ class RedAlertAirViolationService:
                     if re.search(r"[\u0600-\u06ff]", name)
                     else normalized_latin_text
                 )
-                if len(normalized_name) >= 4 and re.search(
+                if len(normalized_name) >= 3 and re.search(
                     rf"(?<!\w){re.escape(normalized_name)}(?!\w)",
                     normalized_source,
                 ):

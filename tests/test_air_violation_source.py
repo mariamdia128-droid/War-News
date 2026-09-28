@@ -44,6 +44,37 @@ def test_image_ocr_news_is_replaced_with_clean_summary() -> None:
     )
 
 
+def test_image_ocr_news_uses_multi_region_when_villages_span_cazas() -> None:
+    message = type("Message", (), {
+        "raw_payload": {"ocr_text": "Adloun Maarakeh"},
+        "raw_text": "redalert.com.lb \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+    })()
+    adloun = type("Village", (), {
+        "ref_name_ar": "\u0639\u062f\u0644\u0648\u0646",
+        "ref_name_en": "Adloun",
+        "acs_name": None,
+        "cad_name": None,
+        "caza_ar": "\u0635\u064a\u062f\u0627",
+        "caza_en": "Saida",
+    })()
+    maarakeh = type("Village", (), {
+        "ref_name_ar": "\u0645\u0639\u0631\u0643\u0629",
+        "ref_name_en": "Maarake",
+        "acs_name": None,
+        "cad_name": None,
+        "caza_ar": "\u0635\u0648\u0631",
+        "caza_en": "Sour",
+    })()
+    condition = type("Condition", (), {
+        "action_ar": "\u0637\u064a\u0631\u0627\u0646 \u0627\u0633\u062a\u0637\u0644\u0627\u0639\u064a",
+    })()
+
+    text = air_violation_news_text(message, adloun, condition, [adloun, maarakeh])
+
+    assert "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629" in text
+    assert "\u0642\u0636\u0627\u0621 \u0635\u064a\u062f\u0627" not in text
+
+
 def test_written_news_removes_decorative_symbol_lines_but_keeps_text() -> None:
     value = "🚫\nإطباق جوي واسع\n⛔️\nأقصى درجات الحيطة والحذر\n⛔️"
 
@@ -70,6 +101,17 @@ def test_multi_region_bulletin_does_not_get_a_false_single_caza() -> None:
     )
 
     assert labels == ("Multiple regions", "مناطق متعددة")
+
+
+def test_south_lebanon_air_alert_keeps_south_lebanon_label() -> None:
+    labels = air_violation_caza_labels(
+        "#مقاتلات_حربية #الجنوب الخريطة المباشرة",
+        None,
+        None,
+        [("Nabatiye", "النبطية"), ("Sour", "صور"), ("Bint Jubail", "بنت جبيل")],
+    )
+
+    assert labels == ("South Lebanon", "جنوب لبنان")
 
 
 @pytest.mark.parametrize(
@@ -120,6 +162,62 @@ def test_air_violation_caza_aliases_include_requested_kadaa(text, expected) -> N
 )
 def test_air_violation_caza_window_hours(caza_en, condition_id, expected_hours) -> None:
     assert air_violation_caza_window_hours(caza_en, condition_id) == expected_hours
+
+
+def test_telegram_message_identity_bypasses_recent_similarity_suppression() -> None:
+    message = type("Message", (), {
+        "external_message_id": "telegram:redlinkleb:12345",
+        "source_platform": "telegram",
+        "raw_payload": {},
+    })()
+
+    assert AirViolationRepository._has_strong_message_identity(message) is True
+
+
+def test_telegram_identity_does_not_bypass_for_caza_only_air_alert() -> None:
+    message = type("Message", (), {
+        "external_message_id": "telegram:redlinkleb:12345",
+        "source_platform": "telegram",
+        "raw_payload": {},
+    })()
+    result = MatchResultDTO(
+        village_matches=[],
+        any_village_low_confidence=False,
+        matched_condition_id=35,
+        condition_confidence=1.0,
+        condition_match_status=MatchResultStatus.matched,
+        condition_review_required=False,
+        raw_condition_text="#مقاتلات_حربية #الجنوب",
+    )
+
+    assert AirViolationRepository._should_bypass_recent_duplicate_check(message, result) is False
+
+
+def test_telegram_identity_bypasses_for_location_specific_air_alert() -> None:
+    message = type("Message", (), {
+        "external_message_id": "telegram:redlinkleb:12345",
+        "source_platform": "telegram",
+        "raw_payload": {},
+    })()
+    result = MatchResultDTO(
+        village_matches=[
+            VillageMatchResult(
+                matched_village_id=7,
+                village_confidence=1.0,
+                village_match_status=MatchResultStatus.matched,
+                village_review_required=False,
+                raw_village_text="Maarake",
+            )
+        ],
+        any_village_low_confidence=False,
+        matched_condition_id=36,
+        condition_confidence=1.0,
+        condition_match_status=MatchResultStatus.matched,
+        condition_review_required=False,
+        raw_condition_text="Drone over Maarake",
+    )
+
+    assert AirViolationRepository._should_bypass_recent_duplicate_check(message, result) is True
 
 
 def test_priority_caza_air_violations_are_limited_to_one_per_hour() -> None:

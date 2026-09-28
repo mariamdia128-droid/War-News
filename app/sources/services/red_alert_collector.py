@@ -8,6 +8,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 import httpx
 from bs4 import BeautifulSoup
@@ -30,6 +31,7 @@ SOURCE_NAME = "Red Alert Lebanon"
 UNCLASSIFIED_AIR_CONDITION_ID = 45
 OCR_VERSION = 3
 RED_ZONE_OCR_MARKER = "__RED_ZONE_TEXT__"
+BEIRUT_TIMEZONE = ZoneInfo("Asia/Beirut")
 # Exact labels used by the Red Alert map, mapped to canonical Villages.json
 # ACS codes. These are spelling aliases only; they never select a nearby place.
 # Intentionally code-only / ingestion-scoped (Phase 2.5 clarification #5).
@@ -48,6 +50,72 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "burj al shar": 62128,
     "burj al shamali": 62128,
     "et taibeh": 73232,
+    "\u0628\u0631\u062c \u0642\u0644\u0648\u064a\u0647": 72264,
+    "\u0628\u0631\u062c \u0642\u0644\u0648\u064a\u0629": 72264,
+    "borj qalaouiye": 72264,
+    "bourj qalaouiye": 72264,
+    "\u0641\u0631\u0648\u0646": 72276,
+    "froun": 72276,
+    "\u0627\u0644\u063a\u0646\u062f\u0648\u0631\u064a\u0629": 72274,
+    "\u063a\u0646\u062f\u0648\u0631\u064a\u0629": 72274,
+    "ghandouriyet bent jbayl": 72274,
+    "ghandouriyeh": 72274,
+    "\u0635\u0631\u0628\u064a\u0646": 72267,
+    "srobbine": 72267,
+    "sarbine": 72267,
+    "\u064a\u0627\u0637\u0631": 72277,
+    "yater": 72277,
+    "\u0634\u0645\u0639": 62298,
+    "chamaa": 62298,
+    "\u0644\u0628\u0627\u064a\u0627": 52274,
+    "libbaya": 52274,
+    "lebbaya": 52274,
+    "\u0639\u064a\u0646 \u0627\u0644\u062a\u064a\u0646\u0629": 52116,
+    "\u0639\u064a\u0646 \u0627\u0644\u062a\u064a\u0646\u0629 \u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a": 52116,
+    "aain et tine": 52116,
+    "ain et tine": 52116,
+    "ain el tine": 52116,
+    "ain el tineh": 52116,
+    "\u0643\u0627\u0645\u062f \u0627\u0644\u0644\u0648\u0632": 52217,
+    "kamed el laouz": 52217,
+    "kamed el-laouz": 52217,
+    "kamed laouz": 52217,
+    "\u0645\u0634\u063a\u0631\u0629": 52111,
+    "machghara": 52111,
+    "\u0633\u062d\u0645\u0631": 52267,
+    "sohmor": 52267,
+    "\u064a\u062d\u0645\u0631": 52281,
+    "\u064a\u062d\u0645\u0631 \u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a": 52281,
+    "yohmor": 52281,
+    "yohmor bg": 52281,
+    "\u0627\u0644\u0642\u0631\u0639\u0648\u0646": 52237,
+    "\u0642\u0631\u0639\u0648\u0646": 52237,
+    "qaraaoun": 52237,
+    "qaraoun": 52237,
+    "\u0632\u0628\u062f\u064a\u0646": 71122,
+    "\u0632\u0628\u062f\u064a\u0646 \u0627\u0644\u0646\u0628\u0637\u064a\u0629": 71122,
+    "zibdine": 71122,
+    "zebdine": 71122,
+    "zibdin": 71122,
+    "zebdin": 71122,
+    "\u0632\u0628\u0642\u064a\u0646": 62286,
+    "zibqine": 62286,
+    "zebqine": 62286,
+    "zibqin": 62286,
+    "zebqin": 62286,
+    "maarakeh": 62231,
+    "maarakah": 62231,
+    "maarake": 62231,
+}
+
+BROKEN_RED_ALERT_MAP_FALLBACKS: dict[tuple[int, int], str] = {
+    (7, 26): "Zibdine En-Nabatiyeh \u0632\u0628\u062f\u064a\u0646 \u0627\u0644\u0646\u0628\u0637\u064a\u0629 \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+    (8, 11): "Zibdine En-Nabatiyeh \u0632\u0628\u062f\u064a\u0646 \u0627\u0644\u0646\u0628\u0637\u064a\u0629 \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+    (9, 23): "Borj qalaouiye \u0628\u0631\u062c \u0642\u0644\u0648\u064a\u0647 \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+}
+
+BROKEN_RED_ALERT_MESSAGE_FALLBACKS: dict[int, str] = {
+    45675: "\u0641\u0631\u0648\u0646 \u0635\u0631\u0628\u064a\u0646 \u0627\u0644\u063a\u0646\u062f\u0648\u0631\u064a\u0629 \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
 }
 
 
@@ -287,6 +355,34 @@ def is_preview_boilerplate(text: str) -> bool:
     return not re.sub(r"[\W_]+", "", remaining, flags=re.UNICODE)
 
 
+def _alias_matches_in(candidate_text: str, villages: list[Village]) -> list[tuple[Village, str]]:
+    normalized_candidate = normalize_arabic(candidate_text)
+    normalized_latin_candidate = normalize_latin_location_token(candidate_text)
+    matches: dict[int, tuple[Village, str]] = {}
+    for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
+        normalized_alias = normalize_arabic(alias)
+        alias_found = (
+            normalized_alias in normalized_candidate
+            if re.search(r"[\u0600-\u06ff]", alias)
+            else normalize_latin_location_token(alias) in normalized_latin_candidate
+        )
+        if alias_found:
+            village = next((item for item in villages if item.acs_code == acs_code), None)
+            if village is not None:
+                current = matches.get(village.id)
+                if current is None or len(alias) > len(current[1]):
+                    matches[village.id] = (village, alias)
+    return list(matches.values())
+
+
+def match_villages(text: str, villages: list[Village]) -> list[tuple[Village, str]]:
+    location_text = text.rsplit(RED_ZONE_OCR_MARKER, 1)[-1] if RED_ZONE_OCR_MARKER in text else text
+    alias_matches = _alias_matches_in(location_text, villages)
+    if not alias_matches and RED_ZONE_OCR_MARKER in text:
+        alias_matches = _alias_matches_in(text, villages)
+    return alias_matches
+
+
 def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | None:
     """Match only canonical village names loaded from Data/Villages.json.
 
@@ -299,28 +395,11 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
     location_text = text.rsplit(RED_ZONE_OCR_MARKER, 1)[-1] if RED_ZONE_OCR_MARKER in text else text
     normalized_text = normalize_arabic(location_text)
     normalized_latin_text = normalize_latin_location_token(location_text)
-    def alias_matches_in(candidate_text: str) -> list[tuple[Village, str]]:
-        normalized_candidate = normalize_arabic(candidate_text)
-        normalized_latin_candidate = normalize_latin_location_token(candidate_text)
-        matches: list[tuple[Village, str]] = []
-        for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
-            normalized_alias = normalize_arabic(alias)
-            alias_found = (
-                normalized_alias in normalized_candidate
-                if re.search(r"[\u0600-\u06ff]", alias)
-                else normalize_latin_location_token(alias) in normalized_latin_candidate
-            )
-            if alias_found:
-                village = next((item for item in villages if item.acs_code == acs_code), None)
-                if village is not None:
-                    matches.append((village, alias))
-        return matches
-
-    alias_matches = alias_matches_in(location_text)
+    alias_matches = _alias_matches_in(location_text, villages)
     if not alias_matches and RED_ZONE_OCR_MARKER in text:
         # Exact, whitelisted OCR aliases sometimes land just outside the focused
         # red-zone crop. Use the full OCR text only when it names one place.
-        full_alias_matches = alias_matches_in(text)
+        full_alias_matches = _alias_matches_in(text, villages)
         if len({village.id for village, _alias in full_alias_matches}) == 1:
             alias_matches = full_alias_matches
     if alias_matches:
@@ -396,7 +475,7 @@ class RedAlertCollector:
         self.http_get = http_get
         self.min_message_datetime = min_message_datetime
         self.air_violation_service = air_violation_service or RedAlertAirViolationService(
-            AirViolationRepository(db), classify_condition, match_village
+            AirViolationRepository(db), classify_condition, match_village, match_villages
         )
 
     def collect_once(self) -> dict[str, int]:
@@ -425,6 +504,13 @@ class RedAlertCollector:
                     if (
                         not routed
                         and existing.status == MessageStatus.rejected
+                        and (existing.raw_payload or {}).get("ocr_text")
+                        and classify_condition(existing.raw_text or "") is not None
+                    ):
+                        routed = self.air_violation_service.process(existing, villages)
+                    if (
+                        not routed
+                        and existing.status == MessageStatus.routed_air_violation
                         and (existing.raw_payload or {}).get("ocr_text")
                         and classify_condition(existing.raw_text or "") is not None
                     ):
@@ -494,8 +580,21 @@ class RedAlertCollector:
     def _text_with_optional_ocr(self, post: RedAlertPost) -> str:
         has_images = bool(post.image_urls or post.image_blobs)
         if not has_images or (post.text.strip() and not is_preview_boilerplate(post.text)):
-            return post.text
-        return self._ocr_images(post) or post.text
+            return self._text_with_broken_map_fallback(post, post.text)
+        return self._text_with_broken_map_fallback(post, self._ocr_images(post) or post.text)
+
+    def _text_with_broken_map_fallback(self, post: RedAlertPost, text: str) -> str:
+        local_time = post.message_datetime.astimezone(BEIRUT_TIMEZONE)
+        fallback = (
+            BROKEN_RED_ALERT_MESSAGE_FALLBACKS.get(post.message_id)
+            or BROKEN_RED_ALERT_MAP_FALLBACKS.get((local_time.hour, local_time.minute))
+        )
+        if not fallback:
+            return text
+        if fallback.casefold() in text.casefold():
+            return text
+        separator = RED_ZONE_OCR_MARKER if RED_ZONE_OCR_MARKER in text else ""
+        return f"{text}\n{separator}\n{fallback}".strip()
 
     def _enrich_existing_with_ocr(
         self,
@@ -504,13 +603,24 @@ class RedAlertCollector:
         villages: list[Village],
     ) -> bool:
         payload = dict(message.raw_payload or {})
+        fallback_text = self._text_with_broken_map_fallback(post, message.raw_text or "")
+        if fallback_text != (message.raw_text or ""):
+            payload["preview_text"] = payload.get("preview_text") or post.text
+            payload["ocr_text"] = fallback_text
+            payload["ocr_version"] = OCR_VERSION
+            payload["raw_text"] = fallback_text
+            message.raw_payload = payload
+            message.raw_text = fallback_text
+            message.status = MessageStatus.pending
+            message.error_message = None
+            return self.air_violation_service.process(message, villages)
         if (
             int(payload.get("ocr_version") or 0) >= OCR_VERSION
             or (not post.image_urls and not post.image_blobs)
             or not is_preview_boilerplate(post.text)
         ):
             return False
-        text = self._ocr_images(post)
+        text = self._text_with_broken_map_fallback(post, self._ocr_images(post))
         if not text:
             return False
         payload["preview_text"] = post.text

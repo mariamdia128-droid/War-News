@@ -19,6 +19,7 @@ from app.sources.services.red_alert_collector import (
     fetch_limit_for_hours,
     is_preview_boilerplate,
     match_village,
+    match_villages,
     parse_public_preview,
     posts_within_window,
 )
@@ -172,6 +173,56 @@ def test_red_alert_air_violation_routes_all_exact_villages_from_ocr_text() -> No
         201,
         202,
         203,
+    }
+
+
+def test_red_alert_air_violation_routes_all_alias_villages_from_ocr_text() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
+    aain_et_tine = _village(203, "\u0639\u064a\u0646 \u0627\u0644\u062a\u064a\u0646\u0629 \u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a", caza_en="West Bekaa")
+    aain_et_tine.ref_name_en = "Aain Et-Tine BG"
+    aain_et_tine.acs_code = 52116
+    libbaya = _village(204, "\u0644\u0628\u0627\u064a\u0627", caza_en="West Bekaa")
+    libbaya.ref_name_en = "Libbaya BG"
+    libbaya.acs_code = 52274
+    sohmor = _village(205, "\u0633\u062d\u0645\u0631", caza_en="West Bekaa")
+    sohmor.ref_name_en = "Sohmor"
+    sohmor.acs_code = 52267
+    yohmor = _village(206, "\u064a\u062d\u0645\u0631 \u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a", caza_en="West Bekaa")
+    yohmor.ref_name_en = "Yohmor BG"
+    yohmor.acs_code = 52281
+    machghara = _village(207, "\u0645\u0634\u063a\u0631\u0629", caza_en="West Bekaa")
+    machghara.ref_name_en = "Machghara"
+    machghara.acs_code = 52111
+    qaraaoun = _village(208, "\u0627\u0644\u0642\u0631\u0639\u0648\u0646", caza_en="West Bekaa")
+    qaraaoun.ref_name_en = "Qaraaoun"
+    qaraaoun.acs_code = 52237
+    message = SimpleNamespace(
+        id=105,
+        raw_text=(
+            f"redalert.com.lb \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631 {RED_ZONE_OCR_MARKER} "
+            "Qaraoun Machghara Sohmor Ain El Tineh Libbaya \u0645\u0633\u064a\u0631\u0629"
+        ),
+        raw_payload={"ocr_text": "Qaraoun Machghara Sohmor Ain El Tineh Libbaya"},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(
+        message,
+        [aain_et_tine, libbaya, sohmor, yohmor, machghara, qaraaoun],
+    ) is True
+    routed_result = repository.route_from_match.call_args.args[1]
+
+    assert {match.matched_village_id for match in routed_result.village_matches} == {
+        203,
+        204,
+        205,
+        207,
+        208,
     }
 
 
@@ -342,6 +393,64 @@ def test_matches_red_alert_ocr_aliases_from_rejected_maps() -> None:
     assert matched_taibeh[0].id == 21
     assert matched_shamali is not None
     assert matched_shamali[0].id == 22
+
+
+def test_matches_red_alert_zibqine_ocr_alias_to_sour_village() -> None:
+    zibqine = _village(24, "\u0632\u0628\u0642\u064a\u0646", caza_en="Sour")
+    zibqine.ref_name_en = "Zibqine"
+    zibqine.acs_code = 62286
+
+    matched = match_village(
+        f"noise {RED_ZONE_OCR_MARKER} Zibqine \u0645\u0633\u064a\u0631\u0629",
+        [zibqine],
+    )
+
+    assert matched is not None
+    assert matched[0].id == 24
+    assert matched[0].caza_en == "Sour"
+
+
+def test_matches_red_alert_maarakeh_alias_to_sour_village() -> None:
+    maarake = _village(25, "\u0645\u0639\u0631\u0643\u0629", caza_en="Sour")
+    maarake.ref_name_en = "Maarake"
+    maarake.acs_code = 62231
+
+    matched = match_village("Drone over Maarakeh", [maarake])
+
+    assert matched is not None
+    assert matched[0].id == 25
+    assert matched[0].caza_en == "Sour"
+
+
+def test_telegram_text_location_wins_over_conflicting_ocr_location() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
+    maarake = _village(26, "\u0645\u0639\u0631\u0643\u0629", caza_en="Sour")
+    maarake.ref_name_en = "Maarake"
+    maarake.acs_code = 62231
+    saida = _village(27, "\u0635\u064a\u062f\u0627", caza_en="Saida")
+    saida.ref_name_en = "Saida"
+    message = SimpleNamespace(
+        id=106,
+        raw_text=(
+            "Drone over Maarakeh\n"
+            f"{RED_ZONE_OCR_MARKER} Saida \u0645\u0633\u064a\u0631\u0629"
+        ),
+        raw_payload={
+            "preview_text": "Drone over Maarakeh",
+            "ocr_text": f"{RED_ZONE_OCR_MARKER} Saida \u0645\u0633\u064a\u0631\u0629",
+        },
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(message, [maarake, saida]) is True
+    routed_result = repository.route_from_match.call_args.args[1]
+
+    assert [match.matched_village_id for match in routed_result.village_matches] == [26]
 
 
 def test_red_zone_ocr_falls_back_to_single_exact_alias_in_full_text() -> None:

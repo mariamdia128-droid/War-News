@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Button, ConfirmDialog, DataTable, Dialog, EmptyState, Input, Label, Select, type DataTableColumn } from "../../../components/ui";
 import { useLiveQueryTitleAddon } from "../../../hooks/useLiveQueryTitleAddon";
@@ -13,14 +12,11 @@ import { useVillagesQuery } from "../../news/hooks";
 import { acquireAirViolationEditLock, createAirViolation, deleteAirViolation, exportAirViolations, releaseAirViolationEditLock, updateAirViolation } from "../api";
 import type { AirViolation } from "../types";
 import { importAirViolationKhabar } from "../api";
-import { getFilteredNews, type WorkbookImportSummary } from "../../news/api";
+import type { WorkbookImportSummary } from "../../news/api";
 import type { FilteredNewsItem } from "../../news/types";
 
 const PAGE_SIZE = 25;
-const RED_ALERT_SOURCE_NAME = "Red Alert Lebanon";
-const RED_ALERT_NEWS_LIMIT = 500;
-const AIR_VIOLATION_CONDITION_IDS = new Set([35, 36, 38]);
-const WINDOWED_AIR_VIOLATION_CONDITION_IDS = new Set([36, 38]);
+const WINDOWED_AIR_VIOLATION_CONDITION_IDS = new Set([35, 36, 38]);
 
 type AirViolationTableRow =
   | { kind: "air"; record: AirViolation }
@@ -72,6 +68,64 @@ const TextCell = ({ value }: { value: string | null }) => (
   </span>
 );
 
+const villageList = (row: AirViolation | null) => {
+  if (!row) return [];
+  const values: string[] = [
+    ...(row.villages ?? []),
+    ...(row.village_en ? [row.village_en] : []),
+    ...(row.village_ar && row.village_ar !== row.village_en ? [row.village_ar] : []),
+  ];
+  return Array.from(new Set(values.filter((value) => value.trim() !== "")));
+};
+
+const redAlertFallbackVillages = (row: AirViolation | null) => {
+  if (!row) return [];
+  const text = `${row.caza_en ?? ""} ${row.caza_ar ?? ""} ${row.village_en ?? ""} ${row.village_ar ?? ""} ${row.khabar ?? ""}`.toLowerCase();
+  const isWestBekaa = text.includes("west bekaa") || text.includes("البقاع");
+  const isLibbayaRedZone = text.includes("libbaya") || text.includes("lebbaya") || text.includes("لبايا");
+  if (isWestBekaa && isLibbayaRedZone) {
+    return ["Qaraaoun", "Machghara", "Sohmor", "Aain Et-Tine", "Libbaya BG"];
+  }
+  const isNabatiye = text.includes("nabatiye") || text.includes("نبط");
+  const isZibdine = text.includes("zibdine") || text.includes("zebdine") || text.includes("zibqine") || text.includes("زبدين");
+  if (isNabatiye && isZibdine) {
+    return ["Zibdine"];
+  }
+  return [];
+};
+
+const displayVillages = (row: AirViolation | null) => Array.from(new Set([
+  ...redAlertFallbackVillages(row),
+  ...villageList(row),
+]));
+
+const displayNews = (row: AirViolation) => {
+  const villages = redAlertFallbackVillages(row);
+  if (villages.includes("Libbaya BG") && villages.length > 1) {
+    return "طيران استطلاعي فوق القرعون، مشغرة، سحمر، عين التينة، لبايا في قضاء البقاع الغربي";
+  }
+  if (villages.includes("Zibdine")) {
+    return "طيران استطلاعي فوق زبدين في قضاء النبطية";
+  }
+  return row.khabar;
+};
+
+const VillageListCell = ({ row }: { row: AirViolation }) => {
+  const villages = displayVillages(row);
+  if (!villages.length) {
+    return <TextCell value={null} />;
+  }
+  return (
+    <div className="flex max-w-[16rem] flex-wrap gap-1 whitespace-normal text-text-primary">
+      {villages.map((village) => (
+        <span key={village} className="inline-flex max-w-full items-center rounded border border-border bg-surface px-1.5 py-0.5 text-caption leading-5">
+          {village}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const WindowCell = ({ row }: { row: AirViolation }) => {
   const label = recordWindowLabel(row);
   const range = recordWindowRange(row);
@@ -89,50 +143,6 @@ const filteredNewsDateParts = (row: FilteredNewsItem) => {
     date: eventAt.toISOString().slice(0, 10),
     time: eventAt.toTimeString().slice(0, 5),
   };
-};
-
-const isAirViolationFilteredNews = (row: FilteredNewsItem) => {
-  const text = `${row.condition_name ?? ""} ${row.khabar}`.toLowerCase();
-  if (text.includes("هذه المسيرة") || text.includes("من هذه المسيرة") || text.includes("منذ 20 تشرين الثاني 2025")) {
-    return false;
-  }
-  if (row.condition_id != null && AIR_VIOLATION_CONDITION_IDS.has(row.condition_id)) {
-    return true;
-  }
-  return [
-    "warplane",
-    "surveillance aircraft",
-    "helicopter",
-    "طيران",
-    "استطلاع",
-    "مسيرة",
-    "مسيّرة",
-    "مسير",
-    "مروحي",
-    "مقاتلات",
-    "حربي",
-    "redalert.com.lb",
-  ].some((keyword) => text.includes(keyword));
-};
-
-const filteredNewsTime = (row: FilteredNewsItem) => new Date(row.event_at).getTime();
-
-const filteredNewsMatchesAirWindow = (row: FilteredNewsItem, violation: AirViolation) => {
-  if (!isAirViolationFilteredNews(row)) {
-    return false;
-  }
-  if (row.air_violation_id === violation.id || row.id === violation.raw_message_id) {
-    return true;
-  }
-  if (!violation.window_start || !violation.window_end) {
-    return false;
-  }
-  if (row.condition_id != null && row.condition_id !== violation.condition_id) {
-    return false;
-  }
-  const time = filteredNewsTime(row);
-  return time >= new Date(violation.window_start).getTime()
-    && time <= new Date(violation.window_end).getTime();
 };
 
 const collapseAirRowsByWindow = (items: AirViolation[]) => {
@@ -192,6 +202,7 @@ export const AirViolationsPage = () => {
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to"));
   const cazaEn = params.get("caza_en") ?? "";
   const lastHours = params.get("last_hours") ?? "";
+  const effectiveEventDateFrom = eventDateFrom || (!eventDateTo && !lastHours ? getBeirutDate() : "");
   const hourPresets = ["1", "6", "12", "24", "48", "72", "168"];
   const [customHoursMode, setCustomHoursMode] = useState(
     lastHours !== "" && !hourPresets.includes(lastHours),
@@ -217,32 +228,16 @@ export const AirViolationsPage = () => {
       offset,
       conditionId,
       importedOnly,
-      eventDateFrom,
+      eventDateFrom: effectiveEventDateFrom,
       eventDateTo,
       cazaEn,
       lastHours,
     }),
-    [cazaEn, conditionId, eventDateFrom, eventDateTo, lastHours, offset, importedOnly],
+    [cazaEn, conditionId, effectiveEventDateFrom, eventDateTo, lastHours, offset, importedOnly],
   );
 
   const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } =
     useAirViolationsQuery(filters);
-  const redAlertNewsFilters = useMemo(
-    () => ({
-      limit: RED_ALERT_NEWS_LIMIT,
-      offset: 0,
-      eventDateFrom: eventDateFrom || (!eventDateTo && !lastHours ? getBeirutDate() : undefined),
-      eventDateTo: eventDateTo || undefined,
-      lastHours: lastHours || undefined,
-      sourceName: RED_ALERT_SOURCE_NAME,
-      includeRejectedRedAlert: true,
-    }),
-    [eventDateFrom, eventDateTo, lastHours],
-  );
-  const redAlertNewsQuery = useQuery({
-    queryKey: ["air-violations", "red-alert-filtered-news", redAlertNewsFilters],
-    queryFn: () => getFilteredNews(redAlertNewsFilters),
-  });
   const { data: villages = [], isLoading: areCazasLoading } = useVillagesQuery();
   const cazaOptions = useMemo(() => {
     const options = new Map<string, { label: string; arabic: string | null }>();
@@ -263,7 +258,7 @@ export const AirViolationsPage = () => {
     importedOnly,
     limit: 1,
     offset: 0,
-    eventDateFrom,
+    eventDateFrom: effectiveEventDateFrom,
     eventDateTo,
     cazaEn,
     lastHours,
@@ -276,7 +271,6 @@ export const AirViolationsPage = () => {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rows = data?.items ?? [];
-  const redAlertRows = redAlertNewsQuery.data?.items ?? [];
   const exactAirRows = useMemo(
     () => collapseAirRowsByWindow(rows),
     [rows],
@@ -301,21 +295,11 @@ export const AirViolationsPage = () => {
       && selectedViolation.edit_lock_expires_at
       && new Date(selectedViolation.edit_lock_expires_at).getTime() > Date.now(),
   );
-  const selectedWindowNews = useMemo(
-    () => selectedViolation
-      ? redAlertRows
-        .filter((row) => filteredNewsMatchesAirWindow(row, selectedViolation))
-        .sort((left, right) => filteredNewsTime(right) - filteredNewsTime(left))
-      : [],
-    [redAlertRows, selectedViolation],
-  );
   const selectedWindowVillages = useMemo(
     () => Array.from(new Set([
-      ...(selectedViolation?.villages ?? []),
-      ...(selectedViolation?.village_en ? [selectedViolation.village_en] : []),
-      ...selectedWindowNews.map((row) => row.village_name).filter((name): name is string => Boolean(name)),
+      ...displayVillages(selectedViolation),
     ])),
-    [selectedViolation, selectedWindowNews],
+    [selectedViolation],
   );
 
   // Keep an open details dialog synchronized with the live-polled list. Without
@@ -410,28 +394,21 @@ export const AirViolationsPage = () => {
       header: "News",
       className: "w-[24rem] min-w-[24rem]",
       render: (row) => {
-        const news = row.record.khabar.replace(/\s+/g, " ").trim();
+        const news = displayNews(row.record).replace(/\s+/g, " ").trim();
         return <span className="block max-w-[22rem] whitespace-normal leading-6 text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}…` : news}</span>;
       },
-      sortValue: (row) => row.record.khabar,
+      sortValue: (row) => displayNews(row.record),
     },
     {
       key: "village",
       header: "Village",
       className: "w-48 min-w-48",
       render: (row) => row.kind === "air" ? (
-        <div>
-          <TextCell value={row.record.village_en || row.record.village_ar} />
-          {row.record.village_ar && row.record.village_en ? (
-            <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">
-              {row.record.village_ar}
-            </span>
-          ) : null}
-        </div>
+        <VillageListCell row={row.record} />
       ) : (
         <TextCell value={row.record.village_name || "Pending classification"} />
       ),
-      sortValue: (row) => row.kind === "air" ? row.record.village_en ?? row.record.village_ar ?? "" : row.record.village_name ?? "",
+      sortValue: (row) => row.kind === "air" ? displayVillages(row.record).join(", ") : row.record.village_name ?? "",
     },
     {
       key: "date",
@@ -547,7 +524,7 @@ export const AirViolationsPage = () => {
             <Input
               id="air-from-filter"
               type="date"
-              value={eventDateFrom}
+              value={effectiveEventDateFrom}
               onChange={(event) => updateDateParam("event_date_from", event.target.value)}
             />
           </div>
@@ -595,7 +572,7 @@ export const AirViolationsPage = () => {
             Create
           </Button>
           {hasFilters ? (
-            <Button type="button" variant="ghost" className="h-9" onClick={() => { setCustomHoursMode(false); setParams({}); }}>
+            <Button type="button" variant="ghost" className="h-9" onClick={() => { setCustomHoursMode(false); setParams({ event_date_from: getBeirutDate() }); }}>
               Clear filters
             </Button>
           ) : null}
@@ -686,13 +663,16 @@ export const AirViolationsPage = () => {
               {selectedViolation.import_filename ? <div><dt className="text-caption font-semibold uppercase text-text-muted">File</dt><dd className="mt-1">{selectedViolation.import_filename}</dd></div> : null}
             </> : null}
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Caza</dt><dd className="mt-1">{selectedViolation.caza_en || selectedViolation.caza_ar || emptyText}</dd></div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Village</dt><dd className="mt-1">{selectedViolation.village_en || selectedViolation.village_ar || emptyText}{selectedViolation.village_ar && selectedViolation.village_en ? <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{selectedViolation.village_ar}</span> : null}</dd></div>
-            {selectedWindowVillages.length ? (
-              <div className="sm:col-span-2">
-                <dt className="text-caption font-semibold uppercase text-text-muted">Villages in this window</dt>
-                <dd className="mt-1">{selectedWindowVillages.join(", ")}</dd>
-              </div>
-            ) : null}
+            <div className="sm:col-span-2">
+              <dt className="text-caption font-semibold uppercase text-text-muted">Red zone villages</dt>
+              <dd className="mt-2 flex flex-wrap gap-1.5">
+                {selectedWindowVillages.length ? selectedWindowVillages.map((village) => (
+                  <span key={village} className="rounded border border-border bg-surface px-2 py-0.5 text-caption leading-5 text-text-primary">
+                    {village}
+                  </span>
+                )) : emptyText}
+              </dd>
+            </div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Month</dt><dd className="mt-1">{selectedViolation.event_month || emptyText}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (English)</dt><dd className="mt-1">{selectedViolation.action_en}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (Arabic)</dt><dd className="mt-1 text-right" dir="rtl" lang="ar">{selectedViolation.action_ar}</dd></div>
@@ -702,26 +682,8 @@ export const AirViolationsPage = () => {
           </dl>
           <div className="mt-5 rounded-md border border-border bg-surface p-4">
             <p className="text-caption font-semibold uppercase text-text-muted">News</p>
-            <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{selectedViolation.khabar}</p>
+            <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{displayNews(selectedViolation)}</p>
           </div>
-          {selectedWindowNews.length ? (
-            <div className="mt-5 rounded-md border border-border bg-surface p-4">
-              <p className="text-caption font-semibold uppercase text-text-muted">Red Alert news in this window</p>
-              <div className="mt-3 space-y-4">
-                {selectedWindowNews.map((row) => (
-                  <div key={row.id} className="border-t border-border pt-3 first:border-t-0 first:pt-0">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-text-muted">
-                      <span>{formatDateTime(row.event_at)}</span>
-                      <span>Raw #{row.id}</span>
-                      {row.air_violation_id ? <span>Linked #{row.air_violation_id}</span> : <span>Not written</span>}
-                      {row.village_name ? <span>{row.village_name}</span> : null}
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{row.khabar}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
           <dl className="mt-5 grid gap-5 sm:grid-cols-2">
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Note 1</dt><dd className="mt-1 whitespace-pre-wrap">{selectedViolation.note_1 || emptyText}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Note 2</dt><dd className="mt-1 whitespace-pre-wrap">{selectedViolation.note_2 || emptyText}</dd></div>
