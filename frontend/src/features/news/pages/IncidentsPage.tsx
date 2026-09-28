@@ -25,9 +25,7 @@ import { useContentSourcesQuery } from "../../sources/hooks";
 import type { FilteredNewsItem, Incident } from "../types";
 
 const DEFAULT_PAGE_SIZE = 150;
-const DEFAULT_EVENT_DATE_FROM = "2026-08-20";
 const NEWS_PAGE_SIZE = 100;
-const DEFAULT_NEWS_DATE_FROM = "2026-08-01";
 const twoLineClampClass =
   "overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]";
 const threeLineClampClass =
@@ -142,7 +140,7 @@ export const IncidentsPage = () => {
   const [isReviewing, setIsReviewing] = useState(false);
   // Filtered news state
   const [newsPage, setNewsPage] = useState(1);
-  const [newsDateFrom, setNewsDateFrom] = useState(DEFAULT_NEWS_DATE_FROM);
+  const [newsDateFrom, setNewsDateFrom] = useState(getBeirutDate());
   const [newsDateTo, setNewsDateTo] = useState(getBeirutDate());
   const [newsSourceName, setNewsSourceName] = useState("");
   const [newsStatus, setNewsStatus] = useState("");
@@ -155,7 +153,7 @@ export const IncidentsPage = () => {
   const condition = params.get("condition") ?? "";
   const sourceName = params.get("source_name") ?? "";
   const verificationStatus = params.get("verification_status") as Incident["verification_status"] | "";
-  const eventDateFrom = normalizeDateInputValue(params.get("event_date_from")) || DEFAULT_EVENT_DATE_FROM;
+  const eventDateFrom = normalizeDateInputValue(params.get("event_date_from")) || getBeirutDate();
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to")) || getBeirutDate();
   const sortOrder = (params.get("sort_order") as "newest" | "oldest" | null) ?? "newest";
   const duplicateOnly = params.get("duplicate_only") === "true";
@@ -686,7 +684,7 @@ export const IncidentsPage = () => {
                       className="h-11 w-full rounded-xl px-4 sm:w-auto"
                       onClick={() =>
                         setParams({
-                          event_date_from: DEFAULT_EVENT_DATE_FROM,
+                          event_date_from: getBeirutDate(),
                           event_date_to: getBeirutDate(),
                         })
                       }

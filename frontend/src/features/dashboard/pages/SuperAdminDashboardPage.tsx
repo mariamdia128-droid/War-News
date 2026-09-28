@@ -30,17 +30,11 @@ const friendlyAuditAction = (action: string) => ({
 export const SuperAdminDashboardPage = () => {
   const contentSources = useContentSourcesQuery();
   const sources = useSourcesQuery();
-  const monthStart = `${today().slice(0, 7)}-01`;
-  const incidents = useIncidentsQuery(
-    { limit: 1, eventDateFrom: monthStart, eventDateTo: today() },
-    false,
-  );
   const incidentsToday = useIncidentsQuery(
     { limit: 1, eventDateFrom: today(), eventDateTo: today() },
     false,
   );
-  const airViolations = useAirViolationsQuery({ limit: 1, offset: 0 }, false);
-  const airViolationsToday = useAirViolationsQuery({ limit: 1, offset: 0, eventDateFrom: today() }, false);
+  const airViolationsToday = useAirViolationsQuery({ limit: 1, offset: 0, eventDateFrom: today(), eventDateTo: today() }, false);
   const [failedLoginCutoff, setFailedLoginCutoff] = useState(() => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
   useEffect(() => {
     const updateCutoff = () => setFailedLoginCutoff(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
@@ -92,8 +86,8 @@ export const SuperAdminDashboardPage = () => {
       <section aria-label="System metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Metric label="Content sources" value={contentSources.data?.length ?? 0} detail="Upstream news accounts" to="/superadmin/sources" loading={contentSources.isLoading} />
         <Metric label="News received today" value={newsToday} detail="Parsed through ingestion today" to="/superadmin/logs/ingestion" loading={ingestion.isLoading} />
-        <Metric label="Incidents" value={incidents.data?.total ?? 0} detail={`+${incidentsToday.data?.total ?? 0} recorded today`} to="/superadmin/incidents" loading={incidents.isLoading || incidentsToday.isLoading} />
-        <Metric label="Air violations" value={airViolations.data?.total ?? 0} detail={`+${airViolationsToday.data?.total ?? 0} recorded today`} to="/superadmin/air-violations" loading={airViolations.isLoading || airViolationsToday.isLoading} />
+        <Metric label="Incidents today" value={incidentsToday.data?.total ?? 0} detail="Materialized incident records today" to={`/superadmin/incidents?event_date_from=${today()}&event_date_to=${today()}`} loading={incidentsToday.isLoading} />
+        <Metric label="Air violations today" value={airViolationsToday.data?.total ?? 0} detail="Recorded today from Red Alert and other air sources" to={`/superadmin/air-violations?event_date_from=${today()}&event_date_to=${today()}`} loading={airViolationsToday.isLoading} />
         <Metric label="Sources not reporting (24h)" value={staleSources} detail={sourceHealthDetail} to="/superadmin/sources" alert={staleSources > 0 || failedIngestion > 0} loading={sources.isLoading || ingestion.isLoading} />
         <Metric label="Failed logins (24h)" value={failedLogins.data?.total ?? 0} detail="Open filtered security log" to={`/superadmin/logs/login?result=failure&date_from=${yesterday()}`} alert={(failedLogins.data?.total ?? 0) >= 5} loading={failedLogins.isLoading} />
       </section>

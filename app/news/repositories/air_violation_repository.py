@@ -251,8 +251,8 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             primary_village_id = item.get("village_id") or item.pop("matched_village_id", None)
             village = villages.get(primary_village_id)
             if village:
-                item["caza_en"] = village.caza_en or item.get("caza_en")
-                item["caza_ar"] = village.caza_ar or item.get("caza_ar")
+                item["caza_en"] = item.get("caza_en") or village.caza_en
+                item["caza_ar"] = item.get("caza_ar") or village.caza_ar
             item["village_en"] = (
                 village.ref_name_en or village.acs_name or village.cad_name
                 if village
@@ -558,11 +558,32 @@ class AirViolationRepository(AirViolationRepositoryInterface):
 
     def get_summary(self, params: AirViolationListParams) -> AirViolationSummaryDTO:
         rows = self.db.execute(
-            select(AirViolation.condition_id, func.count(AirViolation.id))
+            select(
+                AirViolation.id,
+                AirViolation.condition_id,
+                AirViolation.caza_en,
+                AirViolation.caza_ar,
+                AirViolation.event_date,
+                AirViolation.event_time,
+            )
             .where(*self._filters(params))
-            .group_by(AirViolation.condition_id)
         ).all()
-        counts = {condition_id: int(count) for condition_id, count in rows}
+        items = [
+            dict(row._mapping, villages=[])
+            for row in rows
+        ]
+        assignments = assign_air_violation_window_ids(
+            self._air_violation_window_input(item)
+            for item in items
+        )
+        count_keys: set[tuple[int, str]] = set()
+        for item in items:
+            item_id = int(item["id"])
+            condition_id = int(item["condition_id"])
+            count_keys.add((condition_id, assignments.get(item_id) or f"record-{item_id}"))
+        counts: dict[int, int] = {}
+        for condition_id, _key in count_keys:
+            counts[condition_id] = counts.get(condition_id, 0) + 1
         return AirViolationSummaryDTO(
             warplanes=counts.get(35, 0),
             surveillance_aircraft=counts.get(36, 0),

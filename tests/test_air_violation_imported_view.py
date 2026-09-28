@@ -31,6 +31,35 @@ def test_import_details_preserve_file_fields():
     assert 'import_payload' not in result
 
 
+def test_village_labels_do_not_override_stored_multi_region_caza():
+    row = SimpleNamespace(_mapping={
+        'id': 42,
+        'village_id': 7,
+        'import_payload': {},
+        'raw_match_result': {},
+        'caza_en': 'Multiple regions',
+        'caza_ar': 'مناطق متعددة',
+    })
+    village = SimpleNamespace(
+        id=7,
+        ref_name_en='Aadloun',
+        ref_name_ar='عدلون',
+        acs_name=None,
+        cad_name=None,
+        caza_en='Saida',
+        caza_ar='صيدا',
+    )
+    db = MagicMock()
+    db.execute.return_value.all.return_value = []
+    db.scalars.return_value = [village]
+
+    result = AirViolationRepository(db)._with_village_labels([row])[0]
+
+    assert result['caza_en'] == 'Multiple regions'
+    assert result['caza_ar'] == 'مناطق متعددة'
+    assert result['village_en'] == 'Aadloun'
+
+
 def test_condition_45_is_not_routed_to_air_violations():
     db = MagicMock()
     result = AirViolationRepository(db).route_from_match(
@@ -88,4 +117,26 @@ def test_recent_warplane_air_violation_duplicate_check_suppresses_exact_duplicat
         datetime(2026, 9, 22, 13, 5),
         condition_id=35,
         khabar="Warplanes over Sour",
+    )
+
+
+def test_recent_caza_only_air_violation_duplicate_check_ignores_text_variation():
+    existing = SimpleNamespace(
+        condition_id=35,
+        caza_en="South Lebanon",
+        caza_ar="جنوب لبنان",
+        event_date=date(2026, 9, 28),
+        event_time=time(10, 17),
+        khabar="#مقاتلات_حربية #الجنوب <A>",
+    )
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [existing]
+    repository = AirViolationRepository(db)
+
+    assert repository._has_recent_air_violation(
+        "South Lebanon",
+        "جنوب لبنان",
+        datetime(2026, 9, 28, 10, 58),
+        condition_id=35,
+        khabar=None,
     )

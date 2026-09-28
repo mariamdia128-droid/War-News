@@ -26,6 +26,10 @@ _LEBANESE_AIRSPACE_RE = re.compile(
     r"(?:فوق|في اجواء|في أجواء|داخل الاجواء|داخل الأجواء|يحلق فوق|تحليق فوق)",
     re.IGNORECASE,
 )
+_KINETIC_EVENT_RE = re.compile(
+    r"(?:غارة(?! وهمية)|غارات(?! وهمية)|اغار|أغار|قصف جوي|قصف مدفعي|قذائف|مدفعية|صواريخ|صاروخ|انفجار|اشتباكات?|تمشيط|رشقات نارية|شهداء|شهيد|جرحى|إصابات)",
+    re.IGNORECASE,
+)
 
 
 def _span(text: str, match: re.Match[str] | None) -> str:
@@ -49,6 +53,13 @@ def air_violation_exclusion(text: str | None) -> AirViolationExclusion | None:
     value = (text or "").strip()
     if not value:
         return None
+
+    kinetic = _KINETIC_EVENT_RE.search(value)
+    if kinetic:
+        return AirViolationExclusion(
+            reason="excluded_kinetic_strike_or_artillery",
+            evidence_span=_span(value, kinetic),
+        )
 
     unifil = _UNIFIL_RE.search(value)
     if unifil and _AIRCRAFT_RE.search(value):
