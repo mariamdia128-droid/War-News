@@ -11,6 +11,37 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-28 - Flare Bomb vs Bombs and skipped extraction override path
+
+**Bug / accuracy gap:** Mansouri, Sour on 2026-09-26
+(`الطائرات الإسرائيلية تلقي قنابل مضيئة على بلدة المنصوري في قضاء صور`) and
+Haddatha on 2026-09-17 (`الاحتلال يلقي قنابل مضيئة في محيط حداثا`) were
+materialized as `Bombs` even though runtime evidence override already matched
+the stored text as `Flare Bomb`. Phase A found the regex did not miss; the
+pipeline sweep extraction path saved the model's literal `action_description =
+"Bombs"` without calling the final action override used by the worker path.
+
+**Rule / knowledge files changed:** `rules/condition_action_reconciliation.md`,
+`rules/tier1_general_prompt.md`, and `rules/combined_tier1_prompt.md` now state
+that `قنابل مضيئة`, `قنابل إنارة`, `قنابل ضوئية`, `بالونات حرارية`, `flares`,
+and `illumination flares` are `Flare Bomb`, not plain `Bombs`, unless an actual
+strike/shelling/targeting/explosion/fire/damage/casualty is described. Sound,
+smoke, and tear-gas bombs are not plain `Bombs` without strike language. Mixed
+strike + flare bulletins must produce separate sub-events or be reviewed.
+
+**Code path fixed:** both `ExtractIncidentsAction` and
+`pipeline_llm_workers.run_tier1_extraction_for_message` now share the same
+final action override. The deterministic flare guard relabels clean flare-only
+`Bombs` results and flags mixed strike + flare text for verification.
+
+**Regression tests added:**
+- `tests/test_pipeline_llm_workers.py::test_sweep_extraction_path_relabels_mansouri_flare_bombs`
+- `tests/test_pipeline_llm_workers.py::test_sweep_extraction_path_relabels_haddatha_flare_bombs`
+- `tests/test_pipeline_llm_workers.py::test_mixed_strike_and_flares_stays_bombs_but_needs_review`
+- `tests/test_pipeline_llm_workers.py::test_plain_drops_bombs_without_qualifier_stays_bombs`
+- `tests/test_pipeline_llm_workers.py::test_sound_and_smoke_bombs_do_not_resolve_to_plain_bombs`
+- `tests/test_pipeline_llm_workers.py::test_incendiary_strike_with_damage_is_not_flare_bomb`
+
 ## Backfilled entries for rule commits made without a CHANGELOG entry
 
 Reconstructed on 2026-09-24 from `git show` (audit §4.5). Real examples are the
