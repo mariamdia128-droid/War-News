@@ -212,7 +212,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         return ~or_(ordinary_burning_properties, palestine_only)
 
     def list_all(self, params: IncidentListParams) -> IncidentListResponse:
-        filters = self._list_filters(params)
+        include_filtered_news = self._should_include_filtered_news_rows(params)
         needs_verification = self._needs_verification_column()
         event_datetime = func.coalesce(
             RawMessage.message_datetime,
@@ -223,86 +223,118 @@ class IncidentRepository(IncidentRepositoryInterface):
             func.date(event_datetime),
         )
         created_at = func.coalesce(Incident.created_at, RawMessage.received_at)
+        filters = self._list_filters(
+            params,
+            event_date_expr=event_date,
+            include_filtered_news=include_filtered_news,
+        )
         cursor = self._decode_list_cursor(params.cursor)
+        base_from = RawMessage if include_filtered_news else Incident
+        incident_join = (
+            (Incident.raw_message_id == RawMessage.id)
+            & (Incident.is_deleted.is_(False))
+            & (Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE))
+        )
+        raw_matched_condition_id = func.nullif(
+            RawMessage.match_result["matched_condition_id"].astext,
+            "",
+        ).cast(Condition.id.type)
+        raw_matched_village_id = func.nullif(
+            RawMessage.match_result["matched_village_id"].astext,
+            "",
+        ).cast(Village.id.type)
+        resolved_condition_id = func.coalesce(
+            Incident.condition_id,
+            raw_matched_condition_id,
+        )
+        resolved_village_id = func.coalesce(
+            Incident.village_id,
+            raw_matched_village_id,
+        )
 
-        base_query = (
-            select(
-                Incident.id.label("id"),
-                RawMessage.id.label("raw_message_id"),
-                RawMessage.status.label("raw_status"),
-                func.coalesce(
-                    Incident.village_display_name,
-                    Village.ref_name_en,
-                    Village.cad_name,
-                ).label("village"),
-                Condition.action_en.label("condition"),
-                Condition.action_ar.label("condition_ar"),
-                event_date.label("event_date"),
-                Incident.event_time,
-                func.coalesce(
-                    Incident.khabar,
-                    func.left(RawMessage.raw_text, 300),
-                ).label("khabar"),
-                case(
-                    (
-                        RawMessage.source_platform.is_not(None),
-                        func.initcap(RawMessage.source_platform),
-                    ),
-                    (RawMessage.external_message_id.ilike("twitter:%"), "Twitter"),
-                    (RawMessage.external_message_id.ilike("telegram:%"), "Telegram"),
-                    (RawMessage.external_message_id.ilike("facebook:%"), "Facebook"),
-                    (Source.type == SourceType.telegram, "Telegram"),
-                    (Source.type == SourceType.api, "API"),
-                    (Source.type == SourceType.manual, "Manual"),
-                    (Source.type == SourceType.twitter, "Twitter"),
-                    (Source.type == SourceType.facebook, "Facebook"),
-                    (Source.type == SourceType.website, "Website"),
-                    else_=None,
-                ).label("source"),
-                self._source_reference_expression().label("source_reference"),
-                RawMessage.source_name.label("source_name"),
-                Incident.total_deaths,
-                Incident.total_injuries,
-                case(
-                    (Incident.id.is_(None), False),
-                    (needs_verification, False),
-                    else_=True,
-                ).label("matched"),
-                case(
-                    (needs_verification, "needs_verification"),
-                    (
-                        Incident.verification_status == "needs_verification",
-                        "auto_processed",
-                    ),
-                    else_=func.coalesce(Incident.verification_status, "auto_processed"),
-                ).label("verification_status"),
-                case(
-                    (needs_verification, Incident.verification_reason),
-                    else_=None,
-                ).label("verification_reason"),
-                Incident.verified_by_user_id,
-                Incident.verified_at,
-                case(
-                    (Incident.duplicate_flag.is_(True), "possible"),
-                    else_="none",
-                ).label("duplicate_flag"),
-                Incident.duplicate_level,
-                Incident.duplicate_similarity_score,
-                func.coalesce(Incident.details_pending, true()).label(
-                    "details_pending"
+        selected_columns = (
+            Incident.id.label("id"),
+            RawMessage.id.label("raw_message_id"),
+            RawMessage.status.label("raw_status"),
+            func.coalesce(
+                Village.ref_name_en,
+                Village.cad_name,
+            ).label("village"),
+            Condition.action_en.label("condition"),
+            Condition.action_ar.label("condition_ar"),
+            event_date.label("event_date"),
+            Incident.event_time,
+            func.coalesce(
+                Incident.khabar,
+                func.left(RawMessage.raw_text, 300),
+            ).label("khabar"),
+            case(
+                (
+                    RawMessage.source_platform.is_not(None),
+                    func.initcap(RawMessage.source_platform),
                 ),
-                created_at.label("created_at"),
-                func.coalesce(Incident.version, 1).label("version"),
-                Incident.locked_by_user_id,
-                Incident.edit_lock_expires_at,
-                Incident.village_id,
-                Incident.story_group_id,
+                (RawMessage.external_message_id.ilike("twitter:%"), "Twitter"),
+                (RawMessage.external_message_id.ilike("telegram:%"), "Telegram"),
+                (RawMessage.external_message_id.ilike("facebook:%"), "Facebook"),
+                (Source.type == SourceType.telegram, "Telegram"),
+                (Source.type == SourceType.api, "API"),
+                (Source.type == SourceType.manual, "Manual"),
+                (Source.type == SourceType.twitter, "Twitter"),
+                (Source.type == SourceType.facebook, "Facebook"),
+                (Source.type == SourceType.website, "Website"),
+                else_=None,
+            ).label("source"),
+            self._source_reference_expression().label("source_reference"),
+            RawMessage.source_name.label("source_name"),
+            Incident.total_deaths,
+            Incident.total_injuries,
+            case(
+                (Incident.id.is_(None), False),
+                (needs_verification, False),
+                else_=True,
+            ).label("matched"),
+            case(
+                (Incident.id.is_(None), "needs_verification"),
+                (needs_verification, "needs_verification"),
+                (
+                    Incident.verification_status == "needs_verification",
+                    "auto_processed",
+                ),
+                else_=func.coalesce(Incident.verification_status, "auto_processed"),
+            ).label("verification_status"),
+            case(
+                (needs_verification, Incident.verification_reason),
+                else_=None,
+            ).label("verification_reason"),
+            Incident.verified_by_user_id,
+            Incident.verified_at,
+            case(
+                (Incident.duplicate_flag.is_(True), "possible"),
+                else_="none",
+            ).label("duplicate_flag"),
+            Incident.duplicate_level,
+            Incident.duplicate_similarity_score,
+            func.coalesce(Incident.details_pending, true()).label("details_pending"),
+            created_at.label("created_at"),
+            func.coalesce(Incident.version, 1).label("version"),
+            Incident.locked_by_user_id,
+            Incident.edit_lock_expires_at,
+            Incident.village_id,
+            Incident.story_group_id,
+        )
+        base_query = select(*selected_columns).select_from(base_from)
+        if include_filtered_news:
+            base_query = base_query.outerjoin(Incident, incident_join)
+        else:
+            base_query = base_query.outerjoin(
+                RawMessage,
+                RawMessage.id == Incident.raw_message_id,
             )
-            .select_from(Incident)
-            .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
-            .outerjoin(Village, Village.id == Incident.village_id)
-            .outerjoin(Condition, Condition.id == Incident.condition_id)
-            .outerjoin(Source, Source.id == Incident.source_id)
+        base_query = (
+            base_query
+            .outerjoin(Village, Village.id == resolved_village_id)
+            .outerjoin(Condition, Condition.id == resolved_condition_id)
+            .outerjoin(Source, Source.id == func.coalesce(Incident.source_id, RawMessage.source_id))
             .where(*filters)
         )
         if cursor is not None:
@@ -322,51 +354,51 @@ class IncidentRepository(IncidentRepositoryInterface):
         ).all()
         has_next_page = len(rows) > params.limit
         page_rows = rows[: params.limit]
-        total = self.db.scalar(
-            select(func.count(Incident.id))
-            .select_from(Incident)
-            .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
-            .outerjoin(Village, Village.id == Incident.village_id)
-            .outerjoin(Condition, Condition.id == Incident.condition_id)
-            .outerjoin(Source, Source.id == Incident.source_id)
-            .where(*filters)
-        )
+        count_id = RawMessage.id if include_filtered_news else Incident.id
+
+        def joined_query(query):
+            query = query.select_from(base_from)
+            if include_filtered_news:
+                query = query.outerjoin(Incident, incident_join)
+            else:
+                query = query.outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
+            return (
+                query
+                .outerjoin(Village, Village.id == resolved_village_id)
+                .outerjoin(Condition, Condition.id == resolved_condition_id)
+                .outerjoin(Source, Source.id == func.coalesce(Incident.source_id, RawMessage.source_id))
+                .where(*filters)
+            )
+
+        total = self.db.scalar(joined_query(select(func.count(count_id))))
         latest_incident_at = self.db.scalar(
-            select(
-                func.max(
-                    func.greatest(
-                        created_at,
-                        func.coalesce(Incident.updated_at, RawMessage.received_at),
+            joined_query(
+                select(
+                    func.max(
+                        func.greatest(
+                            created_at,
+                            func.coalesce(Incident.updated_at, RawMessage.received_at),
+                        )
                     )
                 )
             )
-            .select_from(Incident)
-            .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
-            .outerjoin(Village, Village.id == Incident.village_id)
-            .outerjoin(Condition, Condition.id == Incident.condition_id)
-            .outerjoin(Source, Source.id == Incident.source_id)
-            .where(*filters)
         )
         summary = self.db.execute(
-            select(
-                func.count(Incident.id)
-                .filter(self._needs_verification_column())
-                .label("needs_verification_count"),
-                func.count(Incident.id)
-                .filter(
-                    or_(
-                        func.coalesce(Incident.total_deaths, 0) > 0,
-                        func.coalesce(Incident.total_injuries, 0) > 0,
+            joined_query(
+                select(
+                    func.count(Incident.id)
+                    .filter(self._needs_verification_column())
+                    .label("needs_verification_count"),
+                    func.count(Incident.id)
+                    .filter(
+                        or_(
+                            func.coalesce(Incident.total_deaths, 0) > 0,
+                            func.coalesce(Incident.total_injuries, 0) > 0,
+                        )
                     )
+                    .label("casualties_count"),
                 )
-                .label("casualties_count"),
             )
-            .select_from(Incident)
-            .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
-            .outerjoin(Village, Village.id == Incident.village_id)
-            .outerjoin(Condition, Condition.id == Incident.condition_id)
-            .outerjoin(Source, Source.id == Incident.source_id)
-            .where(*filters)
         ).one()
 
         return IncidentListResponse(
@@ -2195,17 +2227,51 @@ class IncidentRepository(IncidentRepositoryInterface):
         return False
 
     @classmethod
-    def _list_filters(cls, params: IncidentListParams) -> list[object]:
-        filters: list[object] = [
-            Incident.is_deleted.is_(False),
-            Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
-            cls._visible_incident_scope_filter(),
-            RawMessage.id.is_not(None),
-            RawMessage.status == MessageStatus.materialized,
-            ~RawMessage.raw_payload.op("?")("ocr_text"),
-        ]
+    def _list_filters(
+        cls,
+        params: IncidentListParams,
+        *,
+        event_date_expr=None,
+        include_filtered_news: bool = False,
+    ) -> list[object]:
+        event_date_column = event_date_expr if event_date_expr is not None else Incident.event_date
+        if include_filtered_news:
+            filters: list[object] = [
+                RawMessage.id.is_not(None),
+                RawMessage.status != MessageStatus.routed_air_violation,
+                ~RawMessage.raw_payload.op("?")("ocr_text"),
+                or_(
+                    Incident.id.is_not(None),
+                    RawMessage.filter_result["verdict"].as_string() == "relevant",
+                ),
+                or_(
+                    Incident.id.is_(None),
+                    and_(
+                        Incident.is_deleted.is_(False),
+                        Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
+                        cls._visible_incident_scope_filter(),
+                    ),
+                ),
+            ]
+        else:
+            filters = [
+                Incident.is_deleted.is_(False),
+                Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
+                cls._visible_incident_scope_filter(),
+                RawMessage.id.is_not(None),
+                RawMessage.status == MessageStatus.materialized,
+                ~RawMessage.raw_payload.op("?")("ocr_text"),
+            ]
         if params.verification_status is None:
-            filters.append(Incident.verification_status != "rejected")
+            if include_filtered_news:
+                filters.append(
+                    or_(
+                        Incident.id.is_(None),
+                        Incident.verification_status != "rejected",
+                    )
+                )
+            else:
+                filters.append(Incident.verification_status != "rejected")
         if params.village:
             village_pattern = f"%{params.village}%"
             filters.append(
@@ -2213,7 +2279,6 @@ class IncidentRepository(IncidentRepositoryInterface):
                     Village.ref_name_en.ilike(village_pattern),
                     Village.cad_name.ilike(village_pattern),
                     Village.ref_name_ar.ilike(village_pattern),
-                    Incident.village_display_name.ilike(village_pattern),
                 )
             )
         if params.condition:
@@ -2228,9 +2293,9 @@ class IncidentRepository(IncidentRepositoryInterface):
         if params.source_name:
             filters.append(RawMessage.source_name == params.source_name)
         if params.event_date_from is not None:
-            filters.append(Incident.event_date >= params.event_date_from)
+            filters.append(event_date_column >= params.event_date_from)
         if params.event_date_to is not None:
-            filters.append(Incident.event_date <= params.event_date_to)
+            filters.append(event_date_column <= params.event_date_to)
         if params.flagged_only:
             filters.append(
                 or_(
@@ -2411,6 +2476,17 @@ class IncidentRepository(IncidentRepositoryInterface):
             or params.flagged_only
             or params.verification_status is not None
             or params.duplicate_only
+        )
+
+    @staticmethod
+    def _should_include_filtered_news_rows(params: IncidentListParams) -> bool:
+        return not bool(
+            params.village
+            or params.condition
+            or params.flagged_only
+            or params.verification_status is not None
+            or params.duplicate_only
+            or params.has_casualties
         )
 
     @staticmethod

@@ -13,14 +13,8 @@ import { acquireAirViolationEditLock, createAirViolation, deleteAirViolation, ex
 import type { AirViolation } from "../types";
 import { importAirViolationKhabar } from "../api";
 import type { WorkbookImportSummary } from "../../news/api";
-import type { FilteredNewsItem } from "../../news/types";
 
 const PAGE_SIZE = 25;
-const WINDOWED_AIR_VIOLATION_CONDITION_IDS = new Set([35, 36, 38]);
-
-type AirViolationTableRow =
-  | { kind: "air"; record: AirViolation }
-  | { kind: "filtered"; record: FilteredNewsItem };
 
 const emptyText = "—";
 
@@ -137,44 +131,6 @@ const WindowCell = ({ row }: { row: AirViolation }) => {
   );
 };
 
-const filteredNewsDateParts = (row: FilteredNewsItem) => {
-  const eventAt = new Date(row.event_at);
-  return {
-    date: eventAt.toISOString().slice(0, 10),
-    time: eventAt.toTimeString().slice(0, 5),
-  };
-};
-
-const collapseAirRowsByWindow = (items: AirViolation[]) => {
-  const grouped = new Map<string, AirViolation>();
-  const output: AirViolation[] = [];
-  for (const row of items) {
-    const key = row.window_id && WINDOWED_AIR_VIOLATION_CONDITION_IDS.has(row.condition_id)
-      ? row.window_id
-      : `record-${row.id}`;
-    const existing = grouped.get(key);
-    if (!existing) {
-      grouped.set(key, row);
-      output.push(row);
-      continue;
-    }
-    const mergedVillages = Array.from(new Set([...(existing.villages ?? []), ...(row.villages ?? [])]));
-    grouped.set(key, {
-      ...existing,
-      villages: mergedVillages,
-      window_violation_count: Math.max(existing.window_violation_count ?? 1, row.window_violation_count ?? 1),
-      window_end: row.window_end && (!existing.window_end || new Date(row.window_end) > new Date(existing.window_end))
-        ? row.window_end
-        : existing.window_end,
-    });
-    const index = output.findIndex((item) => item.id === existing.id);
-    if (index >= 0) {
-      output[index] = grouped.get(key)!;
-    }
-  }
-  return output;
-};
-
 export const AirViolationsPage = () => {
   const [importMessage, setImportMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -270,21 +226,11 @@ export const AirViolationsPage = () => {
   useLiveQueryTitleAddon(lastRefreshAt, isFetching);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rows = data?.items ?? [];
-  const exactAirRows = useMemo(
-    () => collapseAirRowsByWindow(rows),
-    [rows],
-  );
-  const tableRows = useMemo<AirViolationTableRow[]>(
-    () => [
-      ...exactAirRows.map((record) => ({ kind: "air" as const, record })),
-    ].sort((left, right) => {
-      const leftDate = left.kind === "air"
-        ? `${left.record.event_date}T${left.record.event_time ?? "00:00:00"}`
-        : left.record.event_at;
-      const rightDate = right.kind === "air"
-        ? `${right.record.event_date}T${right.record.event_time ?? "00:00:00"}`
-        : right.record.event_at;
+  const exactAirRows = data?.items ?? [];
+  const tableRows = useMemo<AirViolation[]>(
+    () => [...exactAirRows].sort((left, right) => {
+      const leftDate = `${left.event_date}T${left.event_time ?? "00:00:00"}`;
+      const rightDate = `${right.event_date}T${right.event_time ?? "00:00:00"}`;
       return new Date(rightDate).getTime() - new Date(leftDate).getTime();
     }),
     [exactAirRows],
@@ -357,7 +303,7 @@ export const AirViolationsPage = () => {
     setParams(next);
   };
 
-  const columns: Array<DataTableColumn<AirViolationTableRow>> = [
+  const columns: Array<DataTableColumn<AirViolation>> = [
     {
       key: "number",
       header: "#",
@@ -368,88 +314,69 @@ export const AirViolationsPage = () => {
       key: "caza",
       header: "Caza",
       className: "w-40 min-w-40",
-      render: (row) => row.kind === "air" ? (
-        <span className="font-semibold text-text-primary">{row.record.caza_en || row.record.caza_ar || emptyText}</span>
-      ) : (
-        <span className="font-semibold text-text-primary">{row.record.village_name || "Pending"}</span>
+      render: (row) => (
+        <span className="font-semibold text-text-primary">{row.caza_en || row.caza_ar || emptyText}</span>
       ),
-      sortValue: (row) => row.kind === "air" ? row.record.caza_en ?? row.record.caza_ar ?? "" : row.record.village_name ?? "",
+      sortValue: (row) => row.caza_en ?? row.caza_ar ?? "",
     },
     {
       key: "action-en",
       header: "Action",
       className: "w-52 min-w-52",
-      render: (row) => row.kind === "air" ? (
+      render: (row) => (
         <div>
-          <TextCell value={row.record.action_en} />
-          <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{row.record.action_ar}</span>
+          <TextCell value={row.action_en} />
+          <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{row.action_ar}</span>
         </div>
-      ) : (
-        <TextCell value={row.record.condition_name || "Air violation"} />
       ),
-      sortValue: (row) => row.kind === "air" ? row.record.action_en : row.record.condition_name ?? "",
+      sortValue: (row) => row.action_en,
     },
     {
       key: "news",
       header: "News",
       className: "w-[24rem] min-w-[24rem]",
       render: (row) => {
-        const news = displayNews(row.record).replace(/\s+/g, " ").trim();
-        return <span className="block max-w-[22rem] whitespace-normal leading-6 text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}…` : news}</span>;
+        const news = displayNews(row).replace(/\s+/g, " ").trim();
+        return <span className="block max-w-[22rem] whitespace-normal leading-6 text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}...` : news}</span>;
       },
-      sortValue: (row) => displayNews(row.record),
+      sortValue: (row) => displayNews(row),
     },
     {
       key: "village",
       header: "Village",
       className: "w-48 min-w-48",
-      render: (row) => row.kind === "air" ? (
-        <VillageListCell row={row.record} />
-      ) : (
-        <TextCell value={row.record.village_name || "Pending classification"} />
-      ),
-      sortValue: (row) => row.kind === "air" ? displayVillages(row.record).join(", ") : row.record.village_name ?? "",
+      render: (row) => <VillageListCell row={row} />,
+      sortValue: (row) => displayVillages(row).join(", "),
     },
     {
       key: "date",
       header: "Date / Time",
       className: "w-36 min-w-36",
-      render: (row) => row.kind === "air" && row.record.import_enrichment?.date_source === "fallback" ? (
+      render: (row) => row.import_enrichment?.date_source === "fallback" ? (
         <span>Date unavailable</span>
-      ) : row.kind === "air" ? (
-        <div className="space-y-1 whitespace-nowrap">
-          <p>{formatDate(row.record.event_date)}</p>
-          <p className="text-text-muted">{formatTime(row.record.event_time)}</p>
-        </div>
       ) : (
         <div className="space-y-1 whitespace-nowrap">
-          <p>{formatDate(filteredNewsDateParts(row.record).date)}</p>
-          <p className="text-text-muted">{filteredNewsDateParts(row.record).time}</p>
+          <p>{formatDate(row.event_date)}</p>
+          <p className="text-text-muted">{formatTime(row.event_time)}</p>
         </div>
       ),
-      sortValue: (row) => row.kind === "air" ? new Date(row.record.event_date).getTime() : new Date(row.record.event_at).getTime(),
+      sortValue: (row) => new Date(row.event_date).getTime(),
     },
     {
       key: "window",
       header: "Window",
       className: "w-[28rem] min-w-[28rem]",
-      render: (row) => row.kind === "air" ? (
-        <WindowCell row={row.record} />
-      ) : (
-        <span className="text-text-muted">{row.record.air_violation_id ? `Linked #${row.record.air_violation_id}` : "Not written"}</span>
-      ),
-      sortValue: (row) => row.kind === "air" ? row.record.window_start ?? row.record.window_id ?? "" : row.record.event_at,
+      render: (row) => <WindowCell row={row} />,
+      sortValue: (row) => row.window_start ?? row.window_id ?? "",
     },
     {
       key: "details",
       header: "Details",
       className: "w-32",
-      render: (row) => row.kind === "air" ? (
-        <Button type="button" variant="secondary" className="h-9 whitespace-nowrap" onClick={() => { setActionError(""); setSelectedViolation(row.record); }}>
+      render: (row) => (
+        <Button type="button" variant="secondary" className="h-9 whitespace-nowrap" onClick={() => { setActionError(""); setSelectedViolation(row); }}>
           View details
         </Button>
-      ) : (
-        <span className="text-text-muted">Raw #{row.record.id}</span>
       ),
     },
   ];
@@ -628,7 +555,7 @@ export const AirViolationsPage = () => {
       <DataTable
         columns={columns}
         rows={tableRows}
-        getRowKey={(row) => row.kind === "air" ? `air-${row.record.id}` : `filtered-${row.record.id}`}
+        getRowKey={(row) => `air-${row.id}`}
         loading={isLoading}
         error={isError}
         minWidth="1480px"
@@ -917,3 +844,4 @@ export const AirViolationsPage = () => {
     </div>
   );
 };
+

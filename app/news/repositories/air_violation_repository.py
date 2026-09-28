@@ -491,7 +491,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         return result.rowcount > 0
 
     def list_all(self, params: AirViolationListParams) -> AirViolationListResponse:
-        filters = self._filters(params)
+        filters = self._filters(params, supported_only=False)
 
         base_query = (
             select(
@@ -516,8 +516,8 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.created_at,
                 RawMessage.match_result.label("raw_match_result"),
                 RawMessage.raw_payload.label("import_payload"),
-                Condition.action_en,
-                Condition.action_ar,
+                func.coalesce(Condition.action_en, "Unknown air activity").label("action_en"),
+                func.coalesce(Condition.action_ar, "خرق جوي").label("action_ar"),
                 case(
                     (RawMessage.raw_payload['import'].as_string() == 'khabar', func.coalesce(RawMessage.source_name, Source.name)),
                     (RawMessage.source_name == "Red Alert Lebanon", RawMessage.source_name),
@@ -529,11 +529,11 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                             "Unknown source",
                         ),
                     ),
-                    else_=Source.name,
+                    else_=func.coalesce(Source.name, "Unknown source"),
                 ).label("source_name"),
             )
-            .join(Condition, Condition.id == AirViolation.condition_id)
-            .join(Source, Source.id == AirViolation.source_id)
+            .outerjoin(Condition, Condition.id == AirViolation.condition_id)
+            .outerjoin(Source, Source.id == AirViolation.source_id)
             .outerjoin(RawMessage, RawMessage.id == AirViolation.raw_message_id)
             .where(*filters)
         )
@@ -546,17 +546,15 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             )
         ).all()
         all_items = self._with_village_labels(all_rows)
-        collapsed_items = self._collapse_windowed_items(
-            self._attach_window_metadata(all_items, all_items)
-        )
-        page_items = collapsed_items[params.offset:params.offset + params.limit]
+        all_items = self._attach_window_metadata(all_items, all_items)
+        page_items = all_items[params.offset:params.offset + params.limit]
 
         return AirViolationListResponse(
             items=[
                 AirViolationDTO.model_validate(item)
                 for item in page_items
             ],
-            total=len(collapsed_items),
+            total=len(all_items),
             limit=params.limit,
             offset=params.offset,
         )
@@ -571,7 +569,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_date,
                 AirViolation.event_time,
             )
-            .where(*self._filters(params))
+            .where(*self._filters(params, supported_only=True))
         ).all()
         items = [
             dict(row._mapping, villages=[])
@@ -619,8 +617,8 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.created_at,
                 RawMessage.match_result.label("raw_match_result"),
                 RawMessage.raw_payload.label("import_payload"),
-                Condition.action_en,
-                Condition.action_ar,
+                func.coalesce(Condition.action_en, "Unknown air activity").label("action_en"),
+                func.coalesce(Condition.action_ar, "خرق جوي").label("action_ar"),
                 case(
                     (RawMessage.raw_payload['import'].as_string() == 'khabar', func.coalesce(RawMessage.source_name, Source.name)),
                     (RawMessage.source_name == "Red Alert Lebanon", RawMessage.source_name),
@@ -632,11 +630,11 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                             "Unknown source",
                         ),
                     ),
-                    else_=Source.name,
+                    else_=func.coalesce(Source.name, "Unknown source"),
                 ).label("source_name"),
             )
-            .join(Condition, Condition.id == AirViolation.condition_id)
-            .join(Source, Source.id == AirViolation.source_id)
+            .outerjoin(Condition, Condition.id == AirViolation.condition_id)
+            .outerjoin(Source, Source.id == AirViolation.source_id)
             .outerjoin(RawMessage, RawMessage.id == AirViolation.raw_message_id)
             .where(AirViolation.id == air_violation_id)
         ).one_or_none()
@@ -798,8 +796,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             for record in existing_records
         )
     @staticmethod
-    def _filters(params: AirViolationListParams) -> list[object]:
-        filters: list[object] = [AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_ID_TUPLE)]
+    def _filters(params: AirViolationListParams, *, supported_only: bool = True) -> list[object]:
+        filters: list[object] = []
+        if supported_only:
+            filters.append(AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_ID_TUPLE))
         if params.imported_only:
             filters.append(AirViolation.raw_message_id.in_(
                 select(RawMessage.id).where(RawMessage.raw_payload['import'].as_string() == 'khabar')
@@ -826,7 +826,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         return filters
 
     def list_windows(self, params: AirViolationListParams) -> AirViolationWindowListResponse:
-        filters = self._filters(params.model_copy(update={"limit": 100, "offset": 0}))
+        filters = self._filters(
+            params.model_copy(update={"limit": 100, "offset": 0}),
+            supported_only=True,
+        )
         rows = self.db.execute(
             select(
                 AirViolation.id,
@@ -850,12 +853,12 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.created_at,
                 RawMessage.match_result.label("raw_match_result"),
                 RawMessage.raw_payload.label("import_payload"),
-                Condition.action_en,
-                Condition.action_ar,
-                Source.name.label("source_name"),
+                func.coalesce(Condition.action_en, "Unknown air activity").label("action_en"),
+                func.coalesce(Condition.action_ar, "خرق جوي").label("action_ar"),
+                func.coalesce(Source.name, "Unknown source").label("source_name"),
             )
-            .join(Condition, Condition.id == AirViolation.condition_id)
-            .join(Source, Source.id == AirViolation.source_id)
+            .outerjoin(Condition, Condition.id == AirViolation.condition_id)
+            .outerjoin(Source, Source.id == AirViolation.source_id)
             .outerjoin(RawMessage, RawMessage.id == AirViolation.raw_message_id)
             .where(*filters)
             .order_by(AirViolation.event_date.asc(), AirViolation.event_time.asc().nullsfirst(), AirViolation.id.asc())
