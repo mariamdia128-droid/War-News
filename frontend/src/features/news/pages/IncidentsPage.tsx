@@ -95,6 +95,10 @@ const PreMaterializationStatusBadge = ({ row }: { row: Incident }) => {
   ) : null;
 };
 
+const openVerificationTypes = (row: Incident) => row.verification_types ?? [];
+
+const openVerificationFlags = (row: Incident) => row.open_flags ?? [];
+
 const PlusIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
     <path
@@ -323,7 +327,7 @@ export const IncidentsPage = () => {
       render: (row) => (
         <div className="space-y-1">
           {verificationBadge(row) ? <StatusBadge {...verificationBadge(row)!} /> : null}
-          <div className="flex flex-wrap gap-1">{row.verification_types.map((type) => <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />)}</div>
+          <div className="flex flex-wrap gap-1">{openVerificationTypes(row).map((type) => <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />)}</div>
           {row.verification_reason ? <p className="text-caption text-text-muted">{row.verification_reason}</p> : null}
         </div>
       ),
@@ -618,7 +622,7 @@ export const IncidentsPage = () => {
               actions={(row) => (
                 <div className="flex flex-nowrap justify-end gap-2">
                 {row.id && row.verification_status === "needs_verification" ? (
-                  row.open_flags.length ? (
+                  openVerificationFlags(row).length ? (
                     <Button type="button" className="h-9" onClick={() => setCasualtyReview({ row, index: 0 })}>Review</Button>
                   ) : row.duplicate_flag === "possible" ? (
                     <Button
@@ -786,12 +790,12 @@ export const IncidentsPage = () => {
           ) : null}
           {casualtyReview ? (
             <CasualtyCheckPanel
-              id={casualtyReview.row.open_flags[casualtyReview.index].flag_id}
+              id={openVerificationFlags(casualtyReview.row)[casualtyReview.index]?.flag_id ?? ""}
               onClose={() => setCasualtyReview(null)}
               onComplete={async () => {
                 const nextIndex = casualtyReview.index + 1;
                 await refetch();
-                if (nextIndex < casualtyReview.row.open_flags.length) setCasualtyReview({ ...casualtyReview, index: nextIndex });
+                if (nextIndex < openVerificationFlags(casualtyReview.row).length) setCasualtyReview({ ...casualtyReview, index: nextIndex });
                 else setCasualtyReview(null);
               }}
             />
