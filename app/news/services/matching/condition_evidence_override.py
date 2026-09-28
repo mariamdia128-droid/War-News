@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from app.core.text_normalization import normalize_arabic_text
+
 
 _DRONE_TERMS = ("مسير", "مسيرة", "مسيّرة", "طائرة مسيرة")
 _DRONE_STRIKE_TERMS = ("استهداف", "استهدفت", "استهدف")
@@ -20,7 +22,17 @@ _TANK_FIRE_PATTERNS = (
 _WARNING_RAID = re.compile(r"غار[ةه].{0,15}تحذيري|تحذيري.{0,15}غار[ةه]")
 _FEIGNED_RAID = re.compile(r"غارات?.{0,15}وهمي|وهمي.{0,15}غارات?")
 _AIRSTRIKE = re.compile(r"(?:غار[ةه]|غارات|أغار|اغار)")
-_FLARE_BOMB = re.compile(r"قنابل?.{0,15}مضيئ")
+_SMOKE_BOMB = re.compile(r"قنابل?.{0,15}دخاني")
+_SOUND_BOMB = re.compile(r"قنابل?.{0,15}صوتي")
+_TEAR_GAS_BOMB = re.compile(r"قنابل?.{0,25}(?:مسيل|مسيله|مسيلة).{0,25}دموع")
+_FLARE_BOMB = re.compile(
+    r"(?:قنابل?|قذائف?|بالونات).{0,25}(?:مضيئ|انار|إنار|ضوئ|حراري)"
+    r"|(?:flare|flares|illumination)",
+    re.IGNORECASE,
+)
+_STRIKE_LANGUAGE = re.compile(
+    r"غار[ةه]|غارات|قصف|استهداف|استهدف|استهدفت|انفجار|شهيد|جريح|دمار|حريق"
+)
 _SWEEP = re.compile(r"تمشيط|مشط")
 _AERIAL_SWEEP = re.compile(
     r"(?:اباتشي|أباتشي|مروحي|هليكوبتر).{0,40}(?:تمشيط|مشط)"
@@ -30,14 +42,20 @@ _AERIAL_SWEEP = re.compile(
 
 def condition_from_explicit_evidence(text: str) -> str | None:
     """Return a condition only when the weapon/action is explicit in source text."""
-    normalized = " ".join((text or "").split())
+    normalized = " ".join(normalize_arabic_text(text or "").split())
     if any(pattern.search(normalized) for pattern in _TANK_FIRE_PATTERNS):
         return "Tank Fire"
     if _WARNING_RAID.search(normalized):
         return "Warning Raid"
     if _FEIGNED_RAID.search(normalized):
         return "Feigned Attacks"
-    if _FLARE_BOMB.search(normalized):
+    if _SMOKE_BOMB.search(normalized):
+        return "Smoke Grenades"
+    if _SOUND_BOMB.search(normalized):
+        return "Sound Bombs"
+    if _TEAR_GAS_BOMB.search(normalized):
+        return "Unclassified / Needs Review"
+    if _FLARE_BOMB.search(normalized) and not has_strike_language(normalized):
         return "Flare Bomb"
     if _AERIAL_SWEEP.search(normalized):
         return "Aerial Sweep"
@@ -52,3 +70,13 @@ def condition_from_explicit_evidence(text: str) -> str | None:
 
 def apply_condition_evidence_override(text: str, action: str | None) -> str | None:
     return condition_from_explicit_evidence(text) or action
+
+
+def has_flare_language(text: str) -> bool:
+    normalized = " ".join(normalize_arabic_text(text or "").split())
+    return bool(_FLARE_BOMB.search(normalized))
+
+
+def has_strike_language(text: str) -> bool:
+    normalized = " ".join(normalize_arabic_text(text or "").split())
+    return bool(_STRIKE_LANGUAGE.search(normalized))

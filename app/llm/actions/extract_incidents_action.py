@@ -9,6 +9,7 @@ from app.llm.services.transient_llm_errors import (
     ExtractionRetryCappedError,
     is_transient_llm_error,
 )
+from app.llm.services.action_finalization import finalize_extraction_action
 from app.llm.services.ollama_auth_failures import coerce_ollama_auth_failure
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.models import MessageStatus
@@ -47,6 +48,11 @@ class ExtractIncidentsAction:
                 result = apply_casualty_gender_backstops(
                     message.raw_text or "",
                     result,
+                )
+                result = finalize_extraction_action(
+                    result,
+                    post_text=message.raw_text or "",
+                    cnrs_classification=message.cnrs_classification,
                 )
                 self.raw_messages.save_extraction_result(
                     message=message,
@@ -107,6 +113,11 @@ class ExtractIncidentsAction:
             result = apply_casualty_gender_backstops(
                 message.raw_text or "",
                 result,
+            )
+            result = finalize_extraction_action(
+                result,
+                post_text=message.raw_text or "",
+                cnrs_classification=message.cnrs_classification,
             )
             self.raw_messages.save_extraction_result(
                 message=message,

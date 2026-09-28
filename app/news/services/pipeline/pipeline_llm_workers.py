@@ -5,7 +5,10 @@ import logging
 from app.api.factories.action_factory import build_extraction_classifier
 from app.core.database import SessionLocal
 from app.llm.dtos import ExtractionResult
-from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
+from app.llm.services.action_finalization import (
+    final_action_description,
+    finalize_extraction_action,
+)
 from app.llm.services.transient_llm_errors import (
     ExtractionRetryCappedError,
     Tier2ExtractionFailedError,
@@ -16,7 +19,6 @@ from app.news.models import MessageStatus
 from app.news.models.raw_message import FAILED_STAGE_EXTRACTION
 from app.news.repositories.pipeline_claim_repository import PipelineClaimRepository
 from app.news.repositories.raw_message_repository import RawMessageRepository
-from app.news.services.matching.condition_evidence_override import apply_condition_evidence_override
 from app.news.services.incident_details.casualty_gender_evidence import (
     apply_casualty_gender_backstops,
 )
@@ -29,16 +31,7 @@ def _final_action_description(
     extracted_action: str | None,
     cnrs_classification: dict | None,
 ) -> str | None:
-    text_action = apply_condition_evidence_override(post_text, extracted_action)
-    if (
-        extracted_action
-        and extracted_action not in {"Bombs", "Unknown"}
-        and text_action == "Bombs"
-    ):
-        return extracted_action
-    if text_action:
-        return text_action
-    return trusted_cnrs_action(cnrs_classification, post_text)
+    return final_action_description(post_text, extracted_action, cnrs_classification)
 
 
 def run_tier1_extraction_for_message(raw_message_id: int) -> None:
@@ -70,30 +63,10 @@ def run_tier1_extraction_for_message(raw_message_id: int) -> None:
             raw_message_id=raw_message_id,
         )
         result = apply_casualty_gender_backstops(post_text, result)
-        cnrs_action = trusted_cnrs_action(cnrs_classification, post_text)
-        subtype = (
-            str((cnrs_classification or {}).get("event_subtype") or "").strip().lower()
-            or None
-        )
-        final_action = _final_action_description(
-            post_text,
-            result.action_description,
-            cnrs_classification,
-        )
-        action_source = (
-            "llm_text"
-            if final_action and final_action != cnrs_action
-            else "cnrs_subtype_fallback"
-            if final_action and cnrs_action
-            else result.action_source
-        )
-        result = result.model_copy(
-            update={
-                "action_description": final_action,
-                "action_source": action_source,
-                "source_event_subtype": subtype,
-                "source_action_hint": cnrs_action,
-            }
+        result = finalize_extraction_action(
+            result,
+            post_text=post_text,
+            cnrs_classification=cnrs_classification,
         )
     except Exception as exc:
         auth_failure = coerce_ollama_auth_failure(
