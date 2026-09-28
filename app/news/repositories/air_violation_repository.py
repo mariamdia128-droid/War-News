@@ -316,8 +316,6 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             item["window_start"] = stats["start"] if stats else None
             item["window_end"] = stats["end"] if stats else None
             item["window_violation_count"] = stats["count"] if stats else None
-            if stats and stats.get("villages"):
-                item["villages"] = stats["villages"]
         return items
 
     @staticmethod
