@@ -678,6 +678,25 @@ def find_count_mentions(text: str | None) -> tuple[CountMention, ...]:
     return tuple(_find_count_mentions(_prepared(text)))
 
 
+def has_casualty_wording(text: str | None, kind: str) -> bool:
+    """Whether *text* mentions casualty wording of *kind*, even without a count."""
+    if kind not in (DEATHS, INJURIES):
+        raise ValueError(f"unsupported casualty kind: {kind}")
+    terms = _vocab().terms[kind] | frozenset(
+        term for term, term_kind in _vocab().singular_verbal_nouns.items()
+        if term_kind == kind
+    )
+    if not terms:
+        return False
+    return bool(
+        re.search(
+            rf"(?<![{_AR}])(?:و|ف|ب|ل|ك)?(?:ال|لل)?"
+            rf"(?:{_alternation(terms)})(?![{_AR}])",
+            _prepared(text).text,
+        )
+    )
+
+
 def find_count_words(text: str | None) -> tuple[CountMention, ...]:
     """Singular/dual nouns and spelled-out numbers only (no digits)."""
     return tuple(
