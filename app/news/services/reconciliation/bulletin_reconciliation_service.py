@@ -162,9 +162,13 @@ class BulletinReconciliationService:
             old_values = {
                 "deaths": incident.deaths,
                 "injuries": incident.injuries,
-                "casualty_status": incident.casualty_status,
-                "casualty_is_preliminary": incident.casualty_is_preliminary,
-                "casualty_status_evidence": incident.casualty_status_evidence,
+                "casualty_status": getattr(incident, "casualty_status", None),
+                "casualty_is_preliminary": getattr(
+                    incident, "casualty_is_preliminary", None
+                ),
+                "casualty_status_evidence": getattr(
+                    incident, "casualty_status_evidence", None
+                ),
             }
             if deaths is not None:
                 incident.deaths = deaths
@@ -175,9 +179,9 @@ class BulletinReconciliationService:
                     candidate.extraction_result or {}
                 )
                 merged_status = merge_casualty_status(
-                    incident.casualty_status,
-                    bool(incident.casualty_is_preliminary),
-                    incident.casualty_status_evidence,
+                    getattr(incident, "casualty_status", None),
+                    bool(getattr(incident, "casualty_is_preliminary", False)),
+                    getattr(incident, "casualty_status_evidence", None),
                     "exact",
                     incoming_extraction.casualty_is_preliminary,
                     incoming_extraction.casualty_status_evidence,
@@ -199,9 +203,13 @@ class BulletinReconciliationService:
                     new_values={
                         "deaths": incident.deaths,
                         "injuries": incident.injuries,
-                        "casualty_status": incident.casualty_status,
-                        "casualty_is_preliminary": incident.casualty_is_preliminary,
-                        "casualty_status_evidence": incident.casualty_status_evidence,
+                        "casualty_status": getattr(incident, "casualty_status", None),
+                        "casualty_is_preliminary": getattr(
+                            incident, "casualty_is_preliminary", None
+                        ),
+                        "casualty_status_evidence": getattr(
+                            incident, "casualty_status_evidence", None
+                        ),
                         "bulletin_group_id": group.id,
                         "resolved_by_raw_message_id": candidate.id,
                     },
