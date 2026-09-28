@@ -1,0 +1,46 @@
+## snap_0_start
+live|1445
+incident_updates|4909
+deaths_notnull|49
+injuries_notnull|47
+deleted|703
+sum_injuries|624
+sum_deaths|199
+status_null|1445
+## snap_1_cleanup
+live|1445
+incident_updates|4930
+deaths_notnull|37
+injuries_notnull|27
+deleted|703
+sum_injuries|257
+sum_deaths|153
+status_null|1445
+## snap_3_status
+live|1445
+incident_updates|6375
+injuries_notnull|27
+deaths_notnull|37
+deleted|703
+sum_injuries|257
+sum_deaths|153
+status_count_missing|19
+status_aggregate_only|27
+status_explicit_none|20
+status_exact|31
+status_none_mentioned|1348
+## snap_4_flags
+flags_aggregate_no_breakdown_open|27
+flags_count_missing_open|20
+live|1445
+incident_updates|7914
+injuries_notnull|27
+deaths_notnull|37
+deleted|703
+sum_injuries|257
+sum_deaths|153
+status_count_missing|19
+status_aggregate_only|27
+status_explicit_none|20
+status_exact|31
+status_none_mentioned|1348

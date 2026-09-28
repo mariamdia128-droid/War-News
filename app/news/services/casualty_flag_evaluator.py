@@ -24,7 +24,9 @@ class CasualtyFlagEvaluator:
         self.enabled = settings.casualty_flags_enabled if enabled is None else enabled
 
     def evaluate_incident(self, incident_id: UUID) -> dict[str, int]:
-        result = {"opened": 0, "updated": 0, "auto_cleared": 0, "skipped": 0}
+        from app.news.repositories.incident_verification_flag_repository import IncidentVerificationFlagRepository
+
+        result ={"opened": 0, "updated": 0, "auto_cleared": 0, "skipped": 0}
         if not self.enabled:
             result["skipped"] += 1
             return result
@@ -76,14 +78,17 @@ class CasualtyFlagEvaluator:
         ):
             siblings = self._siblings(incident)
             sibling_ids = [str(item.id) for item in siblings]
+            existing_detail = getattr(open_by_reason.get("aggregate_no_breakdown"), "detail", None) or {}
+            existing_totals = existing_detail.get("bulletin_totals") or {}
+            # Keep the totals the flag opened with: admin entries written to the
+            # sibling rows must not become the bulletin total they are checked against.
             totals = {
-                kind: max(
-                    (getattr(item, f"total_{kind}") for item in siblings if isinstance(getattr(item, f"total_{kind}"), int)),
-                    default=None,
-                ) for kind in ("deaths", "injuries")
+                kind: existing_totals[kind] if isinstance(existing_totals.get(kind), int)
+                else self._bulletin_total(kind, siblings)
+                for kind in ("deaths", "injuries")
             }
             known = [
-                {"incident_id": str(item.id), "location": item.village_display_name,
+                {"incident_id": str(item.id), "location": self._location_name(item),
                  "deaths": item.deaths, "injuries": item.injuries}
                 for item in siblings if item.deaths is not None or item.injuries is not None
             ] or None
@@ -117,6 +122,12 @@ class CasualtyFlagEvaluator:
                     if existing_detail.get(key) is not None
                 }
             detail.update(message_snapshot)
+            if existing and IncidentVerificationFlagRepository.is_unchanged(
+                existing, severity="review", detail=detail,
+                source_message_id=incident.raw_message_id, visible_after=existing.visible_after,
+            ):
+                self._log(incident, "unchanged", reason)
+                continue
             self.repository.open_flag(
                 incident_id=incident_id,
                 flag_type="casualty_check",
@@ -169,9 +180,31 @@ class CasualtyFlagEvaluator:
         return None
 
     @staticmethod
-    def _aggregate_summary(totals: dict[str, int | None], siblings: list[Incident]) -> str:
+    def _bulletin_total(kind: str, siblings: list[Incident]) -> int | None:
+        """Toll from the stored status: unallocated remainder plus located exact counts."""
+        remaining = [
+            value for item in siblings
+            if isinstance(value := (getattr(item, "casualty_status_remaining_total", None) or {}).get(kind), int)
+        ]
+        if not remaining:
+            return max(
+                (getattr(item, f"total_{kind}") for item in siblings if isinstance(getattr(item, f"total_{kind}"), int)),
+                default=None,
+            )
+        located = sum(
+            getattr(item, kind) for item in siblings
+            if getattr(item, f"casualty_{kind}_status", None) == "exact" and isinstance(getattr(item, kind), int)
+        )
+        return max(remaining) + located
+
+    @staticmethod
+    def _location_name(item: Incident) -> str | None:
+        return item.village_display_name or getattr(getattr(item, "village", None), "ref_name_en", None)
+
+    @classmethod
+    def _aggregate_summary(cls, totals: dict[str, int | None], siblings: list[Incident]) -> str:
         parts = [f"{value} {kind}" for kind, value in totals.items() if isinstance(value, int)]
-        locations = ", ".join(item.village_display_name or "Unknown" for item in siblings)
+        locations = ", ".join(cls._location_name(item) or "Unknown" for item in siblings)
         return f"Total of {' and '.join(parts) or 'casualties'} reported across {locations} with no per-location breakdown"
 
     @staticmethod

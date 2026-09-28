@@ -23,7 +23,14 @@ import { createIncident, reviewIncident } from "../api";
 import { useContentSourcesQuery } from "../../sources/hooks";
 import type { Incident } from "../types";
 import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
-import { verificationTypeFromSearch, verificationTypeLabel } from "../verificationLogic";
+import {
+  ALL_DATES_RANGE,
+  hasNonDefaultFilters,
+  isVerificationView,
+  outsideRangeNotice,
+  verificationTypeFromSearch,
+  verificationTypeLabel,
+} from "../verificationLogic";
 
 const DEFAULT_PAGE_SIZE = 150;
 const PAGE_SIZE_OPTIONS = new Set([50, 100, 150]);
@@ -95,6 +102,10 @@ const PreMaterializationStatusBadge = ({ row }: { row: Incident }) => {
   ) : null;
 };
 
+const openVerificationTypes = (row: Incident) => row.verification_types ?? [];
+
+const openVerificationFlags = (row: Incident) => row.open_flags ?? [];
+
 const PlusIcon = () => (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
     <path
@@ -134,9 +145,13 @@ export const IncidentsPage = () => {
   const duplicateOnly = params.get("duplicate_only") === "true";
   const hasCasualties = params.get("has_casualties") === "true";
   const pageSize = parsePageSize(params.get("page_size"));
-  const hasFilters = Boolean(
-    village || condition || sourceName || verificationStatus || verificationType || eventDateFrom || eventDateTo || duplicateOnly || hasCasualties,
+  const hasFilters = hasNonDefaultFilters(
+    { village, condition, sourceName, verificationStatus, verificationType, duplicateOnly, hasCasualties },
+    eventDateFrom,
+    eventDateTo,
+    { from: DEFAULT_EVENT_DATE_FROM, to: getBeirutDate() },
   );
+  const verificationView = isVerificationView(verificationStatus, verificationType);
 
   const filters = useMemo(
     () => ({
@@ -191,6 +206,9 @@ export const IncidentsPage = () => {
   const total = data?.total ?? 0;
   const flaggedCount = data?.needs_verification_count ?? 0;
   const casualtiesCount = data?.casualties_count ?? 0;
+  const outsideRangeText = verificationView
+    ? outsideRangeNotice(data?.needs_verification_outside_range_count)
+    : null;
   const verificationOptions: SelectOption[] = [
     { value: "needs_verification", label: "Needs verification" },
     { value: "verified", label: "Verified" },
@@ -323,7 +341,7 @@ export const IncidentsPage = () => {
       render: (row) => (
         <div className="space-y-1">
           {verificationBadge(row) ? <StatusBadge {...verificationBadge(row)!} /> : null}
-          <div className="flex flex-wrap gap-1">{row.verification_types.map((type) => <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />)}</div>
+          <div className="flex flex-wrap gap-1">{openVerificationTypes(row).map((type) => <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />)}</div>
           {row.verification_reason ? <p className="text-caption text-text-muted">{row.verification_reason}</p> : null}
         </div>
       ),
@@ -588,9 +606,31 @@ export const IncidentsPage = () => {
                 </h2>
                 <p className="text-small text-text-muted">
                   {total} result{total === 1 ? "" : "s"}
+                  {verificationView
+                    ? ` | sorted by event date, ${sortOrder === "oldest" ? "oldest" : "newest"} first`
+                    : ""}
                 </p>
               </div>
             </div>
+            {outsideRangeText ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-warning/40 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-small text-text-primary">{outsideRangeText}</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-9"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.set("event_date_from", ALL_DATES_RANGE.from);
+                    next.set("event_date_to", ALL_DATES_RANGE.to);
+                    setCursorHistory([]);
+                    setParams(next);
+                  }}
+                >
+                  Show all dates
+                </Button>
+              </div>
+            ) : null}
 
             <DataTable
               columns={columns}
@@ -618,7 +658,7 @@ export const IncidentsPage = () => {
               actions={(row) => (
                 <div className="flex flex-nowrap justify-end gap-2">
                 {row.id && row.verification_status === "needs_verification" ? (
-                  row.open_flags.length ? (
+                  openVerificationFlags(row).length ? (
                     <Button type="button" className="h-9" onClick={() => setCasualtyReview({ row, index: 0 })}>Review</Button>
                   ) : row.duplicate_flag === "possible" ? (
                     <Button
@@ -786,12 +826,12 @@ export const IncidentsPage = () => {
           ) : null}
           {casualtyReview ? (
             <CasualtyCheckPanel
-              id={casualtyReview.row.open_flags[casualtyReview.index].flag_id}
+              id={openVerificationFlags(casualtyReview.row)[casualtyReview.index]?.flag_id ?? ""}
               onClose={() => setCasualtyReview(null)}
               onComplete={async () => {
                 const nextIndex = casualtyReview.index + 1;
                 await refetch();
-                if (nextIndex < casualtyReview.row.open_flags.length) setCasualtyReview({ ...casualtyReview, index: nextIndex });
+                if (nextIndex < openVerificationFlags(casualtyReview.row).length) setCasualtyReview({ ...casualtyReview, index: nextIndex });
                 else setCasualtyReview(null);
               }}
             />

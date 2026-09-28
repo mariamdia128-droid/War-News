@@ -1,0 +1,20 @@
+before: total 1378 needs 42 casualties 48
+two-flag row open_flags: [('count_missing', '4b80bd16-1aac-4275-9926-de8f3bb1245f'), ('aggregate_no_breakdown', 'db190277-73c9-4d0b-9e3c-986872efe52b')] types ['casualty_missing_number', 'casualty_aggregate_toll']
+  GET count_missing 200
+  GET aggregate_no_breakdown 200
+incident flags endpoint: 200 2
+partial 200 {"totals": {"deaths": {"assigned": 1, "bulletin_total": 3}, "injuries": {"assigned": 15, "bulletin_total": 23}}, "remaining_total": {"deaths": 2, "injuries": 8}} still_open 0
+after partial: needs 42 -> 41 casualties 48 -> 49 Rmadiye in NV list: False
+Rmadiye detail: {'verification_status': 'auto_processed', 'deaths': 1, 'injuries': 15, 'total_deaths': 1, 'total_injuries': 15, 'open_casualty_flags_count': 0}
+siblings still open: 4 (panel stays open on these)
+resolve all 200 {"deaths": 0, "injuries": 0}
+after resolve all: needs 41 -> 37 (expected - 4 ) 32095 rows left in NV: []
+32095 statuses: [('resolved', 5)]
+resolved flag read-only payload: {"status": "resolved", "resolution": {"note": "manual-test partial", "deaths": 1, "injuries": 15, "incident_id": "b1097a42-47f4-43e1-9ff5-1cf89cd01cf9", "unknown_deaths": false, "unknown_injuries": false}, "resolved_by": "a5d52cef-8a72-418e-b5ad-a57bd477c9b0"}
+resolve again on resolved: 404
+dismiss no reason: 422 blank: 422
+dismiss with reason: 200
+after dismiss: needs 37 -> 37 two-flag row still NV: True types ['casualty_aggregate_toll']
+dismiss again: 404
+detail of two-flag incident: {'verification_status': 'needs_verification', 'deaths': None, 'injuries': 3, 'total_deaths': None, 'total_injuries': 3, 'open_casualty_flags_count': 1}
+duplicate row: b0e6b1e4-01dd-4a82-874d-ca75f2046157 possible Possible cross-source duplicate segment; human confirmation required (best similarity 1.00). candidate endpoint: 200

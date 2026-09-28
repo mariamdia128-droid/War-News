@@ -55,6 +55,9 @@ class IncidentVerificationFlagRepository:
             self._audit(flag, old_values=None)
             return flag
 
+        if self.is_unchanged(existing, severity=severity, detail=detail,
+                             source_message_id=source_message_id, visible_after=visible_after):
+            return existing
         old_values = self._flag_snapshot(existing)
         existing.detail = detail
         existing.severity = severity
@@ -64,6 +67,23 @@ class IncidentVerificationFlagRepository:
         self.db.add(existing)
         self._audit(existing, old_values=old_values)
         return existing
+
+    @staticmethod
+    def is_unchanged(
+        flag: IncidentVerificationFlag,
+        *,
+        severity: str,
+        detail: dict[str, Any],
+        source_message_id: int | None,
+        visible_after: datetime | None,
+    ) -> bool:
+        """True when re-opening would rewrite identical values (no update, no audit row)."""
+        return (
+            getattr(flag, "severity", None) == severity
+            and getattr(flag, "detail", None) == detail
+            and getattr(flag, "source_message_id", None) == source_message_id
+            and getattr(flag, "visible_after", None) == visible_after
+        )
 
     def resolve_flag(
         self, flag_id: UUID, user_id: UUID, resolution: dict[str, Any]
@@ -118,8 +138,10 @@ class IncidentVerificationFlagRepository:
     def list_open_for_incident(
         self, incident_id: UUID
     ) -> list[IncidentVerificationFlag]:
-        return list(
-            self.db.scalars(
+        # The session does not autoflush: re-check the in-memory status so a flag
+        # resolved or dismissed earlier in this transaction is not treated as open.
+        return [
+            flag for flag in self.db.scalars(
                 select(IncidentVerificationFlag)
                 .where(
                     IncidentVerificationFlag.incident_id == incident_id,
@@ -127,7 +149,8 @@ class IncidentVerificationFlagRepository:
                 )
                 .order_by(IncidentVerificationFlag.created_at, IncidentVerificationFlag.id)
             ).all()
-        )
+            if flag.status == "open"
+        ]
 
     def has_previously_reviewed(self, incident_id: UUID, reason_code: str) -> bool:
         return self.db.scalar(

@@ -1,0 +1,12 @@
+db war_news_dev read_only on
+revision 20260928_0071 incidents 2242
+/app/app/news/repositories/incident_repository.py:523: SAWarning: SELECT statement has a cartesian product between FROM element(s) "villages" and FROM element "incidents".  Apply join condition(s) between each element to resolve.
+  self.db.execute(
+detail newest 200: {'ok': 174, 'not_found': 26}
+list all: pages=10 rows=1485 total=1485 needs_card=5
+list needs_verification: pages=1 rows=5 total=5 needs_card=5
+list duplicate: pages=1 rows=5 total=5 needs_card=5
+duplicate_level among newest 200: {None: 195, 'segment': 5}
+flags in real db: 0
+tolerant-validator warnings: 0 []
+FAILURES: 0

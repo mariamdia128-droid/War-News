@@ -115,3 +115,31 @@ def test_safe_hook_swallows_evaluator_failure(monkeypatch):
     monkeypatch.setattr("app.news.services.casualty_flag_evaluator.settings.casualty_flags_enabled", True)
     monkeypatch.setattr("app.news.services.casualty_flag_evaluator.CasualtyFlagEvaluator", Broken)
     evaluate_casualty_flags_safely(DB(None), uuid4())
+
+
+def test_unchanged_open_flag_is_not_rewritten():
+    row=incident(casualty_status="count_missing", casualty_deaths_status="count_missing", casualty_status_evidence="شهداء")
+    first=Evaluator(row); first.evaluate_incident(row.id); opened=first.repository.opened[0]
+    flag=SimpleNamespace(id=uuid4(), flag_type="casualty_check", reason_code="count_missing", severity="review",
+                         detail=dict(opened["detail"]), source_message_id=10, visible_after=opened["visible_after"])
+    evaluator=Evaluator(row, flags=[flag]); result=evaluator.evaluate_incident(row.id)
+    assert result == {"opened":0,"updated":0,"auto_cleared":0,"skipped":0} and not evaluator.repository.opened
+
+
+def test_aggregate_totals_come_from_status_when_row_totals_were_cleared():
+    rows=[incident(raw_message_id=30, casualty_status="aggregate_only", casualty_deaths_status="aggregate_only",
+                   casualty_injuries_status="aggregate_only", casualty_status_remaining_total={"deaths": 4, "injuries": 32},
+                   village_display_name=name) for name in ("Nabatieh", "Kfour")]
+    evaluator=Evaluator(rows[0], siblings=rows); evaluator.evaluate_incident(rows[0].id)
+    assert evaluator.repository.opened[0]["detail"]["bulletin_totals"] == {"deaths": 4, "injuries": 32}
+
+
+def test_admin_entries_on_siblings_do_not_become_the_bulletin_total():
+    rows=[incident(raw_message_id=30, casualty_status="aggregate_only", casualty_deaths_status="aggregate_only",
+                   casualty_injuries_status="aggregate_only", casualty_status_remaining_total={"deaths": 4, "injuries": 32},
+                   village_display_name=name) for name in ("Nabatieh", "Kfour")]
+    rows[1].deaths=rows[1].total_deaths=10; rows[1].casualty_deaths_status="exact"
+    flag=SimpleNamespace(id=uuid4(), flag_type="casualty_check", reason_code="aggregate_no_breakdown", visible_after=None,
+                         detail={"bulletin_totals": {"deaths": 4, "injuries": 32}})
+    evaluator=Evaluator(rows[0], flags=[flag], siblings=rows); evaluator.evaluate_incident(rows[0].id)
+    assert evaluator.repository.opened[0]["detail"]["bulletin_totals"] == {"deaths": 4, "injuries": 32}

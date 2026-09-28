@@ -38,8 +38,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const includesFilterText = (value: string | null, filter?: string) =>
   !filter || Boolean(value?.toLowerCase().includes(filter.toLowerCase()));
 
-const matchesFilters = (incident: IncidentStreamEvent, filters: IncidentFilters) => {
+export const matchesFilters = (incident: IncidentStreamEvent, filters: IncidentFilters) => {
   if (filters.cursor) return false;
+  // Check types and channels are not in the stream event; let the next refetch decide.
+  if (filters.verificationType || filters.sourceName) return false;
   if (!includesFilterText(incident.village, filters.village)) return false;
   if (!includesFilterText(incident.condition, filters.condition)) return false;
   if (filters.sourceType && incident.source?.toLowerCase() !== filters.sourceType.toLowerCase()) return false;
@@ -91,11 +93,7 @@ export const useIncidentStream = (filters: IncidentFilters) => {
           return current;
         }
         if (!shouldPrepend) {
-          return {
-            ...current,
-            total: current.total + 1,
-            latest_incident_at: incident.created_at,
-          };
+          return { ...current, latest_incident_at: incident.created_at };
         }
         const items = sortIncidents([incident, ...current.items], filters.sortOrder).slice(0, current.limit);
         return {

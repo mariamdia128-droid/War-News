@@ -56,7 +56,7 @@ def _row(flag: IncidentVerificationFlag, incident: Incident | None = None) -> di
         "summary": detail.get("summary"),
         "evidence_sentence": detail.get("evidence_sentence"),
         "affected_types": detail.get("affected_types", []),
-        "village_name": getattr(incident, "village_display_name", None),
+        "village_name": CasualtyFlagEvaluator._location_name(incident) if incident is not None else None,
         "event_date": getattr(incident, "event_date", None),
         "source_name": getattr(getattr(incident, "source", None), "name", None) or detail.get("source_name"),
         "sibling_count": len(detail.get("sibling_incident_ids") or []),
@@ -87,9 +87,9 @@ def _grouped_rows(flags: list[IncidentVerificationFlag], incidents: dict[UUID, I
         lead = min(visible_members, key=lambda item: item.created_at)
         incident_ids = list(dict.fromkeys(item.incident_id for item in visible_members))
         locations = list(dict.fromkeys(
-            incidents[item_id].village_display_name
+            CasualtyFlagEvaluator._location_name(incidents[item_id])
             for item_id in incident_ids
-            if item_id in incidents and incidents[item_id].village_display_name
+            if item_id in incidents and CasualtyFlagEvaluator._location_name(incidents[item_id])
         ))
         row = _row(lead, incidents.get(lead.incident_id))
         row.update({
@@ -162,6 +162,15 @@ def list_flags(
     return {"items": rows[start:start + page_size], "total": total, "page": page, "page_size": page_size}
 
 
+def _live_remaining_total(totals: dict, incidents) -> dict[str, int]:
+    """Bulletin total minus counts already stored on the sibling rows (same rule as resolve)."""
+    return {
+        kind: max(totals[kind] - sum((getattr(row, kind) or 0) for row in incidents), 0)
+        for kind in ("deaths", "injuries")
+        if isinstance(totals.get(kind), int)
+    }
+
+
 @router.get("/{flag_id}")
 def get_flag(flag_id: UUID, db: Session = Depends(get_db), _user: User = Depends(require_admin)) -> dict:
     flag = db.get(IncidentVerificationFlag, flag_id)
@@ -181,12 +190,14 @@ def get_flag(flag_id: UUID, db: Session = Depends(get_db), _user: User = Depends
     incidents = db.scalars(select(Incident).where(Incident.id.in_(sibling_ids or [flag.incident_id]))).all()
     message = db.get(RawMessage, flag.source_message_id) if flag.source_message_id else None
     snapshot_text = detail.get("message_text")
+    if flag.reason_code == "aggregate_no_breakdown":
+        detail = {**detail, "remaining_total": _live_remaining_total(detail.get("bulletin_totals") or {}, incidents)}
     return {**_row(flag, next((i for i in incidents if i.id == flag.incident_id), None)), "detail": detail,
             "message_text": getattr(message, "raw_text", None) or snapshot_text,
             "message_snapshot_used": message is None and bool(snapshot_text),
             "group_size": len(group_flags), "incident_ids": sibling_ids[:50],
-            "locations": list(dict.fromkeys(i.village_display_name for i in incidents if i.village_display_name))[:10],
-            "incidents": [{"id": i.id, "village_name": i.village_display_name, "deaths": i.deaths, "injuries": i.injuries} for i in incidents]}
+            "locations": list(dict.fromkeys(name for i in incidents if (name := CasualtyFlagEvaluator._location_name(i))))[:10],
+            "incidents": [{"id": i.id, "village_name": CasualtyFlagEvaluator._location_name(i), "deaths": i.deaths, "injuries": i.injuries} for i in incidents]}
 
 
 @router.post("/{flag_id}/resolve")

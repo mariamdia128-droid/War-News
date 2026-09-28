@@ -33,6 +33,15 @@ export const assignedTotal = (values: AllocationValues, kind: CasualtyKind) =>
 export const isOverTotal = (values: AllocationValues, kind: CasualtyKind, total: number | null | undefined) =>
   typeof total === "number" && assignedTotal(values, kind) > total;
 
+// Sibling locations of an aggregate toll that this save did not resolve, in panel order.
+export const unresolvedSiblingIds = (
+  siblingIds: string[],
+  results: Array<{ incident_id: string; resolved: boolean }>,
+) => {
+  const resolved = new Set(results.filter((item) => item.resolved).map((item) => item.incident_id));
+  return siblingIds.filter((incidentId) => !resolved.has(incidentId));
+};
+
 export const isWholeNonNegative = (value: string) => value === "" || /^\d+$/.test(value);
 
 export const dismissReasonError = (reason: string) => reason.trim().length < 3 ? "Enter at least 3 characters." : undefined;

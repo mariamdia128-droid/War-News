@@ -387,6 +387,20 @@ class IncidentRepository(IncidentRepositoryInterface):
             .outerjoin(Source, Source.id == Incident.source_id)
             .where(*filters)
         ).one()
+        outside_range_filters = self._outside_range_needs_verification_filters(params)
+        outside_range_count = (
+            self.db.scalar(
+                select(func.count(Incident.id))
+                .select_from(Incident)
+                .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
+                .outerjoin(Village, Village.id == Incident.village_id)
+                .outerjoin(Condition, Condition.id == Incident.condition_id)
+                .outerjoin(Source, Source.id == Incident.source_id)
+                .where(*outside_range_filters)
+            )
+            if outside_range_filters is not None
+            else 0
+        )
 
         return IncidentListResponse(
             items=[
@@ -414,6 +428,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             latest_incident_at=latest_incident_at,
             needs_verification_count=int(summary.needs_verification_count or 0),
             casualties_count=int(summary.casualties_count or 0),
+            needs_verification_outside_range_count=int(outside_range_count or 0),
         )
 
     def get_by_id(self, incident_id: UUID) -> IncidentDetailDTO | None:
@@ -2549,7 +2564,10 @@ class IncidentRepository(IncidentRepositoryInterface):
         if flags:
             payload.update(verification_status="needs_verification", verification_reason=cls._flag_summary(flags[0]))
         elif duplicate:
-            payload.update(verification_status="needs_verification", verification_reason=duplicate_reason)
+            payload.update(
+                verification_status="needs_verification",
+                verification_reason=duplicate_reason or "Possible duplicate of another incident",
+            )
         return payload
 
     @staticmethod
@@ -2643,6 +2661,23 @@ class IncidentRepository(IncidentRepositoryInterface):
                 )
             )
         return filters
+
+    @classmethod
+    def _outside_range_needs_verification_filters(
+        cls, params: IncidentListParams
+    ) -> list[object] | None:
+        """Needs-verification rows hidden only by the event date range."""
+        if params.verification_status != "needs_verification" and params.verification_type is None:
+            return None
+        if params.event_date_from is None and params.event_date_to is None:
+            return None
+        undated = params.model_copy(update={"event_date_from": None, "event_date_to": None})
+        outside = [Incident.event_date.is_(None)]
+        if params.event_date_from is not None:
+            outside.append(Incident.event_date < params.event_date_from)
+        if params.event_date_to is not None:
+            outside.append(Incident.event_date > params.event_date_to)
+        return [*cls._list_filters(undated), cls._needs_verification_column(), or_(*outside)]
 
     @staticmethod
     def _list_ordering(params: IncidentListParams) -> tuple[object, ...]:
