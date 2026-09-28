@@ -41,6 +41,9 @@ from app.llm.services.ollama_relevance_classifier_service import is_valid_reason
 from app.news.services.incident_details.casualty_count_backstop import (
     apply_casualty_count_backstop,
 )
+from app.news.services.incident_details.casualty_count_fill import (
+    fill_counts_from_count_words,
+)
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
@@ -540,11 +543,6 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             list(general_response.casualty_evidence),
             raw_message_id=raw_message_id,
         )
-        categories: dict[ExtractionCategoryKey, ExtractionCategory] = {}
-        self._inject_casualty_demographics_from_root(
-            categories,
-            casualties,
-        )
         village_roles = self._validated_village_roles(
             general_response.village_roles,
             post_text=post_text,
@@ -599,6 +597,18 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 sub_event.model_copy(update={"locations": event_locations})
             )
         sub_events = normalized_sub_events
+        casualties, casualty_evidence = fill_counts_from_count_words(
+            post_text,
+            casualties,
+            casualty_evidence,
+            target_villages=self._count_fill_targets(villages, village_roles, sub_events),
+            raw_message_id=raw_message_id,
+        )
+        categories: dict[ExtractionCategoryKey, ExtractionCategory] = {}
+        self._inject_casualty_demographics_from_root(
+            categories,
+            casualties,
+        )
         scope, scope_evidence, scope_needs_review, scope_reason = (
             self._validated_casualty_scope(
                 general_response,
@@ -641,6 +651,30 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             model=self.client.model,
             extracted_at=datetime.now(timezone.utc),
         )
+
+    @staticmethod
+    def _count_fill_targets(
+        villages: list[str] | None,
+        village_roles: list[VillageRoleEntry],
+        sub_events: list[ExtractionSubEvent],
+    ) -> list[str]:
+        """Target locations for count-word filling; empty means do not fill.
+
+        Several sub-events split casualties across actions, so their root
+        totals are not a single-location count.
+        """
+        if len(sub_events) > 1:
+            return []
+        targets = [
+            role.village for role in village_roles if role.role == VillageRole.target
+        ] or list(villages or [])
+        targets.extend(
+            location.village
+            for sub_event in sub_events
+            for location in sub_event.locations
+            if location.role == VillageRole.target
+        )
+        return targets
 
     @classmethod
     def _multi_village_action_scope_review(

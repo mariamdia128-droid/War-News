@@ -890,3 +890,40 @@ def test_multi_village_multi_action_without_sub_events_needs_review() -> None:
 
     assert result.needs_review is True
     assert result.review_reason == MULTI_VILLAGE_NO_SUBEVENTS_REVIEW_REASON
+
+
+def test_extract_tier1_fills_dual_death_word_the_model_left_null() -> None:
+    """31539: «شهيدان في غارة… كفررمان» with casualties all null from the model."""
+    post_text = (
+        "وزارة الصحة اللبنانية: شهيدان في غارة إسرائيلية استهدفت دراجة نارية "
+        "في بلدة كفررمان جنوبي #لبنان."
+    )
+    response = json.dumps(
+        {
+            "is_relevant": True,
+            "village": ["كفررمان"],
+            "village_roles": [
+                {"village": "كفررمان", "role": "target", "deaths": None, "injuries": None}
+            ],
+            "action_description": "غارة على دراجة نارية",
+            "casualties": {},
+            "casualty_evidence": [],
+            "casualty_transitions": [],
+        },
+        ensure_ascii=False,
+    )
+    service = OllamaExtractionService(
+        client=_client_for_model_contents([response]),
+        presence_gate=_PresenceGateStub(categories=[]),
+    )
+
+    result = service.extract_tier1(post_text, raw_message_id=31539)
+
+    assert result.casualties.deaths == 2
+    assert result.casualties.total_deaths == 2
+    assert result.casualties.injuries is None
+    assert ("deaths", "شهيدان") in {
+        (item.field, item.evidence_span) for item in result.casualty_evidence
+    }
+    demographics = result.categories[ExtractionCategoryKey.casualty_demographics]
+    assert demographics.casualties.deaths == 2
