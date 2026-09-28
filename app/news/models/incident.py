@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CHAR,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -48,6 +49,13 @@ if TYPE_CHECKING:
 
 class Incident(Base):
     __tablename__ = "incidents"
+    __table_args__ = (
+        CheckConstraint(
+            "casualty_status IS NULL OR casualty_status IN "
+            "('none_mentioned', 'explicit_none', 'exact', 'count_missing', 'aggregate_only')",
+            name="ck_incidents_casualty_status",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PgUUID(as_uuid=True),
@@ -97,6 +105,9 @@ class Incident(Base):
     source_link_2: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_deaths: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_injuries: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    casualty_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    casualty_is_preliminary: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    casualty_status_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     deaths: Mapped[int | None] = mapped_column(Integer, nullable=True)
     injuries: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Meaning unconfirmed, preserve raw value.

@@ -269,3 +269,128 @@ def derive_casualty_status(
         evidence=evidence,
         remaining_total=remaining,
     )
+
+
+def target_location_count_from_extraction(
+    villages: Any,
+    village_roles: Any,
+    sub_events: Any,
+) -> int:
+    """Count distinct extracted target locations, including sub-event targets."""
+    names: set[str] = set()
+    for role in village_roles or ():
+        value = _get(role, "role", "target")
+        if value not in ("target", getattr(value, "value", None)):
+            continue
+        name = str(_get(role, "village", "")).strip()
+        if name:
+            names.add(normalize_casualty_text(name))
+    for event in sub_events or ():
+        for location in _get(event, "locations", ()) or ():
+            value = _get(location, "role", "target")
+            if value not in ("target", getattr(value, "value", None)):
+                continue
+            name = str(_get(location, "village", "")).strip()
+            if name:
+                names.add(normalize_casualty_text(name))
+    if names:
+        return len(names)
+    return len(
+        {
+            normalize_casualty_text(str(name).strip())
+            for name in villages or ()
+            if str(name).strip()
+        }
+    )
+
+
+def status_fields(result: CasualtyStatusResult) -> dict[str, Any]:
+    """Fields stored on ExtractionResult for backward-compatible JSON persistence."""
+    return {
+        "casualty_status": result.status,
+        "casualty_deaths_status": result.deaths_status,
+        "casualty_injuries_status": result.injuries_status,
+        "casualty_status_remaining_total": dict(result.remaining_total),
+        "casualty_is_preliminary": result.is_preliminary,
+        "casualty_status_evidence": result.evidence,
+    }
+
+
+def status_for_incident_row(
+    message_text: str,
+    extraction: Any,
+    row_casualties: Any,
+    *,
+    target_location_count: int,
+) -> CasualtyStatusResult:
+    """Use row counts when present; otherwise retain the message-level status."""
+    row_has_counts = any(
+        _get(row_casualties, field) is not None
+        for field in (
+            "deaths",
+            "injuries",
+            "total_deaths",
+            "total_injuries",
+            "male_deaths",
+            "male_injuries",
+            "female_deaths",
+            "female_injuries",
+            "children_deaths",
+            "children_injuries",
+        )
+    )
+    if row_has_counts:
+        return derive_casualty_status(
+            message_text,
+            row_casualties,
+            target_location_count=1,
+        )
+    return derive_casualty_status(
+        message_text,
+        _get(extraction, "casualties"),
+        village_roles=_get(extraction, "village_roles", ()),
+        sub_events=_get(extraction, "sub_events", ()),
+        target_location_count=target_location_count,
+    )
+
+
+_MERGE_PRIORITY = {
+    "none_mentioned": 0,
+    "explicit_none": 1,
+    "count_missing": 2,
+    "aggregate_only": 2,
+    "exact": 3,
+}
+
+
+def merge_casualty_status(
+    current_status: str | None,
+    current_is_preliminary: bool,
+    current_evidence: str | None,
+    incoming_status: str | None,
+    incoming_is_preliminary: bool,
+    incoming_evidence: str | None,
+    *,
+    incoming_is_newest: bool,
+) -> dict[str, Any]:
+    """Merge status while preventing downgrades and clearing stale prelim flags."""
+    current = current_status if current_status in _MERGE_PRIORITY else "none_mentioned"
+    incoming = incoming_status if incoming_status in _MERGE_PRIORITY else "none_mentioned"
+    if _MERGE_PRIORITY[incoming] > _MERGE_PRIORITY[current]:
+        status, evidence = incoming, incoming_evidence
+    elif _MERGE_PRIORITY[incoming] < _MERGE_PRIORITY[current]:
+        status, evidence = current, current_evidence
+    elif incoming_is_newest:
+        status, evidence = incoming, incoming_evidence or current_evidence
+    else:
+        status, evidence = current, current_evidence
+    preliminary = (
+        bool(incoming_is_preliminary)
+        if incoming_is_newest
+        else bool(current_is_preliminary)
+    )
+    return {
+        "casualty_status": status,
+        "casualty_is_preliminary": preliminary,
+        "casualty_status_evidence": evidence,
+    }

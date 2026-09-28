@@ -1,5 +1,8 @@
 from app.llm.dtos import ExtractionCasualties, VillageRoleEntry
-from app.news.services.incident_details.casualty_status import derive_casualty_status
+from app.news.services.incident_details.casualty_status import (
+    derive_casualty_status,
+    merge_casualty_status,
+)
 
 
 def test_no_casualty_words_is_none_mentioned() -> None:
@@ -148,3 +151,29 @@ def test_update_and_revision_language_marks_a_casualty_toll_preliminary() -> Non
     )
 
     assert result.is_preliminary is True
+
+
+def test_merge_status_exact_is_never_downgraded() -> None:
+    merged = merge_casualty_status(
+        "exact", False, "exact evidence", "count_missing", True, "vague evidence",
+        incoming_is_newest=True,
+    )
+    assert merged == {
+        "casualty_status": "exact",
+        "casualty_is_preliminary": True,
+        "casualty_status_evidence": "exact evidence",
+    }
+
+
+def test_merge_status_unmentioned_to_aggregate_and_preliminary_clears() -> None:
+    aggregate = merge_casualty_status(
+        "none_mentioned", False, None, "aggregate_only", True, "aggregate sentence",
+        incoming_is_newest=True,
+    )
+    final = merge_casualty_status(
+        "exact", True, "initial toll", "exact", False, "final toll",
+        incoming_is_newest=True,
+    )
+    assert aggregate["casualty_status"] == "aggregate_only"
+    assert final["casualty_is_preliminary"] is False
+    assert final["casualty_status_evidence"] == "final toll"

@@ -20,6 +20,7 @@ from app.news.services.clustering.clustering_service import (
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
+from app.news.services.incident_details.casualty_status import merge_casualty_status
 
 logger = logging.getLogger(__name__)
 
@@ -161,11 +162,34 @@ class BulletinReconciliationService:
             old_values = {
                 "deaths": incident.deaths,
                 "injuries": incident.injuries,
+                "casualty_status": incident.casualty_status,
+                "casualty_is_preliminary": incident.casualty_is_preliminary,
+                "casualty_status_evidence": incident.casualty_status_evidence,
             }
             if deaths is not None:
                 incident.deaths = deaths
             if injuries is not None:
                 incident.injuries = injuries
+            if deaths is not None or injuries is not None:
+                incoming_extraction = ExtractionResult.model_validate(
+                    candidate.extraction_result or {}
+                )
+                merged_status = merge_casualty_status(
+                    incident.casualty_status,
+                    bool(incident.casualty_is_preliminary),
+                    incident.casualty_status_evidence,
+                    "exact",
+                    incoming_extraction.casualty_is_preliminary,
+                    incoming_extraction.casualty_status_evidence,
+                    incoming_is_newest=True,
+                )
+                incident.casualty_status = merged_status["casualty_status"]
+                incident.casualty_is_preliminary = merged_status[
+                    "casualty_is_preliminary"
+                ]
+                incident.casualty_status_evidence = merged_status[
+                    "casualty_status_evidence"
+                ]
             self.db.add(incident)
             self.db.add(
                 IncidentUpdate(
@@ -175,6 +199,9 @@ class BulletinReconciliationService:
                     new_values={
                         "deaths": incident.deaths,
                         "injuries": incident.injuries,
+                        "casualty_status": incident.casualty_status,
+                        "casualty_is_preliminary": incident.casualty_is_preliminary,
+                        "casualty_status_evidence": incident.casualty_status_evidence,
                         "bulletin_group_id": group.id,
                         "resolved_by_raw_message_id": candidate.id,
                     },

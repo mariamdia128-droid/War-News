@@ -73,6 +73,7 @@ from app.news.services.incident_details.casualty_transition_merge import (
 from app.news.services.incident_details.casualty_transition_backstop import (
     detect_casualty_transition_backstop,
 )
+from app.news.services.incident_details.casualty_status import merge_casualty_status
 from app.news.services.incident_details.incident_detail_merge import (
     merge_incident_detail_fields,
 )
@@ -1172,6 +1173,23 @@ class IncidentRepository(IncidentRepositoryInterface):
                         getattr(canonical, field), getattr(incident, field)
                     ),
                 )
+            if incident.casualty_status is not None:
+                duplicate_raw_message = (
+                    self.db.get(RawMessage, incident.raw_message_id)
+                    if incident.raw_message_id is not None
+                    else None
+                )
+                self._merge_casualty_status_fields(
+                    canonical,
+                    {
+                        "casualty_status": incident.casualty_status,
+                        "casualty_is_preliminary": incident.casualty_is_preliminary,
+                        "casualty_status_evidence": incident.casualty_status_evidence,
+                    },
+                    incoming_is_newest=self._revision_is_newer(
+                        canonical, duplicate_raw_message
+                    ),
+                )
             if canonical.source_link is None:
                 canonical.source_link = incident.source_link
             if canonical.source_link_2 is None:
@@ -1429,6 +1447,12 @@ class IncidentRepository(IncidentRepositoryInterface):
             select(IncidentDetail).where(IncidentDetail.incident_id == existing.id)
         )
         old_values = self._snapshot_merge_audit(existing, detail)
+        if new_candidate_data.get("casualty_status") is not None:
+            self._merge_casualty_status_fields(
+                existing,
+                new_candidate_data,
+                incoming_is_newest=self._revision_is_newer(existing, raw_message),
+            )
         source_text = (
             getattr(raw_message, "raw_text", None)
             if raw_message is not None
@@ -1645,6 +1669,10 @@ class IncidentRepository(IncidentRepositoryInterface):
             incoming = new_candidate_data.get(field)
             if isinstance(incoming, int) and not isinstance(incoming, bool):
                 setattr(existing, field, incoming)
+        if new_candidate_data.get("casualty_status") is not None:
+            self._merge_casualty_status_fields(
+                existing, new_candidate_data, incoming_is_newest=True
+            )
         self._demote_verified_after_pipeline_write(
             existing,
             f"Story revision from raw message {raw_message_id} changed this verified incident",
@@ -2691,6 +2719,9 @@ class IncidentRepository(IncidentRepositoryInterface):
     @staticmethod
     def _snapshot_merge_fields(incident: Incident) -> dict[str, Any]:
         return {
+            "casualty_status": incident.casualty_status,
+            "casualty_is_preliminary": incident.casualty_is_preliminary,
+            "casualty_status_evidence": incident.casualty_status_evidence,
             "deaths": incident.deaths,
             "total_deaths": incident.total_deaths,
             "injuries": incident.injuries,
@@ -2698,6 +2729,28 @@ class IncidentRepository(IncidentRepositoryInterface):
             "note": incident.note,
             "details_pending": incident.details_pending,
         }
+
+    @staticmethod
+    def _merge_casualty_status_fields(
+        incident: Incident,
+        incoming: dict[str, Any],
+        *,
+        incoming_is_newest: bool,
+    ) -> None:
+        if incoming.get("casualty_status") is None:
+            return
+        merged = merge_casualty_status(
+            incident.casualty_status,
+            bool(incident.casualty_is_preliminary),
+            incident.casualty_status_evidence,
+            incoming.get("casualty_status"),
+            bool(incoming.get("casualty_is_preliminary")),
+            incoming.get("casualty_status_evidence"),
+            incoming_is_newest=incoming_is_newest,
+        )
+        incident.casualty_status = merged["casualty_status"]
+        incident.casualty_is_preliminary = merged["casualty_is_preliminary"]
+        incident.casualty_status_evidence = merged["casualty_status_evidence"]
 
     @classmethod
     def _snapshot_merge_audit(

@@ -31,6 +31,10 @@ from app.news.services.incident_details.category_mapper import (
     suppress_category_casualties,
 )
 from app.news.services.incident_details.casualty_demographic_consistency import reconcile_root_demographics
+from app.news.services.incident_details.casualty_status import (
+    status_for_incident_row,
+    target_location_count_from_extraction,
+)
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.clustering.embedding_service import EmbeddingService
 from app.news.services.matching.emergency_organization_matching_service import (
@@ -279,6 +283,24 @@ class Tier2DetailFillService:
                     raw_message_id=raw_message_id,
                     reason=extraction.casualty_scope_review_reason,
                 )
+            row_status = status_for_incident_row(
+                raw_message.raw_text or "",
+                extraction,
+                {
+                    "deaths": incident.deaths,
+                    "injuries": incident.injuries,
+                    "total_deaths": incident.total_deaths,
+                    "total_injuries": incident.total_injuries,
+                },
+                target_location_count=target_location_count_from_extraction(
+                    extraction.village,
+                    extraction.village_roles,
+                    extraction.sub_events,
+                ),
+            )
+            incident.casualty_status = row_status.status
+            incident.casualty_is_preliminary = row_status.is_preliminary
+            incident.casualty_status_evidence = row_status.evidence
             self._apply_dedup_backstop(
                 incident,
                 embedding,

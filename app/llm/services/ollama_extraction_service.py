@@ -44,6 +44,11 @@ from app.news.services.incident_details.casualty_count_backstop import (
 from app.news.services.incident_details.casualty_count_fill import (
     fill_counts_from_count_words,
 )
+from app.news.services.incident_details.casualty_status import (
+    derive_casualty_status,
+    status_fields,
+    target_location_count_from_extraction,
+)
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
@@ -623,7 +628,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             sub_events=sub_events,
         )
 
-        return ExtractionResult(
+        result = ExtractionResult(
             is_relevant=general_response.is_relevant,
             village=villages,
             village_roles=village_roles,
@@ -651,6 +656,16 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             model=self.client.model,
             extracted_at=datetime.now(timezone.utc),
         )
+        casualty_status = derive_casualty_status(
+            post_text,
+            casualties,
+            village_roles=village_roles,
+            sub_events=sub_events,
+            target_location_count=target_location_count_from_extraction(
+                villages, village_roles, sub_events
+            ),
+        )
+        return result.model_copy(update=status_fields(casualty_status))
 
     @staticmethod
     def _count_fill_targets(
