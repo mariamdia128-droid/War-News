@@ -28,9 +28,13 @@ class VillageMatchResult(BaseModel):
     condition_match_status: MatchResultStatus | None = None
     condition_review_required: bool | None = None
     raw_condition_text: str | None = None
+    condition_review_reason: str | None = None
+    condition_action_source: str | None = None
+    source_condition_text: str | None = None
     event_index: int | None = None
     event_location_count: int | None = None
     qualifier_text: str | None = None
+    alias_matched: bool = False
     resolved_by_geo_context: bool = False
     geo_context_anchor_village_id: int | None = None
     original_top_candidate_id: int | None = None
@@ -49,6 +53,9 @@ class SubEventMatchResult(BaseModel):
     condition_confidence: float | None
     condition_match_status: MatchResultStatus
     condition_review_required: bool
+    condition_review_reason: str | None = None
+    condition_action_source: str | None = None
+    source_condition_text: str | None = None
 
 
 class MatchResultDTO(BaseModel):
@@ -61,10 +68,16 @@ class MatchResultDTO(BaseModel):
     # low-confidence query (RawMessage.match_result["any_village_low_confidence"])
     # stays simple and backward-compatible.
     any_village_low_confidence: bool
+    location_ambiguity: bool = False
+    location_alternatives: list[str] = Field(default_factory=list)
+    location_ambiguity_evidence: str | None = None
 
     matched_condition_id: int | None
     condition_confidence: float | None
     condition_match_status: MatchResultStatus
     condition_review_required: bool
     raw_condition_text: str | None
+    condition_review_reason: str | None = None
+    condition_action_source: str | None = None
+    source_condition_text: str | None = None
     sub_event_matches: list[SubEventMatchResult] = Field(default_factory=list)

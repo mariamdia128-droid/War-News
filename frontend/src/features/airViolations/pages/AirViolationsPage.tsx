@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { Button, ConfirmDialog, DataTable, Dialog, EmptyState, Input, Label, Select, type DataTableColumn } from "../../../components/ui";
 import { useLiveQueryTitleAddon } from "../../../hooks/useLiveQueryTitleAddon";
 import { decodePageParam, encodePageParam } from "../../../lib/encryptedPageParam";
-import { formatDate, formatDateTime, formatRelativeTime } from "../../../lib/formatters";
+import { formatDate, formatDateTime } from "../../../lib/formatters";
 import { getBeirutDate, normalizeDateInputValue } from "../../../lib/localDate";
 import { useAuthStore } from "../../../stores/authStore";
-import { useAirViolationSummaryQuery, useAirViolationWindowsQuery, useAirViolationsQuery } from "../hooks";
+import { useAirViolationSummaryQuery, useAirViolationsQuery } from "../hooks";
 import { useVillagesQuery } from "../../news/hooks";
 import { acquireAirViolationEditLock, createAirViolation, deleteAirViolation, exportAirViolations, releaseAirViolationEditLock, updateAirViolation } from "../api";
-import type { AirViolation, AirViolationWindow } from "../types";
+import type { AirViolation } from "../types";
 import { importAirViolationKhabar } from "../api";
-import type { WorkbookImportSummary } from "../../news/api";
+import { getFilteredNews, type WorkbookImportSummary } from "../../news/api";
+import type { FilteredNewsItem } from "../../news/types";
 
 const PAGE_SIZE = 25;
+const RED_ALERT_SOURCE_NAME = "Red Alert Lebanon";
+const RED_ALERT_NEWS_LIMIT = 75;
 
 const emptyText = "—";
 
@@ -26,6 +30,47 @@ const formatTime = (value: string | null) => {
   return value.slice(0, 5);
 };
 
+const formatWindowId = (value: string | null) => {
+  if (!value) {
+    return emptyText;
+  }
+  const separatorIndex = value.indexOf(":");
+  if (separatorIndex === -1) {
+    return value;
+  }
+  const caza = value.slice(0, separatorIndex);
+  const timestamp = value.slice(separatorIndex + 1);
+  return `${caza} - ${formatDateTime(timestamp)}`;
+};
+
+const compactNews = (value: string, maxLength = 140) => {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+};
+
+const statusVariant = (status: string) => {
+  if (status === "materialized") return "success" as const;
+  if (status === "rejected") return "danger" as const;
+  if (status === "duplicate") return "neutral" as const;
+  if (status === "error") return "warning" as const;
+  return "accent" as const;
+};
+
+const recordWindowLabel = (row: AirViolation) => {
+  if (row.window_start && row.window_end) {
+    const count = row.window_violation_count ?? 1;
+    return count === 1 ? "1 report" : `${count} reports`;
+  }
+  return null;
+};
+
+const recordWindowRange = (row: AirViolation) => {
+  if (row.window_start && row.window_end) {
+    return `${formatDateTime(row.window_start)} to ${formatDateTime(row.window_end)}`;
+  }
+  return formatWindowId(row.window_id);
+};
+
 const TextCell = ({ value }: { value: string | null }) => (
   <span
     className="block max-w-lg truncate whitespace-nowrap text-text-primary"
@@ -34,6 +79,17 @@ const TextCell = ({ value }: { value: string | null }) => (
     {value || emptyText}
   </span>
 );
+
+const WindowCell = ({ row }: { row: AirViolation }) => {
+  const label = recordWindowLabel(row);
+  const range = recordWindowRange(row);
+  return (
+    <div className="max-w-[26rem] space-y-1 whitespace-normal text-text-primary">
+      {label ? <p className="font-semibold">{label}</p> : null}
+      <p className="break-words leading-6">{range || emptyText}</p>
+    </div>
+  );
+};
 
 export const AirViolationsPage = () => {
   const [importMessage, setImportMessage] = useState("");
@@ -50,7 +106,6 @@ export const AirViolationsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
   const [createError, setCreateError] = useState("");
   const [actionError, setActionError] = useState("");
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -98,7 +153,22 @@ export const AirViolationsPage = () => {
 
   const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } =
     useAirViolationsQuery(filters);
-  const windows = useAirViolationWindowsQuery(filters);
+  const redAlertNewsFilters = useMemo(
+    () => ({
+      limit: RED_ALERT_NEWS_LIMIT,
+      offset: 0,
+      eventDateFrom: eventDateFrom || undefined,
+      eventDateTo: eventDateTo || undefined,
+      lastHours: lastHours || undefined,
+      sourceName: RED_ALERT_SOURCE_NAME,
+      includeRejectedRedAlert: true,
+    }),
+    [eventDateFrom, eventDateTo, lastHours],
+  );
+  const redAlertNewsQuery = useQuery({
+    queryKey: ["air-violations", "red-alert-filtered-news", redAlertNewsFilters],
+    queryFn: () => getFilteredNews(redAlertNewsFilters),
+  });
   const { data: villages = [], isLoading: areCazasLoading } = useVillagesQuery();
   const cazaOptions = useMemo(() => {
     const options = new Map<string, { label: string; arabic: string | null }>();
@@ -131,9 +201,8 @@ export const AirViolationsPage = () => {
   useLiveQueryTitleAddon(lastRefreshAt, isFetching);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const windowTotal = windows.data?.total ?? 0;
-  const windowTotalPages = Math.max(1, Math.ceil(windowTotal / PAGE_SIZE));
   const rows = data?.items ?? [];
+  const redAlertRows = redAlertNewsQuery.data?.items ?? [];
   const isLockedByAnother = Boolean(
     selectedViolation?.locked_by_user_id
       && selectedViolation.locked_by_user_id !== currentUserId
@@ -200,18 +269,20 @@ export const AirViolationsPage = () => {
     {
       key: "number",
       header: "#",
-      className: "w-14 tabular-nums text-text-muted",
+      className: "w-14 min-w-14 tabular-nums text-text-muted",
       render: (row) => offset + rows.indexOf(row) + 1,
     },
     {
       key: "caza",
       header: "Caza",
+      className: "w-40 min-w-40",
       render: (row) => <span className="font-semibold text-text-primary">{row.caza_en || row.caza_ar || emptyText}</span>,
       sortValue: (row) => row.caza_en ?? row.caza_ar ?? "",
     },
     {
       key: "action-en",
       header: "Action",
+      className: "w-52 min-w-52",
       render: (row) => (
         <div>
           <TextCell value={row.action_en} />
@@ -223,15 +294,17 @@ export const AirViolationsPage = () => {
     {
       key: "news",
       header: "News",
+      className: "w-[24rem] min-w-[24rem]",
       render: (row) => {
         const news = row.khabar.replace(/\s+/g, " ").trim();
-        return <span className="block max-w-md text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}…` : news}</span>;
+        return <span className="block max-w-[22rem] whitespace-normal leading-6 text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}…` : news}</span>;
       },
       sortValue: (row) => row.khabar,
     },
     {
       key: "village",
       header: "Village",
+      className: "w-48 min-w-48",
       render: (row) => (
         <div>
           <TextCell value={row.village_en || row.village_ar} />
@@ -247,8 +320,23 @@ export const AirViolationsPage = () => {
     {
       key: "date",
       header: "Date / Time",
-      render: (row) => row.import_enrichment?.date_source === "fallback" ? "Date unavailable" : `${formatDate(row.event_date)} · ${formatTime(row.event_time)}`,
+      className: "w-36 min-w-36",
+      render: (row) => row.import_enrichment?.date_source === "fallback" ? (
+        <span>Date unavailable</span>
+      ) : (
+        <div className="space-y-1 whitespace-nowrap">
+          <p>{formatDate(row.event_date)}</p>
+          <p className="text-text-muted">{formatTime(row.event_time)}</p>
+        </div>
+      ),
       sortValue: (row) => new Date(row.event_date).getTime(),
+    },
+    {
+      key: "window",
+      header: "Window",
+      className: "w-[28rem] min-w-[28rem]",
+      render: (row) => <WindowCell row={row} />,
+      sortValue: (row) => row.window_start ?? row.window_id ?? "",
     },
     {
       key: "details",
@@ -262,45 +350,68 @@ export const AirViolationsPage = () => {
     },
   ];
 
-  const windowColumns: Array<DataTableColumn<AirViolationWindow>> = [
+  const redAlertColumns: Array<DataTableColumn<FilteredNewsItem>> = [
     {
-      key: "caza",
-      header: "Caza",
+      key: "time",
+      header: "Date / Time",
+      className: "w-40 min-w-40",
       render: (row) => (
-        <div className="space-y-1">
-          <span className="font-semibold text-text-primary">{row.caza_en}</span>
-          {row.caza_ar ? <span className="block text-right text-text-muted" dir="rtl" lang="ar">{row.caza_ar}</span> : null}
+        <div className="space-y-1 whitespace-nowrap">
+          <p>{formatDateTime(row.event_at)}</p>
+          <p className="text-caption text-text-muted">Raw #{row.id}</p>
         </div>
       ),
-      sortValue: (row) => row.caza_en,
+      sortValue: (row) => new Date(row.event_at).getTime(),
     },
     {
-      key: "window",
-      header: "Window",
+      key: "news",
+      header: "Red Alert news",
+      className: "w-[30rem] min-w-[30rem]",
+      render: (row) => (
+        <p className="whitespace-normal leading-6 text-text-primary" dir="auto">
+          {compactNews(row.khabar)}
+        </p>
+      ),
+      sortValue: (row) => row.khabar,
+    },
+    {
+      key: "linked",
+      header: "Air violation",
+      className: "w-44 min-w-44",
+      render: (row) => row.air_violation_id ? (
+        <span className="font-semibold text-success">Linked #{row.air_violation_id}</span>
+      ) : (
+        <span className="text-text-muted">Not written</span>
+      ),
+    },
+    {
+      key: "location",
+      header: "Location / action",
+      className: "w-56 min-w-56",
       render: (row) => (
         <div className="space-y-1">
-          <span>{formatDateTime(row.window_start)} - {formatDateTime(row.window_end)}</span>
-          <span className="block text-text-muted">{formatRelativeTime(row.window_end)}</span>
+          <TextCell value={row.village_name} />
+          <p className="text-small text-text-muted">{row.condition_name || emptyText}</p>
         </div>
       ),
-      sortValue: (row) => new Date(row.window_start).getTime(),
+      sortValue: (row) => row.village_name ?? "",
     },
     {
-      key: "count",
-      header: "Reports",
-      className: "w-28",
-      render: (row) => <StatusBadge label={`${row.violation_count} reports`} variant={row.violation_count > 1 ? "accent" : "neutral"} />,
-      sortValue: (row) => row.violation_count,
+      key: "status",
+      header: "Status",
+      className: "w-36 min-w-36",
+      render: (row) => <StatusBadge label={row.status} variant={statusVariant(row.status)} />,
     },
     {
-      key: "villages",
-      header: "Villages",
-      render: (row) => row.villages.length ? (
-        <div className="flex flex-wrap gap-2">
-          {row.villages.map((village) => <StatusBadge key={village} label={village} variant="neutral" />)}
-        </div>
-      ) : <span className="text-text-muted">{emptyText}</span>,
-      sortValue: (row) => row.villages.join(", "),
+      key: "reason",
+      header: "Filter reason",
+      className: "w-[24rem] min-w-[24rem]",
+      render: (row) => (
+        <p className="whitespace-normal text-small leading-5 text-text-muted">
+          {row.reasoning || row.verdict || emptyText}
+        </p>
+      ),
+      sortValue: (row) => row.reasoning ?? row.verdict ?? "",
     },
   ];
 
@@ -309,10 +420,6 @@ export const AirViolationsPage = () => {
       <div className="flex gap-2" aria-label="Record views">
         <Button type="button" variant={importedOnly ? "secondary" : "primary"} aria-pressed={!importedOnly} onClick={() => updateParam("imported_only", "")}>All records</Button>
         <Button type="button" variant={importedOnly ? "primary" : "secondary"} aria-pressed={importedOnly} onClick={() => updateParam("imported_only", "true")}>Imported</Button>
-      </div>
-      <div className="flex gap-2" aria-label="Air violation display mode">
-        <Button type="button" variant={viewMode === "flat" ? "primary" : "secondary"} aria-pressed={viewMode === "flat"} onClick={() => setViewMode("flat")}>Records</Button>
-        <Button type="button" variant={viewMode === "grouped" ? "primary" : "secondary"} aria-pressed={viewMode === "grouped"} onClick={() => setViewMode("grouped")}>Windows</Button>
       </div>
       <div className="rounded-lg border border-border bg-surface-raised p-4">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -479,45 +586,73 @@ export const AirViolationsPage = () => {
         </Dialog>
       ) : null}
 
-      {viewMode === "grouped" ? (
+      <DataTable
+        columns={columns}
+        rows={rows}
+        getRowKey={(row) => String(row.id)}
+        loading={isLoading}
+        error={isError}
+        minWidth="1480px"
+        clientSort={false}
+        emptyState={
+          <EmptyState
+            title={hasFilters ? "No matching air violations" : "No air violations recorded yet"}
+            description={
+              hasFilters
+                ? "Adjust or clear the filters to broaden the results."
+                : "Airspace violation records will appear here once routing starts writing them."
+            }
+          />
+        }
+        errorState={
+          <EmptyState
+            title="Could not load air violations"
+            description="The air violations list could not be loaded. Please try again."
+          />
+        }
+      />
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-h4 font-semibold text-text-primary">Red Alert filtered news</h2>
+            <p className="mt-1 text-small text-text-muted">
+              {redAlertNewsQuery.data?.total ?? 0} Red Alert items match the selected time filters.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-9"
+            isLoading={redAlertNewsQuery.isFetching}
+            loadingText="Refreshing"
+            onClick={() => redAlertNewsQuery.refetch()}
+          >
+            Refresh Red Alert
+          </Button>
+        </div>
         <DataTable
-          columns={windowColumns}
-          rows={windows.data?.items ?? []}
-          getRowKey={(row) => row.id}
-          loading={windows.isLoading}
-          error={windows.isError}
-          minWidth="100%"
-          clientSort={false}
-          emptyState={<EmptyState title="No airspace windows" description="Matching reports will be grouped into rolling caza windows." />}
-          errorState={<EmptyState title="Could not load airspace windows" description="The grouped air violations list could not be loaded." />}
-        />
-      ) : (
-        <DataTable
-          columns={columns}
-          rows={rows}
+          columns={redAlertColumns}
+          rows={redAlertRows}
           getRowKey={(row) => String(row.id)}
-          loading={isLoading}
-          error={isError}
-          minWidth="100%"
+          loading={redAlertNewsQuery.isLoading}
+          error={redAlertNewsQuery.isError}
+          minWidth="1420px"
           clientSort={false}
           emptyState={
             <EmptyState
-              title={hasFilters ? "No matching air violations" : "No air violations recorded yet"}
-              description={
-                hasFilters
-                  ? "Adjust or clear the filters to broaden the results."
-                  : "Airspace violation records will appear here once routing starts writing them."
-              }
+              title="No Red Alert news in this filter"
+              description="Adjust the time filters above to inspect more Red Alert source messages."
             />
           }
           errorState={
             <EmptyState
-              title="Could not load air violations"
-              description="The air violations list could not be loaded. Please try again."
+              title="Could not load Red Alert news"
+              description="The filtered Red Alert list could not be loaded. Please try again."
             />
           }
         />
-      )}
+      </section>
 
       {selectedViolation ? (
         <Dialog
@@ -537,6 +672,7 @@ export const AirViolationsPage = () => {
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (Arabic)</dt><dd className="mt-1 text-right" dir="rtl" lang="ar">{selectedViolation.action_ar}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Original source</dt><dd className="mt-1">{selectedViolation.source_name}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Date and time</dt><dd className="mt-1">{selectedViolation.import_enrichment?.date_source === "fallback" ? "Not available in the file or source" : `${formatDate(selectedViolation.event_date)} at ${formatTime(selectedViolation.event_time)}`}</dd></div>
+            <div><dt className="text-caption font-semibold uppercase text-text-muted">Window</dt><dd className="mt-1"><WindowCell row={selectedViolation} /></dd></div>
           </dl>
           <div className="mt-5 rounded-md border border-border bg-surface p-4">
             <p className="text-caption font-semibold uppercase text-text-muted">News</p>
@@ -747,7 +883,7 @@ export const AirViolationsPage = () => {
         </Dialog>
       ) : null}
 
-      {viewMode === "flat" && total > PAGE_SIZE ? (
+      {total > PAGE_SIZE ? (
         <div className="flex items-center justify-between gap-3">
           <p className="text-small text-text-muted">
             Page {page} of {totalPages} · {total} records
@@ -765,31 +901,6 @@ export const AirViolationsPage = () => {
               type="button"
               variant="secondary"
               disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      ) : null}
-      {viewMode === "grouped" && windowTotal > PAGE_SIZE ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-small text-text-muted">
-            Window page {page} of {windowTotalPages} Â· {windowTotal} windows
-          </p>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-            >
-              Previous
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={page >= windowTotalPages}
               onClick={() => setPage(page + 1)}
             >
               Next

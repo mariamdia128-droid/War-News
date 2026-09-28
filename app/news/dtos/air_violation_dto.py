@@ -20,6 +20,10 @@ class AirViolationDTO(BaseModel):
     event_month: str | None
     event_date: date
     event_time: time | None
+    window_id: str | None = None
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    window_violation_count: int | None = None
     khabar: str
     note_1: str | None
     note_2: str | None

@@ -12,6 +12,7 @@ import type {
   VillageOption,
   RejectedNewsItem,
   RejectedNewsListResponse,
+  FilteredNewsListResponse,
 } from "./types";
 
 export const getRejectedNews = async (limit: number, offset: number, search: string): Promise<RejectedNewsListResponse> => {
@@ -26,6 +27,39 @@ export const getRejectedNewsById = async (id: number): Promise<RejectedNewsItem>
 
 export const restoreRejectedNews = async (id: number): Promise<void> => {
   await apiClient.post(`/rejected-news/${id}/restore`);
+};
+
+export type FilteredNewsFilters = {
+  limit: number;
+  offset: number;
+  eventDateFrom?: string;
+  eventDateTo?: string;
+  sourceName?: string;
+  status?: string;
+  relatedOnly?: boolean;
+  includeRejectedRedAlert?: boolean;
+  lastHours?: string;
+  search?: string;
+};
+
+export const getFilteredNews = async (
+  filters: FilteredNewsFilters,
+): Promise<FilteredNewsListResponse> => {
+  const params = new URLSearchParams();
+  params.set("limit", String(filters.limit));
+  params.set("offset", String(filters.offset));
+  if (filters.eventDateFrom) params.set("event_date_from", filters.eventDateFrom);
+  if (filters.eventDateTo) params.set("event_date_to", filters.eventDateTo);
+  if (filters.sourceName) params.set("source_name", filters.sourceName);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.relatedOnly) params.set("related_only", "true");
+  if (filters.includeRejectedRedAlert) params.set("include_rejected_red_alert", "true");
+  if (filters.lastHours) params.set("last_hours", filters.lastHours);
+  if (filters.search) params.set("search", filters.search);
+  const response = await apiClient.get<FilteredNewsListResponse>(
+    `/filtered-news?${params.toString()}`,
+  );
+  return response.data;
 };
 
 export type WorkbookImportSummary = {
@@ -72,6 +106,7 @@ export const getIncidents = async (
   if (filters.verificationStatus) {
     params.set("verification_status", filters.verificationStatus);
   }
+  if (filters.verificationType) params.set("verification_type", filters.verificationType);
   if (filters.duplicateOnly) {
     params.set("duplicate_only", "true");
   }

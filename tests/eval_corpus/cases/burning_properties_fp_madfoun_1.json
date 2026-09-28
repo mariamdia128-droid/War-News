@@ -1,0 +1,18 @@
+{
+  "bug_ref": "burning-properties-fp-madfoun-1",
+  "description": "Civilian car fire near Madfoun bridge, no war attribution — must not become Burning Properties.",
+  "source": "CNRS fallback fire_incident false positive, fixed commit e682d3a",
+  "check": "cnrs_fire_attribution",
+  "input": {
+    "post_text": "احتراق سيارة عند جسر المدفون ... اندلع حريق بسيارة",
+    "classification": {
+      "include": true,
+      "event_domain": "fire",
+      "event_subtype": "fire_incident",
+      "mentions_israeli_actor": false
+    }
+  },
+  "expected": {
+    "trusted_action": null
+  }
+}

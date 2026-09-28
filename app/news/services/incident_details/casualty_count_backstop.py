@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import logging
-import re
 
-from app.core.llm_knowledge.loader import terms_by_category
 from app.llm.dtos import CasualtyCountEvidence, ExtractionCasualties
+from app.news.services.incident_details.casualty_text import (
+    field_kind,
+    find_explicit_none,
+    find_supporting_mention,
+    has_vague_quantifier,
+    strike_list_number_spans,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,60 +26,15 @@ CASUALTY_COUNT_FIELDS: tuple[str, ...] = (
     "children_injuries",
 )
 
-_WESTERN_TO_ARABIC_INDIC = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
-_CASUALTY_GENDER_YAML = "terminology/casualty_gender.yaml"
 
-# knowledge: Arabic count words from YAML. code-logic: digit/span validation below.
-def _death_count_words(*, dual: bool) -> tuple[str, ...]:
-    words = terms_by_category(_CASUALTY_GENDER_YAML, "death_count_word")
-    if dual:
-        return tuple(term for term in words if term.endswith(("ان", "ين")))
-    return tuple(term for term in words if not term.endswith(("ان", "ين")))
-
-
-_EXPLICIT_COUNT_WORDS: dict[str, dict[int, tuple[str, ...]]] = {
-    "deaths": {
-        1: terms_by_category(_CASUALTY_GENDER_YAML, "male_death_singular")
-        + terms_by_category(_CASUALTY_GENDER_YAML, "female_death_singular")
-        + _death_count_words(dual=False),
-        2: terms_by_category(_CASUALTY_GENDER_YAML, "male_death_dual")
-        + terms_by_category(_CASUALTY_GENDER_YAML, "female_death_dual")
-        + _death_count_words(dual=True),
-    },
-    "injuries": {
-        1: terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_singular")
-        + terms_by_category(_CASUALTY_GENDER_YAML, "female_injury_singular"),
-        2: terms_by_category(_CASUALTY_GENDER_YAML, "male_injury_dual")
-        + terms_by_category(_CASUALTY_GENDER_YAML, "female_injury_dual"),
-    },
-}
-
-
-def _digit_forms(value: int) -> tuple[str, str]:
-    western = str(value)
-    return western, western.translate(_WESTERN_TO_ARABIC_INDIC)
-
-
-def text_contains_count_digit(text: str, value: int) -> bool:
-    """True when *value* appears as a Western or Arabic-Indic numeral in *text*."""
-    western, arabic_indic = _digit_forms(value)
-    # Require digit-boundary so count=1 does not match inside 10/11/... .
-    pattern = (
-        rf"(?<![0-9٠-٩])(?:{re.escape(western)}|{re.escape(arabic_indic)})"
-        rf"(?![0-9٠-٩])"
-    )
-    return bool(re.search(pattern, text))
-
-
-def _evidence_contains_explicit_count(text: str, field: str, value: int) -> bool:
-    if text_contains_count_digit(text, value):
-        return True
-    root_field = field.removeprefix("total_")
-    words = _EXPLICIT_COUNT_WORDS.get(root_field, {}).get(value, ())
-    return any(
-        re.search(rf"(?<![\w]){re.escape(word)}(?![\w])", text)
-        for word in words
-    )
+def _unsupported_detail(span: str, source: str, field: str) -> str:
+    """Why a grounded evidence span failed; for logs only."""
+    kind, _ = field_kind(field)
+    if any(span in entry or entry in span for entry in strike_list_number_spans(source)):
+        return "strike_count_list"
+    if has_vague_quantifier(span, kind):
+        return "vague_quantifier"
+    return "no_adjacent_casualty_noun"
 
 
 def apply_casualty_count_backstop(
@@ -84,11 +44,19 @@ def apply_casualty_count_backstop(
     *,
     raw_message_id: int | None = None,
 ) -> tuple[ExtractionCasualties, list[CasualtyCountEvidence]]:
-    """Null casualty counts that lack a source digit and/or evidence_span.
+    """Null casualty counts that the source does not explicitly state.
 
-    Safety net behind LLM extraction: a non-null count is kept only when its
-    evidence span occurs in the source and contains either the explicit digit
-    or an unambiguous Arabic singular/dual casualty form for 1 or 2.
+    Safety net behind LLM extraction. A non-null count is kept only when the
+    value is written next to a matching casualty noun (a digit, a spelled-out
+    number, or an Arabic singular/dual form — see ``casualty_text``):
+
+    * inside its grounded ``evidence_span``; or
+    * when the span is missing or not in the source, somewhere in the source,
+      in which case that local phrase becomes the evidence span.
+
+    Dates, times, URLs, «place (n)» strike-count entries and vague quantifiers
+    («وقوع إصابات»، «عشرات الجرحى») never validate a count. A count of 0 is
+    kept only when the text says so explicitly («دون تسجيل إصابات»).
     """
     evidence_by_field: dict[str, CasualtyCountEvidence] = {}
     for item in evidence or []:
@@ -107,40 +75,64 @@ def apply_casualty_count_backstop(
         value = values.get(field)
         if value is None:
             continue
-        if not isinstance(value, int):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             values[field] = None
             continue
 
         field_evidence = evidence_by_field.get(field)
         span_is_grounded = (
-            field_evidence is not None
-            and field_evidence.evidence_span in text
+            field_evidence is not None and field_evidence.evidence_span in text
         )
-        has_explicit_count = (
-            field_evidence is not None
-            and _evidence_contains_explicit_count(
-                field_evidence.evidence_span,
-                field,
-                value,
+        kind, _ = field_kind(field)
+
+        if value == 0:
+            phrase = (
+                find_explicit_none(field_evidence.evidence_span, kind)
+                if span_is_grounded
+                else None
             )
-        )
-        if not span_is_grounded or not has_explicit_count:
+            if phrase is not None:
+                kept_evidence.append(field_evidence)
+                continue
+            phrase = find_explicit_none(text, kind)
+            if phrase is not None:
+                kept_evidence.append(
+                    CasualtyCountEvidence(field=field, evidence_span=phrase)
+                )
+                continue
+            reason = "zero_without_explicit_none"
+        elif span_is_grounded:
+            if find_supporting_mention(field_evidence.evidence_span, field, value):
+                kept_evidence.append(field_evidence)
+                continue
+            # A grounded span that does not state the value stays nulled even
+            # if another clause of the message has that number.
+            reason = "digit_not_in_source detail=" + _unsupported_detail(
+                field_evidence.evidence_span, text, field
+            )
+        else:
+            # Missing or ungrounded span (import/LLM evidence gaps): keep the
+            # value only if the source states it next to a matching noun.
+            mention = find_supporting_mention(text, field, value)
+            if mention is not None:
+                kept_evidence.append(
+                    CasualtyCountEvidence(field=field, evidence_span=mention.text)
+                )
+                continue
             reason = (
                 "missing_evidence_span"
                 if field_evidence is None
                 else "digit_not_in_source"
             )
-            logger.warning(
-                "casualty_count_backstop nulled field=%s value=%s reason=%s "
-                "raw_message_id=%s",
-                field,
-                value,
-                reason,
-                raw_message_id,
-            )
-            values[field] = None
-            continue
 
-        kept_evidence.append(field_evidence)
+        logger.warning(
+            "casualty_count_backstop nulled field=%s value=%s reason=%s "
+            "raw_message_id=%s",
+            field,
+            value,
+            reason,
+            raw_message_id,
+        )
+        values[field] = None
 
     return ExtractionCasualties.model_validate(values), kept_evidence

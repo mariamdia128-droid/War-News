@@ -1,0 +1,13 @@
+{
+  "bug_ref": "secondary-strike-connector-zawtar-ayta",
+  "description": "\"كما طال القصف ... بلدة Y\" introduces a genuinely separate second strike location; it must not be dropped the way a محيط/بين vicinity phrase is collapsed (inverse of the fuzzy-area bug).",
+  "source": "real bulletin, Bug 4 (2026-09-21 follow-up), event 2026-09-20 09:49",
+  "check": "secondary_strike_recovery",
+  "input": {
+    "post_text": "...أطراف بلدة زوطر الشرقية في اتجاه ميفدون... كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل",
+    "villages": ["زوطر الشرقية"]
+  },
+  "expected": {
+    "villages": ["زوطر الشرقية", "عيتا الجبل"]
+  }
+}

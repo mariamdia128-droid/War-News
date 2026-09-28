@@ -13,6 +13,7 @@ import {
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLES, type Role } from "../constants/roles";
 import { cn } from "../lib/cn";
+import { incidentsNavTarget } from "../lib/rolePath";
 import { useAuthStore } from "../stores/authStore";
 import { logout as revokeSession } from "../features/auth/api";
 
@@ -190,6 +191,7 @@ const navItems: NavItem[] = [
 const pageMeta = [
   { match: (pathname: string) => pathname.endsWith("/dashboard"), title: "Dashboard" },
   { match: (pathname: string) => pathname.includes("/air-violations"), title: "Air Violations" },
+  { match: (pathname: string) => pathname.includes("/filtered-news"), title: "Filtered News" },
   { match: (pathname: string) => pathname.includes("/incidents"), title: "Incidents" },
   { match: (pathname: string) => pathname.includes("/rejected-news"), title: "Rejected News" },
   { match: (pathname: string) => pathname.includes("/sources"), title: "Sources" },
@@ -266,12 +268,17 @@ const SidebarContent = ({
         <div className="space-y-2">
           {visibleItems.map((item) => {
             const Icon = item.icon;
-            const to = `${roleBase}/${item.path}`;
-            const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`);
+            const to =
+              item.path === "incidents"
+                ? incidentsNavTarget(roleBase, location.pathname, location.search)
+                : `${roleBase}/${item.path}`;
+            const isActive =
+              location.pathname === `${roleBase}/${item.path}` ||
+              location.pathname.startsWith(`${roleBase}/${item.path}/`);
 
             return (
               <NavLink
-                key={to}
+                key={`${roleBase}/${item.path}`}
                 to={to}
                 onClick={onNavigate}
                 aria-current={isActive ? "page" : undefined}

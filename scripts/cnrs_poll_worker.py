@@ -8,6 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.news.models import MessageStatus, RawMessage
+from app.news.services.pipeline.pipeline_jobs import enqueue_pipeline_sweep
+from app.core.seeds.seed_cnrs_source import ensure_cnrs_source
 from app.sources.actions.ingest_source_action import (
     IngestSourceAction,
     _derive_platform_from_external_id,
@@ -18,7 +20,7 @@ from app.sources.services.cnrs_source import CNRSSourceProvider
 
 logger = logging.getLogger(__name__)
 
-SOURCE_ID = 3
+CNRS_SOURCE_EXTERNAL_ID = "cnrs_webhook"
 PAGE_LIMIT = 2000
 
 
@@ -99,9 +101,16 @@ def min_datetime_from_hours(
     return current - timedelta(hours=hours)
 
 
+def _numeric_cursor(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized if normalized.isdigit() else None
+
+
 def _resolve_resume_cursor(
     repo: SourceRepository,
-    source_id: int,
+    source,
     override_after_id: str | None,
 ) -> str:
     if override_after_id is not None:
@@ -111,7 +120,11 @@ def _resolve_resume_cursor(
         )
         return override_after_id
 
-    current_cursor = _last_ingested_cursor(repo, source_id)
+    source_cursor = _numeric_cursor(getattr(source, "last_cursor", None))
+    if source_cursor is not None:
+        return source_cursor
+
+    current_cursor = _last_ingested_cursor(repo, source.id)
     if current_cursor is not None:
         return current_cursor
 
@@ -119,7 +132,7 @@ def _resolve_resume_cursor(
         "No numeric CNRS resume cursor found for source_id=%s; refusing to "
         "default to after_id=0. Pass --after-id <numeric_cnrs_post_id> for "
         "the first poll-worker run.",
-        source_id,
+        source.id,
     )
     raise CnrsPollBootstrapRequired(
         "CNRS poll worker requires --after-id <numeric_cnrs_post_id> on the "
@@ -143,8 +156,23 @@ def _effective_next_cursor(
     return current_cursor
 
 
+def _resolve_source(repo: SourceRepository, source_id: int | None):
+    if source_id is not None:
+        source = repo.get_by_id(source_id)
+        if source is None:
+            raise RuntimeError(f"Source id={source_id} was not found.")
+        return source
+
+    source = repo.get_active_by_external_id(CNRS_SOURCE_EXTERNAL_ID)
+    if source is None:
+        raise RuntimeError(
+            f"Active CNRS source external_id={CNRS_SOURCE_EXTERNAL_ID!r} was not found."
+        )
+    return source
+
+
 def run_poll_pass(
-    source_id: int = SOURCE_ID,
+    source_id: int | None = None,
     page_limit: int = PAGE_LIMIT,
     after_id: str | None = None,
     hours: int | None = None,
@@ -152,18 +180,18 @@ def run_poll_pass(
     db = SessionLocal()
     try:
         repo = SourceRepository(db)
-        source = repo.get_by_id(source_id)
-        if source is None:
-            raise RuntimeError(f"Source id={source_id} was not found.")
+        ensure_cnrs_source(db)
+        source = _resolve_source(repo, source_id)
+        resolved_source_id = source.id
         if not source.is_active:
-            raise RuntimeError(f"Source id={source_id} is inactive.")
+            raise RuntimeError(f"Source id={resolved_source_id} is inactive.")
 
         provider = CNRSSourceProvider(
             config=source.config,
             api_key=_resolve_cnrs_api_key(),
         )
         started_at = datetime.now(timezone.utc)
-        current_cursor = _resolve_resume_cursor(repo, source_id, after_id)
+        current_cursor = _resolve_resume_cursor(repo, source, after_id)
         min_message_datetime = min_datetime_from_hours(hours, now=started_at)
         fetched = 0
         inserted = 0
@@ -213,6 +241,10 @@ def run_poll_pass(
 
                         source_name = item.get("source_name") or source.name
                         origin_account = item.get("origin_account") or source_name
+                        source_platform_id = repo.get_or_create_source_platform_id(
+                            source_platform,
+                            source_name,
+                        )
                         if repo.is_content_source_blocked(
                             source_platform,
                             origin_account,
@@ -223,10 +255,11 @@ def run_poll_pass(
 
                         repo.add_raw_message(
                             RawMessage(
-                                source_id=source_id,
+                                source_id=resolved_source_id,
                                 external_message_id=external_message_id,
                                 source_platform=source_platform,
                                 source_name=source_name,
+                                source_platform_id=source_platform_id,
                                 origin_platform=item.get("origin_platform")
                                 or source_platform,
                                 origin_account=origin_account,
@@ -267,7 +300,7 @@ def run_poll_pass(
                     break
         finally:
             repo.write_ingestion_log(
-                source_id=source_id,
+                source_id=resolved_source_id,
                 messages_fetched=fetched,
                 messages_parsed=inserted,
                 messages_failed=failed,
@@ -279,7 +312,7 @@ def run_poll_pass(
             )
 
         summary = {
-            "source_id": source_id,
+            "source_id": resolved_source_id,
             "resume_cursor": current_cursor,
             "fetched": fetched,
             "inserted": inserted,
@@ -288,6 +321,8 @@ def run_poll_pass(
             "failed": failed,
             "skipped_before_cutoff": skipped_before_cutoff,
         }
+        if inserted > 0:
+            enqueue_pipeline_sweep(db, use_advisory_lock=False)
         logger.info("CNRS poll pass complete: %s", summary)
         return summary
     finally:

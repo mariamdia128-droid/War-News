@@ -50,9 +50,7 @@ def receive_cnrs_posts(
     db: Session = Depends(get_db),
 ) -> dict[str, int]:
     sources = SourceRepository(db)
-    source = sources.get_by_id(source_id) if source_id is not None else None
-    if source is None:
-        source = sources.get_active_by_external_id("cnrs_webhook")
+    source = sources.get_active_by_external_id("cnrs_webhook")
     if source is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -61,6 +59,9 @@ def receive_cnrs_posts(
 
     action = ReceiveCnrsWebhookAction(sources=sources)
     result = action.execute(payload=payload, source_id=source.id)
-    if db is not None:
-        enqueue_pipeline_sweep(db, use_advisory_lock=False)
+    if db is not None and result.get("saved", 0) > 0:
+        # Only enqueue: the dedicated pipeline worker drains the job under the
+        # same advisory lock as every other sweep. LLM work never runs in the
+        # API process.
+        enqueue_pipeline_sweep(db, use_advisory_lock=True)
     return result

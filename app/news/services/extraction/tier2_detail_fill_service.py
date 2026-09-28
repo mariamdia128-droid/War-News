@@ -27,9 +27,15 @@ from app.news.models.bulletin_casualty_group import CasualtyScope as StoredCasua
 from app.news.services.incident_details.category_mapper import (
     compute_rollups,
     map_categories,
+    reconcile_root_vs_entity_casualties,
     suppress_category_casualties,
 )
 from app.news.services.incident_details.casualty_demographic_consistency import reconcile_root_demographics
+from app.news.services.incident_details.casualty_status import (
+    status_for_incident_row,
+    target_location_count_from_extraction,
+)
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.clustering.embedding_service import EmbeddingService
 from app.news.services.matching.emergency_organization_matching_service import (
@@ -80,6 +86,8 @@ class Tier2DetailFillService:
                 post_text=raw_message.raw_text or "",
                 presence_category_keys=extraction.presence_category_keys,
                 root_casualties=extraction.casualties,
+                villages=extraction.village,
+                casualty_scope=extraction.casualty_scope.value,
                 raw_message_id=raw_message_id,
             )
         return self.apply_tier2_result_for_raw_message(
@@ -153,6 +161,16 @@ class Tier2DetailFillService:
         mapped_fields = map_categories(
             extraction.categories,
             emergency_org_matcher=self.emergency_org_matcher,
+        )
+        # Entity-attributed tolls must not remain on root Death/Injuries or
+        # Total_D/Total_Inj double-count them (accuracy-study car/hospital rows).
+        extraction = extraction.model_copy(
+            update={
+                "casualties": reconcile_root_vs_entity_casualties(
+                    mapped_fields,
+                    extraction.casualties,
+                )
+            }
         )
         target_village_ids = self._target_village_ids(raw_message.match_result)
         is_multi_village = len(target_village_ids) > 1
@@ -231,30 +249,21 @@ class Tier2DetailFillService:
                 after = getattr(root, extraction_field)
                 if before != after:
                     setattr(detail, detail_field, after)
-            if (
-                not is_multi_village_aggregate
-                and incident.deaths in (None, 0)
-                and root.deaths is not None
-            ):
-                incident.deaths = root.deaths
-            if (
-                not is_multi_village_aggregate
-                and incident.injuries in (None, 0)
-                and root.injuries is not None
-            ):
-                incident.injuries = root.injuries
-            if (
-                not is_multi_village_aggregate
-                and incident.total_deaths in (None, 0)
-                and total_deaths is not None
-            ):
-                incident.total_deaths = total_deaths
-            if (
-                not is_multi_village_aggregate
-                and incident.total_injuries in (None, 0)
-                and total_injuries is not None
-            ):
-                incident.total_injuries = total_injuries
+            # None means "not stated" and may be filled from the root toll; 0 is a
+            # stated zero (the extraction backstop only keeps 0 with an explicit
+            # «دون تسجيل إصابات»-style phrase) and is never overwritten here.
+            # Multi-village rows keep fast-path's per-village counts: copying the
+            # bulletin-wide root toll recreated the multi-village casualty
+            # misattribution bug, whatever casualty_scope said.
+            if not is_multi_village:
+                if incident.deaths is None and root.deaths is not None:
+                    incident.deaths = root.deaths
+                if incident.injuries is None and root.injuries is not None:
+                    incident.injuries = root.injuries
+                if incident.total_deaths is None and total_deaths is not None:
+                    incident.total_deaths = total_deaths
+                if incident.total_injuries is None and total_injuries is not None:
+                    incident.total_injuries = total_injuries
             self._fill_missing_matches(
                 incident,
                 getattr(raw_message, "match_result", None),
@@ -275,6 +284,29 @@ class Tier2DetailFillService:
                     raw_message_id=raw_message_id,
                     reason=extraction.casualty_scope_review_reason,
                 )
+            row_status = status_for_incident_row(
+                raw_message.raw_text or "",
+                extraction,
+                {
+                    "deaths": incident.deaths,
+                    "injuries": incident.injuries,
+                    "total_deaths": incident.total_deaths,
+                    "total_injuries": incident.total_injuries,
+                },
+                target_location_count=target_location_count_from_extraction(
+                    extraction.village,
+                    extraction.village_roles,
+                    extraction.sub_events,
+                ),
+                row_village_id=incident.village_id,
+                match_result=raw_message.match_result,
+            )
+            incident.casualty_status = row_status.status
+            incident.casualty_deaths_status = row_status.deaths_status
+            incident.casualty_injuries_status = row_status.injuries_status
+            incident.casualty_status_remaining_total = row_status.remaining_total
+            incident.casualty_is_preliminary = row_status.is_preliminary
+            incident.casualty_status_evidence = row_status.evidence
             self._apply_dedup_backstop(
                 incident,
                 embedding,
@@ -298,6 +330,8 @@ class Tier2DetailFillService:
             raw_message.status = MessageStatus.materialized
         raw_message.error_message = None
         self.db.add(raw_message)
+        for incident in incidents:
+            evaluate_casualty_flags_safely(self.db, incident.id)
         self.db.commit()
         logger.info(
             "tier2_detail_fill raw_message_id=%s updated_incidents=%s categories=%s",
@@ -306,6 +340,53 @@ class Tier2DetailFillService:
             len(extraction.categories),
         )
         return updated
+
+    def record_tier2_failure(
+        self,
+        raw_message_id: int,
+        exc: BaseException,
+        *,
+        max_retries: int | None = None,
+    ) -> bool:
+        """
+        Count a failed Tier-2 LLM call without finalizing any incident.
+
+        Incidents keep ``details_pending=True``. Once the retry cap is reached
+        they are flagged ``needs_verification`` and the claim stops picking the
+        message up. Returns True when the cap was reached.
+        """
+        limit = (
+            max_retries
+            if max_retries is not None
+            else settings.extraction_max_retries
+        )
+        raw_message = self.db.get(RawMessage, raw_message_id)
+        if raw_message is None:
+            raise LookupError(f"RawMessage id={raw_message_id} was not found.")
+        raw_message.tier2_retry_count = (raw_message.tier2_retry_count or 0) + 1
+        raw_message.error_message = f"tier2: {exc}"
+        # Keep the lease fresh so the same sweep does not immediately re-claim
+        # the message during an Ollama outage; it expires after the lease window.
+        raw_message.processing_claimed_at = datetime.now(timezone.utc)
+        self.db.add(raw_message)
+        capped = raw_message.tier2_retry_count >= limit
+        if capped:
+            incidents = self.db.scalars(
+                select(Incident).where(
+                    Incident.raw_message_id == raw_message_id,
+                    Incident.details_pending.is_(True),
+                    Incident.is_deleted.is_(False),
+                )
+            ).all()
+            for incident in incidents:
+                incident.verification_status = "needs_verification"
+                incident.verification_reason = (
+                    "Tier 2 detail extraction failed after "
+                    f"{raw_message.tier2_retry_count} retries"
+                )
+                self.db.add(incident)
+        self.db.commit()
+        return capped
 
     @staticmethod
     def _target_village_ids(match_result: dict | None) -> list[int]:
@@ -412,6 +493,8 @@ class Tier2DetailFillService:
     ) -> None:
         if self.dedup_service is None or embedding is None:
             return
+        if incident.village_id is None or incident.condition_id is None:
+            return
 
         existing, score = self.dedup_service.find_best_match(
             village_id=incident.village_id,
@@ -434,22 +517,32 @@ class Tier2DetailFillService:
                 "mapped_fields": mapped_fields,
                 "casualty_transitions": casualty_transitions,
             }
-            canonicalize = getattr(
-                self.dedup_service, "canonicalize_existing_incident", None
-            )
-            if canonicalize is not None:
-                canonicalize(
-                    canonical=existing,
-                    duplicate=incident,
-                    new_candidate_data=candidate_data,
-                    similarity_score=score,
+            try:
+                canonicalize = getattr(
+                    self.dedup_service, "canonicalize_existing_incident", None
                 )
-            else:
-                self.dedup_service.merge_into_incident(
-                    existing=existing,
-                    new_candidate_data=candidate_data,
-                    raw_message_id=raw_message_id,
+                if canonicalize is not None:
+                    canonicalize(
+                        canonical=existing,
+                        duplicate=incident,
+                        new_candidate_data=candidate_data,
+                        similarity_score=score,
+                    )
+                else:
+                    self.dedup_service.merge_into_incident(
+                        existing=existing,
+                        new_candidate_data=candidate_data,
+                        raw_message_id=raw_message_id,
+                    )
+            except ValueError:
+                logger.warning(
+                    "tier2 dedup canonicalize skipped incident_id=%s "
+                    "matched_incident_id=%s",
+                    incident.id,
+                    existing.id,
+                    exc_info=True,
                 )
+                return
             logger.info(
                 "tier2 dedup canonicalized incident_id=%s into incident_id=%s score=%.3f",
                 incident.id,
@@ -459,14 +552,24 @@ class Tier2DetailFillService:
             return
 
         if score >= settings.dedup_low_threshold:
-            incident.duplicate_flag = True
-            incident.verification_status = "needs_verification"
-            incident.verification_reason = "Possible duplicate detected during detail extraction"
-            self.dedup_service.record_possible_duplicate(
-                incident=incident,
-                matched_incident=existing,
-                similarity_score=score,
-            )
+            try:
+                incident.duplicate_flag = True
+                incident.verification_status = "needs_verification"
+                incident.verification_reason = (
+                    "Possible duplicate detected during detail extraction"
+                )
+                self.dedup_service.record_possible_duplicate(
+                    incident=incident,
+                    matched_incident=existing,
+                    similarity_score=score,
+                )
+            except ValueError:
+                logger.warning(
+                    "tier2 dedup possible-duplicate record skipped incident_id=%s",
+                    incident.id,
+                    exc_info=True,
+                )
+                return
             logger.info(
                 "tier2 dedup flagged incident_id=%s possible_duplicate_of=%s score=%.3f",
                 incident.id,

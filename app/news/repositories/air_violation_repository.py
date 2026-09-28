@@ -9,7 +9,11 @@ from zoneinfo import ZoneInfo
 
 from app.core.text_sanitizer import strip_emoji_and_pictographs
 from app.core.cache import increment
-from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_ID_TUPLE, AIR_VIOLATION_CONDITION_IDS
+from app.news.constants.air_violation_conditions import (
+    AIR_VIOLATION_CONDITION_ID_TUPLE,
+    AIR_VIOLATION_CONDITION_IDS,
+    AIR_VIOLATION_WARPLANE_CONDITION_ID,
+)
 from app.news.dtos import (
     AirViolationCreateDTO,
     AirViolationDTO,
@@ -31,6 +35,7 @@ from app.news.models import (
 )
 from app.news.services.air_violations.window_grouping_service import (
     AirViolationWindowInput,
+    assign_air_violation_window_ids,
     group_air_violation_windows,
 )
 from app.news.services.air_violations.caza_alias_resolver import canonicalize_caza
@@ -39,6 +44,37 @@ from app.sources.models import Source, SourceType
 
 BEIRUT_TIMEZONE = ZoneInfo("Asia/Beirut")
 AIR_VIOLATION_CACHE_VERSION_KEY = "air-violations:cache-version"
+AIR_VIOLATION_CAZA_ALIASES: dict[str, tuple[str, str | None]] = {
+    "hermel": ("Hermel", "\u0627\u0644\u0647\u0631\u0645\u0644"),
+    "baalbeck": ("Baalbek", "\u0628\u0639\u0644\u0628\u0643"),
+    "baalbek": ("Baalbek", "\u0628\u0639\u0644\u0628\u0643"),
+    "saida": ("Saida", "\u0635\u064a\u062f\u0627"),
+    "sidon": ("Saida", "\u0635\u064a\u062f\u0627"),
+    "west beqaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+    "west bekaa": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+    "\u0627\u0644\u0628\u0642\u0627\u0639": ("West Bekaa", "\u0627\u0644\u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a"),
+    "\u0627\u0644\u062c\u0646\u0648\u0628": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+}
+AIR_VIOLATION_WARPLANE_CAZA_HOURS = 4
+AIR_VIOLATION_DEFAULT_CAZA_HOURS = 1
+
+
+def _normalize_caza_token(value: str) -> str:
+    return re.sub(r"[\W_]+", " ", value.casefold()).strip()
+
+
+def air_violation_caza_window_hours(caza_en: str | None, condition_id: int | None = None) -> int:
+    if condition_id == AIR_VIOLATION_WARPLANE_CONDITION_ID:
+        return AIR_VIOLATION_WARPLANE_CAZA_HOURS
+    return AIR_VIOLATION_DEFAULT_CAZA_HOURS
+
+
+def _air_violation_event_datetime(record: AirViolation) -> datetime:
+    return datetime.combine(record.event_date, record.event_time or time.min)
+
+
+def _normalize_duplicate_text(value: str | None) -> str:
+    return re.sub(r"\s+", " ", (value or "").casefold()).strip()
 
 
 def as_beirut_datetime(value):
@@ -97,11 +133,22 @@ def air_violation_caza_labels(
 ) -> tuple[str | None, str | None]:
     """Label bulletins naming several cazas without choosing a false locality."""
     normalized_text = text.casefold()
+    normalized_token_text = _normalize_caza_token(text)
     mentioned: set[tuple[str | None, str | None]] = set()
+    known_by_english = {
+        _normalize_caza_token(caza_en): (caza_en, caza_ar)
+        for caza_en, caza_ar in known_cazas
+        if caza_en
+    }
     for caza_en, caza_ar in known_cazas:
         names = [name.casefold() for name in (caza_en, caza_ar) if name and len(name) >= 4]
         if any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", normalized_text) for name in names):
             mentioned.add((caza_en, caza_ar))
+    for alias, canonical in AIR_VIOLATION_CAZA_ALIASES.items():
+        if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", normalized_token_text):
+            mentioned.add(
+                known_by_english.get(_normalize_caza_token(canonical[0]), canonical)
+            )
     if len(mentioned) > 1:
         return "Multiple regions", "مناطق متعددة"
     if len(mentioned) == 1:
@@ -177,6 +224,52 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             ] or ([item["village_en"]] if item.get("village_en") else [])
             item.pop("import_location_text", None)
         return data
+
+    @staticmethod
+    def _air_violation_window_input(item: dict[str, object]) -> AirViolationWindowInput:
+        return AirViolationWindowInput(
+            id=int(item["id"]),
+            condition_id=int(item["condition_id"]),
+            caza_en=item.get("caza_en"),
+            caza_ar=item.get("caza_ar"),
+            event_date=item["event_date"],
+            event_time=item.get("event_time"),
+            villages=tuple(item.get("villages") or []),
+        )
+
+    @staticmethod
+    def _attach_window_metadata(
+        items: list[dict[str, object]],
+        all_items: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        assignments = assign_air_violation_window_ids(
+            AirViolationRepository._air_violation_window_input(item)
+            for item in all_items
+        )
+        window_stats: dict[str, dict[str, object]] = {}
+        for item in all_items:
+            item_id = int(item["id"])
+            window_id = assignments.get(item_id) or item.get("window_id")
+            if not window_id:
+                continue
+            item_dt = datetime.combine(item["event_date"], item.get("event_time") or time.min)
+            stats = window_stats.setdefault(
+                str(window_id),
+                {"start": item_dt, "end": item_dt, "count": 0},
+            )
+            stats["start"] = min(stats["start"], item_dt)
+            stats["end"] = max(stats["end"], item_dt)
+            stats["count"] = int(stats["count"]) + 1
+
+        for item in items:
+            item_id = int(item["id"])
+            window_id = assignments.get(item_id) or item.get("window_id")
+            item["window_id"] = window_id
+            stats = window_stats.get(str(window_id)) if window_id else None
+            item["window_start"] = stats["start"] if stats else None
+            item["window_end"] = stats["end"] if stats else None
+            item["window_violation_count"] = stats["count"] if stats else None
+        return items
 
     @staticmethod
     def _location_entries_from_match(result: MatchResultDTO) -> list[dict[str, object]]:
@@ -346,6 +439,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
+                AirViolation.window_id,
                 AirViolation.khabar,
                 AirViolation.note_1,
                 AirViolation.note_2,
@@ -393,10 +487,20 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             .where(*filters)
         )
 
+        all_rows = self.db.execute(
+            base_query.order_by(
+                AirViolation.event_date.asc(),
+                AirViolation.event_time.asc().nullsfirst(),
+                AirViolation.id.asc(),
+            )
+        ).all()
+        page_items = self._with_village_labels(rows)
+        all_items = self._with_village_labels(all_rows)
+
         return AirViolationListResponse(
             items=[
                 AirViolationDTO.model_validate(item)
-                for item in self._with_village_labels(rows)
+                for item in self._attach_window_metadata(page_items, all_items)
             ],
             total=int(total or 0),
             limit=params.limit,
@@ -429,6 +533,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
+                AirViolation.window_id,
                 AirViolation.khabar,
                 AirViolation.note_1,
                 AirViolation.note_2,
@@ -462,8 +567,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         if row is None:
             return None
         return AirViolationDTO.model_validate(self._with_village_labels([row])[0])
-
-    def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
+    def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
         if result.matched_condition_id not in AIR_VIOLATION_CONDITION_IDS:
             return False
         matched_village_id: int | None = next(
@@ -506,6 +610,14 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             "note_2": payload.get("note_2"),
             "source_link": str(link) if link else None,
         }
+        if existing is None and self._has_recent_air_violation(
+            caza_en,
+            caza_ar,
+            occurred_at,
+            condition_id=result.matched_condition_id,
+            khabar=values["khabar"],
+        ):
+            return False
         if existing is None:
             existing = AirViolation(raw_message_id=message.id, **values)
             self._sync_locations(existing, self._location_entries_from_match(result))
@@ -518,6 +630,38 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         increment(AIR_VIOLATION_CACHE_VERSION_KEY)
         return True
 
+    def _has_recent_air_violation(
+        self,
+        caza_en: str | None,
+        caza_ar: str | None,
+        occurred_at: datetime,
+        *,
+        condition_id: int,
+        khabar: str | None,
+    ) -> bool:
+        window_hours = air_violation_caza_window_hours(caza_en, condition_id)
+        cutoff = occurred_at - timedelta(hours=window_hours)
+        filters = [
+            AirViolation.condition_id == condition_id,
+            AirViolation.event_date >= cutoff.date(),
+            AirViolation.event_date <= occurred_at.date(),
+        ]
+        if caza_en:
+            filters.append(AirViolation.caza_en == caza_en)
+        elif caza_ar:
+            filters.append(AirViolation.caza_ar == caza_ar)
+        else:
+            filters.append(AirViolation.caza_en.is_(None))
+            filters.append(AirViolation.caza_ar.is_(None))
+        existing_records = self.db.scalars(select(AirViolation).where(*filters)).all()
+        occurred_naive = occurred_at.replace(tzinfo=None)
+        cutoff_naive = cutoff.replace(tzinfo=None)
+        normalized_khabar = _normalize_duplicate_text(khabar)
+        return any(
+            cutoff_naive <= _air_violation_event_datetime(record) <= occurred_naive
+            and _normalize_duplicate_text(record.khabar) == normalized_khabar
+            for record in existing_records
+        )
     @staticmethod
     def _filters(params: AirViolationListParams) -> list[object]:
         filters: list[object] = [AirViolation.condition_id.in_(AIR_VIOLATION_CONDITION_ID_TUPLE)]
@@ -560,6 +704,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.event_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
+                AirViolation.window_id,
                 AirViolation.khabar,
                 AirViolation.note_1,
                 AirViolation.note_2,
@@ -584,6 +729,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         grouped = group_air_violation_windows(
             AirViolationWindowInput(
                 id=int(item["id"]),
+                condition_id=int(item["condition_id"]),
                 caza_en=item.get("caza_en"),
                 caza_ar=item.get("caza_ar"),
                 event_date=item["event_date"],

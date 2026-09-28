@@ -1,0 +1,16 @@
+{
+  "bug_ref": "wadi-selouqi-touline-alias",
+  "description": "Recurring Wadi el-Selouqi south-Lebanon reference must resolve to Touline, not the unrelated Slouqi/Slouky Baalbek ACS row.",
+  "source": "real production bulletin: تمشيط باتجاه ياحون / إلقاء قنابل مضيئة باتجاه وادي السلوقي لجهة طلوسة",
+  "check": "village_alias",
+  "input": {
+    "mention": "وادي السلوقي",
+    "aliases": {
+      "وادي السلوقي": 1464
+    }
+  },
+  "expected": {
+    "matched_village_id": 1464,
+    "status": "matched"
+  }
+}

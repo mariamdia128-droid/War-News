@@ -56,7 +56,10 @@ def test_pipeline_duplicate_for_raw_message_id_retires_incident() -> None:
     assert deleted_ids == [incident.id]
     assert incident.is_deleted is True
     assert incident.duplicate_flag is False
-    assert db.added == [incident]
+    assert db.added[-1] is incident
+    [audit] = [row for row in db.added if isinstance(row, IncidentUpdate)]
+    assert audit.action == UpdateAction.delete
+    assert audit.new_values["deleted_reason"] == "cluster_subsumption"
     assert db.flush_calls == 1
 
 
@@ -200,7 +203,9 @@ class _VerificationSessionStub:
         self.committed = False
 
     def scalar(self, _statement: object) -> object:
-        return next(self.results)
+        # Third query is the per-incident reject sibling check: no other live
+        # village incident, so the raw message itself moves to Rejected News.
+        return next(self.results, None)
 
     def add(self, value: object) -> None:
         self.added.append(value)
@@ -469,6 +474,39 @@ def test_list_filters_hide_rejected_but_keep_needs_verification_by_default() -> 
     assert "incidents.verification_status = " in " ".join(
         str(filter_) for filter_ in rejected_filters
     ).lower()
+
+
+def test_list_filters_exclude_air_violation_conditions() -> None:
+    filters = IncidentRepository._list_filters(IncidentListParams())
+    compiled = _compiled_filters(filters)
+
+    assert "incidents.condition_id" in compiled
+    assert "35" in compiled
+    assert "36" in compiled
+    assert "38" in compiled
+
+
+def test_list_filters_hide_ordinary_burning_properties_incidents() -> None:
+    filters = IncidentRepository._list_filters(IncidentListParams())
+    compiled = _compiled_filters(filters)
+
+    assert "burning properties" in compiled
+    assert "incidents.khabar" in compiled
+    assert "raw_messages.raw_text" in compiled
+    assert "israel" in compiled
+    assert "قصف" in compiled
+
+
+def test_list_filters_hide_palestine_only_incidents() -> None:
+    filters = IncidentRepository._list_filters(IncidentListParams())
+    compiled = _compiled_filters(filters)
+
+    assert "ramallah" in compiled
+    assert "gaza" in compiled
+    assert "رام الله" in compiled
+    assert "غزة" in compiled
+    assert "lebanon" in compiled
+    assert "لبنان" in compiled
 
 
 def test_user_visible_needs_verification_requires_duplicate_flag() -> None:

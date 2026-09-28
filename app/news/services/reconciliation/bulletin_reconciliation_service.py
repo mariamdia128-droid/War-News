@@ -20,6 +20,8 @@ from app.news.services.clustering.clustering_service import (
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
+from app.news.services.incident_details.casualty_status import merge_casualty_status
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,11 @@ class BulletinReconciliationService:
                     summary["succeeded"] += 1
                     continue
                 self._apply_candidate(group, candidate, resolved_at=now)
+                for incident in self.db.scalars(select(Incident).where(
+                    Incident.raw_message_id == group.raw_message_id,
+                    Incident.is_deleted.is_(False),
+                )).all():
+                    evaluate_casualty_flags_safely(self.db, incident.id)
                 self.db.commit()
                 summary["resolved"] += 1
                 summary["succeeded"] += 1
@@ -161,11 +168,54 @@ class BulletinReconciliationService:
             old_values = {
                 "deaths": incident.deaths,
                 "injuries": incident.injuries,
+                "casualty_status": getattr(incident, "casualty_status", None),
+                "casualty_deaths_status": getattr(incident, "casualty_deaths_status", None),
+                "casualty_injuries_status": getattr(incident, "casualty_injuries_status", None),
+                "casualty_status_remaining_total": getattr(
+                    incident, "casualty_status_remaining_total", None
+                ),
+                "casualty_is_preliminary": getattr(
+                    incident, "casualty_is_preliminary", None
+                ),
+                "casualty_status_evidence": getattr(
+                    incident, "casualty_status_evidence", None
+                ),
             }
             if deaths is not None:
                 incident.deaths = deaths
             if injuries is not None:
                 incident.injuries = injuries
+            if deaths is not None or injuries is not None:
+                incoming_extraction = ExtractionResult.model_validate(
+                    candidate.extraction_result or {}
+                )
+                merged_status = merge_casualty_status(
+                    getattr(incident, "casualty_status", None),
+                    bool(getattr(incident, "casualty_is_preliminary", False)),
+                    getattr(incident, "casualty_status_evidence", None),
+                    "exact",
+                    incoming_extraction.casualty_is_preliminary,
+                    incoming_extraction.casualty_status_evidence,
+                    incoming_is_newest=True,
+                    current_deaths_status=getattr(incident, "casualty_deaths_status", None),
+                    incoming_deaths_status=incoming_extraction.casualty_deaths_status,
+                    current_injuries_status=getattr(incident, "casualty_injuries_status", None),
+                    incoming_injuries_status=incoming_extraction.casualty_injuries_status,
+                    current_remaining_total=getattr(incident, "casualty_status_remaining_total", None),
+                    incoming_remaining_total=incoming_extraction.casualty_status_remaining_total,
+                )
+                incident.casualty_status = merged_status["casualty_status"]
+                incident.casualty_deaths_status = merged_status.get("casualty_deaths_status")
+                incident.casualty_injuries_status = merged_status.get("casualty_injuries_status")
+                incident.casualty_status_remaining_total = merged_status.get(
+                    "casualty_status_remaining_total"
+                )
+                incident.casualty_is_preliminary = merged_status[
+                    "casualty_is_preliminary"
+                ]
+                incident.casualty_status_evidence = merged_status[
+                    "casualty_status_evidence"
+                ]
             self.db.add(incident)
             self.db.add(
                 IncidentUpdate(
@@ -175,6 +225,18 @@ class BulletinReconciliationService:
                     new_values={
                         "deaths": incident.deaths,
                         "injuries": incident.injuries,
+                        "casualty_status": getattr(incident, "casualty_status", None),
+                        "casualty_deaths_status": getattr(incident, "casualty_deaths_status", None),
+                        "casualty_injuries_status": getattr(incident, "casualty_injuries_status", None),
+                        "casualty_status_remaining_total": getattr(
+                            incident, "casualty_status_remaining_total", None
+                        ),
+                        "casualty_is_preliminary": getattr(
+                            incident, "casualty_is_preliminary", None
+                        ),
+                        "casualty_status_evidence": getattr(
+                            incident, "casualty_status_evidence", None
+                        ),
                         "bulletin_group_id": group.id,
                         "resolved_by_raw_message_id": candidate.id,
                     },

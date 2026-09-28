@@ -25,6 +25,8 @@ export type Incident = {
   matched: boolean;
   verification_status: "auto_processed" | "needs_verification" | "verified" | "rejected";
   verification_reason: string | null;
+  verification_types: Array<"duplicate" | "casualty_missing_number" | "casualty_aggregate_toll">;
+  open_flags: Array<{ flag_id: string; reason_code: string; label: string; severity: string; summary: string; evidence_sentence: string | null }>;
   verified_by_user_id: string | null;
   verified_at: string | null;
   duplicate_flag: "none" | "possible";
@@ -66,6 +68,7 @@ export type IncidentFilters = {
   eventDateTo?: string;
   flaggedOnly?: boolean;
   verificationStatus?: "auto_processed" | "needs_verification" | "verified" | "rejected";
+  verificationType?: "duplicate" | "casualty_missing_number" | "casualty_aggregate_toll";
   duplicateOnly?: boolean;
   hasCasualties?: boolean;
   sortOrder?: "newest" | "oldest";
@@ -191,7 +194,6 @@ export type IncidentUpdatePayload = {
   note: string | null;
   worker_name: string | null;
   source_link: string | null;
-  source_link_2: string | null;
   total_deaths: number | null;
   total_injuries: number | null;
   deaths: number | null;
@@ -226,6 +228,34 @@ export type RejectedNewsItem = {
 
 export type RejectedNewsListResponse = {
   items: RejectedNewsItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type FilteredNewsItem = {
+  id: number;
+  incident_id: string | null;
+  air_violation_id: number | null;
+  status: string;
+  khabar: string;
+  message_datetime: string | null;
+  received_at: string;
+  event_at: string;
+  source_name: string | null;
+  source_platform: string | null;
+  external_message_id: string | null;
+  verdict: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+  condition_id: number | null;
+  condition_name: string | null;
+  village_id: number | null;
+  village_name: string | null;
+};
+
+export type FilteredNewsListResponse = {
+  items: FilteredNewsItem[];
   total: number;
   limit: number;
   offset: number;

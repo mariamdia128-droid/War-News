@@ -141,6 +141,16 @@
   meaning: "قنابل صوتية"
   notes: "Singular sound-bomb wording."
 
+- term: "قنابل مضيئة"
+  category: condition_alias
+  meaning: "قنابل مضيئة وحارقة"
+  notes: "Specific illumination-bomb wording; must not fall through to generic Grenades."
+
+- term: "إلقاء قنابل مضيئة"
+  category: condition_alias
+  meaning: "قنابل مضيئة وحارقة"
+  notes: "Common CNRS illumination-bomb phrasing."
+
 - term: "تحرك لآليات"
   category: condition_alias
   meaning: "تحرك آليات"
@@ -180,6 +190,11 @@
   category: condition_alias
   meaning: "عملية تمشيط"
   notes: "raw_message_ids=703"
+
+- term: "تمشيط من الاباتشي"
+  category: condition_alias
+  meaning: "عملية تمشيط مروحي"
+  notes: "raw_message_ids=1235; Apache sweep wording from Mansouri Sour diagnostic."
 
 # --- Distinguishing tokens (IDs stay in matching_service) ---
 
@@ -297,3 +312,17 @@
   category: condition_id_label
   meaning: "Unclassified air violation"
   notes: "condition_id=45 (UNCLASSIFIED_AIR_CONDITION_ID). Fallback when air phrases do not map to 35/36/38; ID stays in Python."
+- term: "civilian fire / car fire / property fire"
+  category: exclusion_note
+  meaning: "Burning Properties"
+  notes: "Do not classify ordinary civilian fires, car fires, electrical faults, traffic accidents, or property fires as Burning Properties unless the text explicitly ties the damage to Israeli, military, or security action."
+
+- term: "استهداف بطائرة مسيرة / مسيّرة استهدفت"
+  category: evidence_override
+  meaning: "Bombs"
+  notes: "Drone-strike wording is an attack/strike condition. Do not map it to Drone Failure; Drone Failure is only for a drone falling/crashing in our territory, e.g. سقوط مسيرة."
+
+- term: "سقوط مسيرة"
+  category: condition_id_label
+  meaning: "Drone Failure"
+  notes: "Use only when the text says a drone fell/crashed, not when a drone targeted or struck a car, building, road, or people."

@@ -1,0 +1,12 @@
+{
+  "bug_ref": "gaza-beit-lahia-non-lebanon-scope",
+  "description": "Bulletin about Beit Lahia / north Gaza Strip must be rejected before extraction/matching even when conflict language and CNRS metadata say include.",
+  "source": "real production incident b8d802ad-baa8-40e7-b5f4-8631062d3278",
+  "check": "lebanon_scope",
+  "input": {
+    "post_text": "عاجل | إطلاق نار من آليات الاح.تلال الاسرا.ئيلي المتمركزة في محيط المستشفى الإندونيسي باتجاه المناطق الشرقية لمشروع بيت لا.هيا شمال قطاع غز.ة"
+  },
+  "expected": {
+    "is_non_lebanon": true
+  }
+}

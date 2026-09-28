@@ -1,0 +1,13 @@
+{
+  "bug_ref": "village-no-gazetteer-bouyout-sayyad-mansouri",
+  "description": "\"بيوت السياد\" has no ACS row and no alias; pure trigram similarity must not be trusted as a confident match against an unrelated village (المنصوري) just because it clears the score threshold.",
+  "source": "real webhook data, Bug 3 (2026-09-21 follow-up)",
+  "check": "village_lexical_overlap",
+  "input": {
+    "mention": "بيوت السياد",
+    "candidate_ref_name_ar": "المنصوري"
+  },
+  "expected": {
+    "has_overlap": false
+  }
+}

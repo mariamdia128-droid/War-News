@@ -1,35 +1,58 @@
 name: war_news_dev
 
 services:
+  db:
+    env_file:
+      - .env.dev
+    environment: !reset []
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+
   backend:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   pipeline-worker:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   live-sweep-worker:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   backlog-relevance-worker:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   bulletin-reconciliation-worker:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   cnrs-poll-worker:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   red-alert-collector:
+    env_file:
+      - .env.dev
     volumes:
       - .:/app
 
   frontend:
+    env_file:
+      - .env.dev
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -12,6 +12,10 @@ TRANSIENT_LLM_ERROR_MARKERS = (
     "connecterror",
     "networkerror",
     "temporarily unavailable",
+    # httpx.RemoteProtocolError is stored without its class name; 11 rows were
+    # parked in status=error forever because no marker matched.
+    "server disconnected",
+    "remoteprotocolerror",
     "503",
     "502",
     "504",
@@ -38,7 +42,7 @@ def extraction_retry_cap_message(retry_count: int, exc: BaseException) -> str:
 
 def is_transient_llm_error(exc: BaseException) -> bool:
     """Return True when the failure is likely retryable (timeout/network), not bad data."""
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, (httpx.TimeoutException, httpx.RemoteProtocolError)):
         return True
 
     message = str(exc).strip().lower()
@@ -46,3 +50,15 @@ def is_transient_llm_error(exc: BaseException) -> bool:
         return False
 
     return any(marker in message for marker in TRANSIENT_LLM_ERROR_MARKERS)
+
+
+class Tier2ExtractionFailedError(Exception):
+    """Raised when a Tier-2 category detail LLM call fails (not an empty answer)."""
+
+    def __init__(self, failed_categories: list[str], last_error: BaseException) -> None:
+        self.failed_categories = failed_categories
+        self.last_error = last_error
+        super().__init__(
+            f"tier2: failed categories={failed_categories} "
+            f"last error: {format_llm_error(last_error)}"
+        )

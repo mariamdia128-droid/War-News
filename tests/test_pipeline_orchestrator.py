@@ -91,9 +91,60 @@ def _patch_stages(monkeypatch, *, fail_stage: str | None = None) -> list[str]:
     )
     monkeypatch.setattr(orchestrator, "sweep_clustering", _sync("clustering"))
     monkeypatch.setattr(
-        orchestrator, "sweep_materialization", _sync("materialization")
+        orchestrator, "sweep_duplicate_match_reconciliation", _sync("duplicate_match_reconciliation")
     )
     return calls
+
+
+def _lock_connection(*, acquired: bool) -> MagicMock:
+    conn = MagicMock()
+    conn.execute.return_value.scalar_one.return_value = acquired
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_advisory_lock_is_acquired_and_released_on_same_connection(
+    monkeypatch,
+) -> None:
+    # Regression: the lock was taken on a Session that returned its connection
+    # to the pool on commit, so the unlock ran on another backend and the lock
+    # leaked -- every later manual sweep was skipped as "already running".
+    _patch_stages(monkeypatch)
+    conn = _lock_connection(acquired=True)
+    opened: list[MagicMock] = []
+
+    def open_conn() -> MagicMock:
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(orchestrator, "_open_pipeline_lock_connection", open_conn)
+
+    result = await orchestrator.run_full_pipeline_sweep(use_advisory_lock=True)
+
+    assert not result.skipped
+    assert len(opened) == 1
+    statements = [str(call.args[0]) for call in conn.execute.call_args_list]
+    assert statements[0].startswith("SELECT pg_try_advisory_lock")
+    assert statements[-1].startswith("SELECT pg_advisory_unlock")
+    conn.commit.assert_not_called()
+    conn.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_advisory_lock_contention_skips_and_closes_connection(
+    monkeypatch,
+) -> None:
+    calls = _patch_stages(monkeypatch)
+    conn = _lock_connection(acquired=False)
+    monkeypatch.setattr(orchestrator, "_open_pipeline_lock_connection", lambda: conn)
+
+    result = await orchestrator.run_full_pipeline_sweep(use_advisory_lock=True)
+
+    assert result.skipped
+    assert result.skip_reason == "pipeline_sweep_already_running"
+    assert calls == []
+    assert conn.execute.call_count == 1
+    conn.close.assert_called_once()
 
 
 def test_default_stage_caps_keep_llm_stages_small() -> None:
@@ -112,7 +163,7 @@ async def test_stage_exception_does_not_block_later_stages(monkeypatch, caplog) 
     assert "tier2_detail_fill" in calls
     assert "matching" in calls
     assert "fast_path" in calls
-    assert "materialization" in calls
+    assert "duplicate_match_reconciliation" in calls
     assert calls.index("embedding") < calls.index("tier1_extraction")
     assert result.partial_failure is True
     assert result.skipped is False
@@ -149,7 +200,7 @@ async def test_embedding_stage_runs_before_fast_path(monkeypatch) -> None:
         "fast_path",
         "tier2_detail_fill",
         "clustering",
-        "materialization",
+        "duplicate_match_reconciliation",
     ]
 
 
@@ -191,14 +242,14 @@ async def test_empty_stage_exception_message_is_logged(monkeypatch, caplog) -> N
 
     assert result.partial_failure is True
     assert "clustering" in calls
-    assert "materialization" in calls
+    assert "duplicate_match_reconciliation" in calls
     assert any(
         "Pipeline stage=embedding failed; continuing remaining stages" in record.message
         and "ValueError (no message)" in record.message
         for record in caplog.records
     )
     assert any(stage.stage == "clustering" for stage in result.stages)
-    assert any(stage.stage == "materialization" for stage in result.stages)
+    assert any(stage.stage == "duplicate_match_reconciliation" for stage in result.stages)
 
 
 @pytest.mark.asyncio

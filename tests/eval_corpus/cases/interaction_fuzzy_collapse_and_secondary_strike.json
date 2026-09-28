@@ -1,0 +1,14 @@
+{
+  "bug_ref": "interaction-fuzzy-collapse-and-secondary-strike",
+  "description": "The محيط collapse (fuzzy-area-majdal-zoun-houses-sayad) and the كما طال القصف recovery (secondary-strike-connector-zawtar-ayta) must coexist in one bulletin without one undoing the other. This is exactly the cross-fix interaction the corpus exists to catch — a naive collapse-to-one-village implementation silently drops any location outside the fuzzy pair.",
+  "source": "regression guard added alongside the Bug 4 fix, 2026-09-21",
+  "check": "fuzzy_then_secondary_coexist",
+  "input": {
+    "post_text": "القوات الإسرائيلية أحرقت حقول الزيتون في محيط مجدل زون وبيوت السياد. كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل",
+    "villages": ["مجدل زون", "بيوت السياد"]
+  },
+  "expected": {
+    "villages": ["مجدل زون", "عيتا الجبل"],
+    "alternatives": ["بيوت السياد"]
+  }
+}

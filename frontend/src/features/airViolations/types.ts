@@ -12,6 +12,10 @@ export type AirViolation = {
   event_month: string | null;
   event_date: string;
   event_time: string | null;
+  window_id: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  window_violation_count: number | null;
   khabar: string;
   note_1: string | null;
   note_2: string | null;

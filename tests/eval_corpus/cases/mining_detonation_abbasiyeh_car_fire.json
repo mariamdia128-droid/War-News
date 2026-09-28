@@ -1,0 +1,14 @@
+{
+  "bug_ref": "mining-detonation-abbasiyeh-car-fire",
+  "description": "Civilian car fire in Abbasiyeh, no war attribution — must not match Mining & Detonation (condition_id 21).",
+  "source": "real webhook bulletin, Bug 2 (2026-09-21 follow-up)",
+  "check": "condition_attribution",
+  "input": {
+    "condition_id": 21,
+    "action_description": "النيران تلتهم سيارة في العباسية... حريق كبير شرق صور"
+  },
+  "expected": {
+    "matched_condition_id": null,
+    "condition_match_status": "unmatched"
+  }
+}

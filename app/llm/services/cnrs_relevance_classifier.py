@@ -7,6 +7,8 @@ from app.llm.interfaces import RelevanceClassifierInterface
 from app.news.models import RawMessage
 
 CNRS_PROVIDED_BACKEND = "cnrs_provided"
+CNRS_CONFLICT_SUBTYPES = {"airstrike", "artillery", "direct_attack"}
+CNRS_CIVILIAN_DOMAINS = {"fire", "storm", "weather"}
 
 
 def _is_present(value: Any) -> bool:
@@ -25,13 +27,21 @@ def verdict_from_cnrs_classification(
         return None
 
     include = cnrs_classification.get("include")
+    domain = str(cnrs_classification.get("event_domain") or "").strip().lower()
+    subtype = str(cnrs_classification.get("event_subtype") or "").strip().lower()
+    mentions_israeli_actor = cnrs_classification.get("mentions_israeli_actor") is True
+    if (
+        include is True
+        and domain in CNRS_CIVILIAN_DOMAINS
+        and subtype not in CNRS_CONFLICT_SUBTYPES
+        and not mentions_israeli_actor
+    ):
+        return ClassificationVerdict.not_relevant
     if include is True:
         return ClassificationVerdict.relevant
     if include is False:
         return ClassificationVerdict.not_relevant
 
-    domain = cnrs_classification.get("event_domain")
-    subtype = cnrs_classification.get("event_subtype")
     if _is_present(domain) and _is_present(subtype):
         return ClassificationVerdict.relevant
 

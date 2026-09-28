@@ -15,6 +15,14 @@ ERROR_UNMATCHED_CONDITION = "fast_path: unmatched or missing condition"
 ERROR_NO_VILLAGE = "fast_path: no materializable village match"
 ERROR_EXACT_HASH = "fast_path: exact hash already materialized; no new incident"
 ERROR_UNMATERIALIZABLE = "fast_path: permanently unmaterializable"
+# The extraction named a target place the gazetteer could not resolve. The rest
+# of the extraction is usable, so the message is held (visible, re-queueable
+# once an alias is added) instead of being lost in status=error.
+HELD_UNMATCHED_PLACE = "fast_path: held for review: extracted place not found in gazetteer"
+# A multi-village message where some villages committed an incident and a later
+# village raised. The claim re-admits these so the remaining villages are
+# retried; already-inserted villages are skipped by the exact-hash constraint.
+FAST_PATH_PARTIAL_FAILURE_PREFIX = "fast_path: partial failure"
 
 # Correlated to raw_messages in claim/update statements. Avoids SQLAlchemy `?`
 # bind placeholder by using jsonb_typeof instead of the jsonb `?` operator.
@@ -103,10 +111,16 @@ def has_materializable_village(match_result: dict[str, Any]) -> bool:
             continue
         if _optional_int(village.get("matched_village_id")) is None:
             continue
-        condition_status = village.get("condition_match_status", root_status)
-        condition_id = _optional_int(
-            village.get("matched_condition_id", root_condition_id)
-        )
+        # Prefer per-village condition; fall back to message-level when the
+        # clause was unmatched/null (ACCSTUDY multi-event fan-out).
+        condition_id = _optional_int(village.get("matched_condition_id"))
+        condition_status = village.get("condition_match_status")
+        if (
+            condition_id is None
+            or condition_status not in ELIGIBLE_MATCH_STATUSES
+        ):
+            condition_id = root_condition_id
+            condition_status = root_status
         if condition_status not in ELIGIBLE_MATCH_STATUSES or condition_id is None:
             continue
         if condition_id in AIR_VIOLATION_CONDITION_IDS:
@@ -115,10 +129,36 @@ def has_materializable_village(match_result: dict[str, Any]) -> bool:
     return False
 
 
+def unmatched_target_places(match_result: dict[str, Any]) -> list[str]:
+    """Raw place texts of target mentions the gazetteer could not resolve."""
+    places: list[str] = []
+    for village in _normalized_village_matches(match_result):
+        if village.get("village_role", "target") != "target":
+            continue
+        if village.get("village_match_status") != "unmatched":
+            continue
+        text_value = str(village.get("raw_village_text") or "").strip()
+        if text_value and text_value not in places:
+            places.append(text_value)
+    return places
+
+
+def terminal_status_for_reason(reason: str) -> MessageStatus:
+    if reason == ERROR_AIR_VIOLATION:
+        return MessageStatus.routed_air_violation
+    if reason == HELD_UNMATCHED_PLACE:
+        return MessageStatus.held_for_review
+    return MessageStatus.error
+
+
 def permanent_ineligibility_reason(
     match_result: dict[str, Any] | None,
 ) -> str | None:
-    """Return a terminal error reason, or None if the match can still materialize."""
+    """Return a terminal reason, or None if the match can still materialize.
+
+    ``HELD_UNMATCHED_PLACE`` is terminal for the fast path but maps to
+    ``held_for_review`` (see ``terminal_status_for_reason``), not ``error``.
+    """
     if not match_result:
         return ERROR_UNMATCHED_CONDITION
 
@@ -138,6 +178,8 @@ def permanent_ineligibility_reason(
         value in AIR_VIOLATION_CONDITION_IDS for value in valid_condition_ids
     ):
         return ERROR_AIR_VIOLATION
+    if unmatched_target_places(match_result):
+        return HELD_UNMATCHED_PLACE
     if (
         condition_status not in ELIGIBLE_MATCH_STATUSES
         and not village_conditions
@@ -150,23 +192,44 @@ def permanent_ineligibility_reason(
     return ERROR_UNMATCHED_CONDITION
 
 
+_IS_AIR_VIOLATION_SQL = f"""
+                (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
+                     AND (raw_messages.match_result->>'matched_condition_id')::int
+                         IN ({AIR_VIOLATION_CONDITION_SQL})
+"""
+# Mirrors unmatched_target_places(): a named target place the gazetteer missed.
+_HAS_UNMATCHED_TARGET_PLACE_SQL = """
+                EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(raw_messages.match_result->'village_matches') = 'array'
+                             THEN raw_messages.match_result->'village_matches'
+                             ELSE '[]'::jsonb END
+                    ) AS place(value)
+                    WHERE place.value->>'village_match_status' = 'unmatched'
+                      AND COALESCE(place.value->>'village_role', 'target') = 'target'
+                      AND btrim(COALESCE(place.value->>'raw_village_text', '')) <> ''
+                )
+"""
+
+
 def ineligible_fast_path_update_sql() -> TextClause:
     return text(
         f"""
         UPDATE raw_messages
         SET
             status = CASE
-                WHEN (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
-                     AND (raw_messages.match_result->>'matched_condition_id')::int
-                         IN ({AIR_VIOLATION_CONDITION_SQL})
+                WHEN {_IS_AIR_VIOLATION_SQL}
                     THEN CAST(:routed_air_violation_status AS message_status)
+                WHEN {_HAS_UNMATCHED_TARGET_PLACE_SQL}
+                    THEN CAST(:held_status AS message_status)
                 ELSE CAST(:error_status AS message_status)
             END,
             error_message = CASE
-                WHEN (raw_messages.match_result->>'matched_condition_id') ~ '^[0-9]+$'
-                     AND (raw_messages.match_result->>'matched_condition_id')::int
-                         IN ({AIR_VIOLATION_CONDITION_SQL})
+                WHEN {_IS_AIR_VIOLATION_SQL}
                     THEN :air_violation
+                WHEN {_HAS_UNMATCHED_TARGET_PLACE_SQL}
+                    THEN :held_unmatched_place
                 WHEN (raw_messages.match_result->>'condition_match_status') NOT IN (
                         'matched', 'matched_low_confidence'
                      )
@@ -192,8 +255,10 @@ def ineligible_fast_path_update_sql() -> TextClause:
     ).bindparams(
         error_status=MessageStatus.error.value,
         routed_air_violation_status=MessageStatus.routed_air_violation.value,
+        held_status=MessageStatus.held_for_review.value,
         parsed_status=MessageStatus.parsed.value,
         air_violation=ERROR_AIR_VIOLATION,
+        held_unmatched_place=HELD_UNMATCHED_PLACE,
         unmatched_condition=ERROR_UNMATCHED_CONDITION,
         no_village=ERROR_NO_VILLAGE,
     )

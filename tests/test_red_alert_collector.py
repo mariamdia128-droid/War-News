@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.sources.services.red_alert_collector import (
     HOURS_FETCH_LIMIT_CAP,
+    RED_ZONE_OCR_MARKER,
     RedAlertPost,
     RedAlertCollector,
     classify_condition,
@@ -80,6 +81,64 @@ def test_rejects_unreadable_ocr_with_an_image_specific_reason() -> None:
     assert message.filter_result["reasoning"] == (
         "Location could not be identified reliably from the alert image"
     )
+
+
+def test_routes_caza_only_air_violation_without_fake_village() -> None:
+    class _AirViolationRepository:
+        routed = None
+
+        def route_from_match(self, message, result) -> bool:
+            self.routed = (message, result)
+            return True
+
+        def discard_for_message(self, message) -> None:
+            raise AssertionError("caza-only air violations should not be discarded")
+
+    repository = _AirViolationRepository()
+    service = RedAlertAirViolationService(
+        repository,  # type: ignore[arg-type]
+        lambda text: 35,
+        lambda text, villages: None,
+    )
+    message = SimpleNamespace(
+        id=101,
+        raw_text="#مقاتلات_حربية #البقاع",
+        raw_payload={},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+    village = _village(20, "طيبة بعلبك", caza_en="West Bekaa")
+    village.caza_ar = "البقاع الغربي"
+
+    assert service.process(message, [village]) is True
+    assert repository.routed is not None
+    assert message.status == MessageStatus.routed_air_violation
+    assert message.filter_result["reasoning"] == (
+        "Supported air-violation keyword and caza matched"
+    )
+    routed_result = repository.routed[1]
+    assert routed_result.village_matches == []
+
+
+def test_routes_south_region_air_violation_without_fake_village() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 35, lambda text, villages: None)
+    message = SimpleNamespace(
+        id=102,
+        raw_text="#مقاتلات_حربية #الجنوب",
+        raw_payload={},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(message, []) is True
+    repository.discard_for_message.assert_not_called()
+    repository.route_from_match.assert_called_once()
 
 
 def _village(village_id: int, arabic: str, caza_en: str = "Sour") -> SimpleNamespace:
@@ -193,6 +252,18 @@ def test_matches_village_from_plain_text() -> None:
     assert matched[0].id == 11
 
 
+def test_focused_red_zone_ocr_with_multiple_villages_is_not_single_place() -> None:
+    arnoun = _village(15, "Ø£Ø±Ù†ÙˆÙ†", caza_en="Nabatiye")
+    mayfadoun = _village(16, "Ù…ÙŠÙØ¯ÙˆÙ†", caza_en="Nabatiye")
+
+    matched = match_village(
+        f"map labels outside circle {RED_ZONE_OCR_MARKER} Ø£Ø±Ù†ÙˆÙ† Ù…ÙŠÙØ¯ÙˆÙ†",
+        [arnoun, mayfadoun],
+    )
+
+    assert matched is None
+
+
 def test_does_not_turn_caza_label_into_an_arbitrary_village() -> None:
     nabatieh = _village(12, "النبطية", caza_en="Nabatieh")
 
@@ -222,6 +293,34 @@ def test_matches_exact_english_village_name_from_whitelist() -> None:
 
     assert matched is not None
     assert matched[0].id == 14
+
+
+def test_matches_red_alert_ocr_aliases_from_rejected_maps() -> None:
+    taibeh = _village(21, "طيبة مرجعيون", caza_en="Marjaayoun")
+    taibeh.acs_code = 73232
+    shamali = _village(22, "برج الشمالي", caza_en="Sour")
+    shamali.acs_code = 62128
+
+    matched_taibeh = match_village(f"noise {RED_ZONE_OCR_MARKER} Et Taibeh مسيرة", [taibeh, shamali])
+    matched_shamali = match_village(f"noise {RED_ZONE_OCR_MARKER} Burj Al Shar مسيرة", [taibeh, shamali])
+
+    assert matched_taibeh is not None
+    assert matched_taibeh[0].id == 21
+    assert matched_shamali is not None
+    assert matched_shamali[0].id == 22
+
+
+def test_red_zone_ocr_falls_back_to_single_exact_alias_in_full_text() -> None:
+    shamali = _village(23, "برج الشمالي", caza_en="Sour")
+    shamali.acs_code = 62128
+
+    matched = match_village(
+        f"redalert.com.lb Burj Al Shar مسيرة {RED_ZONE_OCR_MARKER} unreadable crop 59",
+        [shamali],
+    )
+
+    assert matched is not None
+    assert matched[0].id == 23
 
 
 def _post(message_id: int, when: datetime) -> RedAlertPost:

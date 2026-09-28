@@ -1,0 +1,7 @@
+# Condition/action exceptions that must not be trusted to similarity matching.
+# Shape follows the other terminology YAML catalogs: term/category/meaning/notes/normalized.
+
+- term: "النيران تلتهم سيارة في العباسية"
+  category: condition_do_not_match_without_attribution
+  meaning: needs_review
+  notes: "Confirmed false match: Abbasiyeh car fire -> Mining & Detonation with no conflict attribution tokens. On its own this must stay unmatched/needs_review, not resolve to an effect-defined condition."

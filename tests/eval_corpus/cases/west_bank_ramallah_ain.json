@@ -1,0 +1,12 @@
+{
+  "bug_ref": "west-bank-ramallah-ain",
+  "description": "Bulletin about Ramallah/West Bank must be rejected at the relevance-filter stage even though \"العين\" also matches a real Lebanese village by text similarity.",
+  "source": "real webhook bulletin, Bug 1 (2026-09-21 follow-up)",
+  "check": "lebanon_scope",
+  "input": {
+    "post_text": "شاهد | لحظة فرار المستوطنين واختبائهم عقب إطلاق نار في منطقة العين، غربي رام الله. #الميادين"
+  },
+  "expected": {
+    "is_non_lebanon": true
+  }
+}

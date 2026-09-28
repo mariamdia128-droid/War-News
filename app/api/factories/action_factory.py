@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.llm.actions import (
@@ -10,6 +12,8 @@ from app.llm.interfaces import (
     ExtractionClassifierInterface,
     RelevanceClassifierInterface,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _build_local_llm_relevance_classifier() -> RelevanceClassifierInterface:
@@ -33,18 +37,37 @@ def _build_local_llm_relevance_classifier() -> RelevanceClassifierInterface:
 
 def build_relevance_classifier() -> RelevanceClassifierInterface:
     from app.core.config import settings
+    from app.llm.services.codecraft_relevance_classifier import (
+        CODECRAFT_RELEVANCE_BACKEND,
+        CodeCraftRelevanceClassifier,
+    )
     from app.llm.services.cnrs_relevance_classifier import (
         CNRS_PROVIDED_BACKEND,
         CnrsProvidedRelevanceClassifier,
     )
 
     backend = settings.relevance_classifier_backend.lower()
+    logger.info("Loading relevance classifier backend=%s", backend)
     if backend == "local_llm":
         return _build_local_llm_relevance_classifier()
 
     if backend == CNRS_PROVIDED_BACKEND:
         return CnrsProvidedRelevanceClassifier(
             fallback=_build_local_llm_relevance_classifier(),
+        )
+
+    if backend == CODECRAFT_RELEVANCE_BACKEND:
+        if not settings.codecraft_api_key:
+            raise RuntimeError("CODECRAFT_API_KEY is required for backend 'codecraft'.")
+        if not settings.codecraft_model:
+            raise RuntimeError("CODECRAFT_MODEL is required for backend 'codecraft'.")
+        return CodeCraftRelevanceClassifier(
+            api_key=settings.codecraft_api_key,
+            base_url=settings.codecraft_base_url,
+            model=settings.codecraft_model,
+            timeout_seconds=settings.relevance_llm_timeout_seconds,
+            max_retries=settings.relevance_classifier_max_retries,
+            retry_backoff_seconds=settings.relevance_classifier_retry_backoff_seconds,
         )
 
     if backend == "gemini":
@@ -56,7 +79,7 @@ def build_relevance_classifier() -> RelevanceClassifierInterface:
     raise RuntimeError(
         "Unsupported RELEVANCE_CLASSIFIER_BACKEND="
         f"{settings.relevance_classifier_backend!r}. "
-        "Expected 'local_llm', 'cnrs_provided', or 'gemini'."
+        "Expected 'local_llm', 'cnrs_provided', 'codecraft', or 'gemini'."
     )
 
 

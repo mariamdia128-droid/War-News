@@ -13,7 +13,10 @@ from app.llm.dtos import (
     VillageRole,
     VillageRoleEntry,
 )
-from app.llm.services.cnrs_extraction_fallback import CnrsExtractionFallback
+from app.llm.services.cnrs_extraction_fallback import (
+    CnrsExtractionFallback,
+    trusted_cnrs_action,
+)
 
 
 def _llm_result(**updates) -> ExtractionResult:
@@ -59,12 +62,56 @@ def test_uses_full_llm_details_with_cnrs_location_and_subtype(monkeypatch) -> No
 
     assert result.village == ["المنصوري"]
     assert result.village_roles[0].village == "المنصوري"
-    assert result.action_description == "Artillery Shelling"
+    assert result.action_description == "LLM action"
+    assert result.action_source == "llm_text"
+    assert result.source_event_subtype == "artillery"
+    assert result.source_action_hint == "Artillery Shelling"
     assert result.casualties == ExtractionCasualties(deaths=2, injuries=3)
     assert ExtractionCategoryKey.hospital in result.categories
     assert result.model == "qwen-test"
     assert result.extraction_tier == 2
     ollama.extract.assert_called_once_with("text", 42)
+
+
+def test_cnrs_subtype_fills_action_only_when_llm_action_missing(monkeypatch) -> None:
+    message = SimpleNamespace(
+        cnrs_classification={
+            "include": True,
+            "location": "المنصوري",
+            "event_subtype": "airstrike",
+        },
+        raw_text="غارة على المنصوري",
+    )
+    session = MagicMock()
+    session.get.return_value = message
+    session.__enter__.return_value = session
+    monkeypatch.setattr(
+        "app.llm.services.cnrs_extraction_fallback.SessionLocal",
+        lambda: session,
+    )
+    ollama = MagicMock()
+    ollama.extract.return_value = _llm_result(action_description=None)
+
+    result = CnrsExtractionFallback(ollama).extract_tier1(message.raw_text, 48)
+
+    assert result.action_description == "Bombs"
+    assert result.action_source == "cnrs_subtype_fallback"
+    assert result.source_event_subtype == "airstrike"
+    assert result.source_action_hint == "Bombs"
+
+
+def test_cnrs_civilian_fire_is_not_trusted_as_war_action() -> None:
+    action = trusted_cnrs_action(
+        {
+            "include": True,
+            "event_domain": "fire",
+            "event_subtype": "fire_incident",
+            "mentions_israeli_actor": False,
+        },
+        "car fire on highway",
+    )
+
+    assert action is None
 
 
 def test_cnrs_motorcycle_attack_preserves_vehicle_category(monkeypatch) -> None:
@@ -227,4 +274,82 @@ def test_tier2_details_delegate_to_wrapped_extractor() -> None:
         presence_category_keys=[ExtractionCategoryKey.vehicles],
         root_casualties=ExtractionCasualties(),
         raw_message_id=42,
+    )
+
+
+def test_cnrs_fire_incident_without_conflict_attribution_rejects_override() -> None:
+    from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
+
+    classification = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": False,
+    }
+    # 3 real false positive examples
+    assert trusted_cnrs_action(classification, "احتراق سيارة عند جسر المدفون ... اندلع حريق بسيارة") is None
+    assert trusted_cnrs_action(classification, "احتراق سيارة على أوتوستراد المدفون باتجاه بيروت") is None
+    assert trusted_cnrs_action(classification, "حريق داخل منزل في البحصة – طرابلس") is None
+
+    broad_conflict_domain = dict(classification, event_domain="conflict")
+    assert (
+        trusted_cnrs_action(
+            broad_conflict_domain,
+            "احتراق سيارة على أوتوستراد المدفون باتجاه بيروت",
+        )
+        is None
+    )
+
+
+def test_cnrs_fire_incident_with_conflict_attribution_accepts_override() -> None:
+    from app.llm.services.cnrs_extraction_fallback import trusted_cnrs_action
+
+    # War-attributed fire via text marker
+    classification = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": False,
+    }
+    assert (
+        trusted_cnrs_action(
+            classification,
+            "اندلاع حريق في منزل في عيتا الشعب إثر قصف مدفعي إسرائيلي",
+        )
+        == "Burning Properties"
+    )
+
+    # War-attributed fire via mentions_israeli_actor flag
+    classification_actor = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": True,
+    }
+    assert (
+        trusted_cnrs_action(
+            classification_actor,
+            "حريق في أحراج البلدة",
+        )
+        == "Burning Properties"
+    )
+
+
+def test_cnrs_fire_incident_hostile_drone_materials_sets_burning_properties() -> None:
+    classification = {
+        "include": True,
+        "event_domain": "fire",
+        "event_subtype": "fire_incident",
+        "mentions_israeli_actor": False,
+    }
+
+    assert (
+        trusted_cnrs_action(
+            classification,
+            "\u062f\u0631\u0648\u0646 \u0645\u0639\u0627\u062f\u064a\u0629 "
+            "\u0627\u0644\u0642\u062a \u0645\u0648\u0627\u062f "
+            "\u062d\u0627\u0631\u0642\u0629 \u0641\u064a "
+            "\u0627\u0644\u0646\u0628\u0637\u064a\u0629",
+        )
+        == "Burning Properties"
     )

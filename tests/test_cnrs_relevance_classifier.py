@@ -40,6 +40,42 @@ class _FallbackStub:
     ("cnrs", "expected"),
     [
         ({"include": True}, ClassificationVerdict.relevant),
+        (
+            {
+                "include": True,
+                "event_domain": "fire",
+                "event_subtype": "fire_incident",
+                "mentions_israeli_actor": False,
+            },
+            ClassificationVerdict.not_relevant,
+        ),
+        (
+            {
+                "include": True,
+                "event_domain": "fire",
+                "event_subtype": "fire_incident",
+                "mentions_israeli_actor": True,
+            },
+            ClassificationVerdict.relevant,
+        ),
+        (
+            {
+                "include": True,
+                "event_domain": "storm",
+                "event_subtype": "other",
+                "mentions_israeli_actor": False,
+            },
+            ClassificationVerdict.not_relevant,
+        ),
+        (
+            {
+                "include": True,
+                "event_domain": "weather",
+                "event_subtype": "other",
+                "mentions_israeli_actor": False,
+            },
+            ClassificationVerdict.not_relevant,
+        ),
         ({"include": False}, ClassificationVerdict.not_relevant),
         (
             {"event_domain": "security", "event_subtype": "airstrike"},

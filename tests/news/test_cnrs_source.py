@@ -42,6 +42,24 @@ def test_normalize_record_leaves_absent_cnrs_metadata_null() -> None:
     assert normalized["cnrs_classification"] is None
 
 
+def test_extract_records_accepts_common_cnrs_feed_wrappers() -> None:
+    records, next_cursor, has_more = CNRSSourceProvider._extract_records(
+        {"results": [{"id": 1}], "next_cursor": 1, "has_more": True}
+    )
+
+    assert records == [{"id": 1}]
+    assert next_cursor == 1
+    assert has_more is True
+
+
+def test_extract_records_accepts_plain_list_payload() -> None:
+    records, next_cursor, has_more = CNRSSourceProvider._extract_records([{"id": 1}])
+
+    assert records == [{"id": 1}]
+    assert next_cursor is None
+    assert has_more is False
+
+
 def test_fetch_batch_calls_llm_filtered_posts_and_caps_page_size() -> None:
     response = MagicMock()
     response.status_code = 200

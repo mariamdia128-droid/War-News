@@ -1,0 +1,18 @@
+{
+  "bug_ref": "kfar-roummane-two-local-aliases",
+  "description": "Two confirmed no-ACS local names may point to Kfar Roummane but must keep distinct display labels.",
+  "source": "ACS reconciliation spreadsheet",
+  "check": "village_alias_display",
+  "input": {
+    "mentions": ["الدبشة", "جبل الرفيع"],
+    "aliases": {
+      "الدبشة": 71133,
+      "جبل الرفيع": 71133
+    }
+  },
+  "expected": {
+    "matched_village_id": 71133,
+    "display_names": ["الدبشة", "جبل الرفيع"],
+    "status": "matched"
+  }
+}

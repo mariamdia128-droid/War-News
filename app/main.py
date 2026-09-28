@@ -8,12 +8,18 @@ from sqlalchemy import text
 from app.api.router import router as api_router
 from app.core.cors import CORS_ORIGINS
 from app.core.cache import redis_is_available
+from app.core.config import insecure_default_settings, settings
 from app.core.database import SessionLocal
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logging_config import configure_logging
 from app.core.scheduler import start_scheduler, stop_scheduler
+from app.core.seeds.seed_cnrs_source import ensure_cnrs_source
 from app.core.seeds.seed_super_admin import ensure_super_admin
 from app.news.services.realtime.incident_event_stream import incident_event_stream
+import app.accounts.models  # noqa: F401
+import app.logs.models  # noqa: F401
+import app.news.models  # noqa: F401
+import app.sources.models  # noqa: F401
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -51,9 +57,23 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup() -> None:
+    insecure = insecure_default_settings(settings)
+    if insecure:
+        logger.warning(
+            "SECURITY: %s still use the shipped default value(s). Set them in the "
+            "environment before exposing this deployment.",
+            ", ".join(insecure),
+        )
     db = SessionLocal()
     try:
         ensure_super_admin(db)
+        cnrs_source, cnrs_inserted = ensure_cnrs_source(db)
+        logger.info(
+            "CNRS webhook source ready id=%s inserted=%s active=%s",
+            cnrs_source.id,
+            cnrs_inserted,
+            cnrs_source.is_active,
+        )
         from app.news.services.pipeline.pipeline_advisory_lock import (
             reclaim_stale_pipeline_advisory_locks,
         )

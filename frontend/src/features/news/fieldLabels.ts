@@ -153,6 +153,8 @@ export const fieldLabels: FieldLabel[] = [
   { field_name: "car_f_i", label_en: "Car Female — Injuries" },
   { field_name: "car_c_d", label_en: "Car Children — Deaths" },
   { field_name: "car_c_i", label_en: "Car Children — Injuries" },
+  { field_name: "car_a_d", label_en: "Car anonymous — Deaths" },
+  { field_name: "car_a_i", label_en: "Car anonymous — Injuries" },
   { field_name: "moto", label_en: "Motorcycles hit" },
   { field_name: "moto_did", label_en: "Motorcycle damage assessment" },
   { field_name: "moto_d", label_en: "Motorcycle — Deaths" },
@@ -198,7 +200,6 @@ export const fieldLabels: FieldLabel[] = [
   { field_name: "moh", label_en: "MoH cross-checked" },
   { field_name: "worker_name", label_en: "Data worker" },
   { field_name: "source_link", label_en: "Source link" },
-  { field_name: "source_link_2", label_en: "Source link 2" },
   { field_name: "martyrs", label_en: "Martyrs (names)" },
   { field_name: "note", label_en: "Note" },
 ];

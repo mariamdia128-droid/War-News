@@ -15,7 +15,10 @@ from app.llm.dtos import (
     ExtractionVehicleDetails,
     VillageRoleEntry,
 )
-from app.llm.services.ollama_extraction_service import OllamaExtractionService
+from app.llm.services.ollama_extraction_service import (
+    MULTI_VILLAGE_NO_SUBEVENTS_REVIEW_REASON,
+    OllamaExtractionService,
+)
 from app.llm.services.ollama_presence_gate_service import OllamaPresenceGateService
 
 
@@ -220,13 +223,185 @@ def test_non_route_dash_phrases_collapse_to_target_and_qualifier(
 
 def test_between_route_phrase_keeps_both_endpoints() -> None:
     villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
-        "غارة بين كفرتبنيت وزوطر الشرقية.",
+        "غارة على طريق بين كفرتبنيت وزوطر الشرقية.",
         ["كفرتبنيت"],
         [VillageRoleEntry(village="كفرتبنيت")],
     )
 
     assert villages == ["كفرتبنيت", "زوطر الشرقية"]
     assert [entry.village for entry in roles] == ["كفرتبنيت", "زوطر الشرقية"]
+
+
+def test_missing_balda_village_is_recovered_when_model_returns_null() -> None:
+    """ACCSTUDY-001: model returned village=null despite «بلدة دبل»."""
+    post_text = (
+        "استهداف بطائرة مسيرة إسرائيلية لسيارة في بلدة دبل. "
+        "أسفر الاستهداف عن استشهاد 1 أشخاص وإصابة 1 آخرين بجروح متفاوتة."
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        None,
+        [],
+    )
+
+    assert villages == ["دبل"]
+    assert [entry.village for entry in roles] == ["دبل"]
+    assert roles[0].role.value == "target"
+
+
+def test_missing_balda_jibbayn_is_recovered_when_model_returns_null() -> None:
+    post_text = (
+        "غارة جوية إسرائيلية استهدفت منزلاً في بلدة الجبين. "
+        "أسفر الاستهداف عن استشهاد 1 أشخاص دون تسجيل إصابات إضافية."
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        None,
+        [],
+    )
+
+    assert villages == ["الجبين"]
+    assert [entry.village for entry in roles] == ["الجبين"]
+
+
+def test_fuzzy_area_phrase_collapses_to_first_village_with_alternate() -> None:
+    villages, roles, alternatives, evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            "القوات الإسرائيلية أحرقت حقول الزيتون وبساتين الحمضيات في محيط مجدل زون وبيوت السياد بإطلاق قنابل فوسفورية",
+            ["مجدل زون", "بيوت السياد"],
+            [],
+        )
+    )
+
+    assert villages == ["مجدل زون"]
+    assert [entry.village for entry in roles] == ["مجدل زون"]
+    assert alternatives == ["بيوت السياد"]
+    assert "محيط مجدل زون وبيوت السياد" in (evidence or "")
+
+
+def test_kama_tal_qasf_connector_recovers_dropped_second_target() -> None:
+    """Recon bulletin (Zaoutar Ech-Charqiye, 2026-09-20 09:49): the model
+    extracted only زوطر الشرقية and silently dropped عيتا الجبل, introduced
+    by the distinct-event connector "كما طال القصف". This is the inverse of
+    the fuzzy-area محيط bug — two genuinely separate strikes must both
+    survive as targets.
+    """
+    post_text = (
+        "طالت الغارات أطراف بلدة زوطر الشرقية في اتجاه ميفدون... "
+        "كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل"
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["زوطر الشرقية"],
+        [VillageRoleEntry(village="زوطر الشرقية")],
+    )
+
+    assert villages == ["زوطر الشرقية", "عيتا الجبل"]
+    assert {entry.village for entry in roles} == {"زوطر الشرقية", "عيتا الجبل"}
+
+
+def test_kama_tal_qasf_connector_does_not_duplicate_already_extracted_village() -> (
+    None
+):
+    post_text = "كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل"
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["زوطر الشرقية", "عيتا الجبل"],
+        [
+            VillageRoleEntry(village="زوطر الشرقية"),
+            VillageRoleEntry(village="عيتا الجبل"),
+        ],
+    )
+
+    assert villages == ["زوطر الشرقية", "عيتا الجبل"]
+    assert len(roles) == 2
+
+
+def test_kama_ghara_ukhra_connector_recovers_accstudy_multi_event_villages() -> None:
+    """ACCSTUDY-002: connector-led clauses with separate tolls."""
+    post_text = (
+        "قصف بالقذائف المدفعية على محيط البلدة في بلدة شبعا، أدى الاستهداف إلى "
+        "إصابة 3 أشخاص دون تسجيل حالات وفاة. كما غارة أخرى في بلدة عيناتا، أدى "
+        "الاستهداف إلى إصابة 3 أشخاص دون تسجيل حالات وفاة. كما غارة أخرى في "
+        "بلدة طيرحرفا، أسفر الاستهداف عن استشهاد 2 أشخاص وإصابة 1 آخرين بجروح متفاوتة."
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["شبعا"],
+        [VillageRoleEntry(village="شبعا")],
+    )
+
+    assert set(villages or []) == {"شبعا", "عيناتا", "طيرحرفا"}
+    assert {entry.village for entry in roles} == {"شبعا", "عيناتا", "طيرحرفا"}
+
+
+def test_baldat_list_recovers_all_bulletin_aggregate_villages() -> None:
+    """ACCSTUDY-003: shared-toll bulletin naming many بلدات."""
+    post_text = (
+        "شنت طائرات العدو الإسرائيلي سلسلة غارات متزامنة طالت بلدات حولا، "
+        "مارون الراس، شبعا، دير ميماس، كفررمان، الشقيف، الخردلي ويارون، ما أسفر "
+        "عن سقوط 3 شهداء و8 جرحى في حصيلة إجمالية للغارات."
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["حولا"],
+        [VillageRoleEntry(village="حولا")],
+    )
+
+    expected = {
+        "حولا",
+        "مارون الراس",
+        "شبعا",
+        "دير ميماس",
+        "كفررمان",
+        "الشقيف",
+        "الخردلي",
+        "يارون",
+    }
+    assert set(villages or []) == expected
+    assert {entry.village for entry in roles} == expected
+
+
+def test_kama_tal_qasf_connector_coexists_with_fuzzy_area_collapse() -> None:
+    """The محيط collapse and the كما طال القصف recovery must not undo each
+    other when a bulletin happens to contain both patterns.
+    """
+    post_text = (
+        "القوات الإسرائيلية أحرقت حقول الزيتون في محيط مجدل زون وبيوت السياد. "
+        "كما طال القصف حرج بلدة عيتا الجبل في قضاء بنت جبيل"
+    )
+    villages, roles = OllamaExtractionService._apply_dash_compound_location_rules(
+        post_text,
+        ["مجدل زون", "بيوت السياد"],
+        [
+            VillageRoleEntry(village="مجدل زون"),
+            VillageRoleEntry(village="بيوت السياد"),
+        ],
+    )
+    villages, roles, alternatives, _evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            post_text,
+            villages,
+            roles,
+        )
+    )
+
+    assert set(villages) == {"مجدل زون", "عيتا الجبل"}
+    assert alternatives == ["بيوت السياد"]
+
+
+def test_plain_between_phrase_collapses_without_route() -> None:
+    villages, roles, alternatives, _evidence = (
+        OllamaExtractionService._collapse_fuzzy_area_locations(
+            "قصف بين كفرتبنيت وزوطر الشرقية.",
+            ["كفرتبنيت", "زوطر الشرقية"],
+            [],
+        )
+    )
+
+    assert villages == ["كفرتبنيت"]
+    assert [entry.village for entry in roles] == ["كفرتبنيت"]
+    assert alternatives == ["زوطر الشرقية"]
 
 
 def test_extract_tier1_backstops_per_village_casualties() -> None:
@@ -581,3 +756,174 @@ def test_extract_tier1_parses_sub_events() -> None:
     assert result.sub_events[1].casualties.male_deaths == 1
     assert result.sub_events[0].evidence_span is not None
     assert result.casualties.deaths is None
+
+
+def test_extract_tier1_talloussa_beit_yahoun_scopes_actions_to_sub_events() -> None:
+    payload = json.dumps(
+        {
+            "is_relevant": True,
+            "village": ["Talloussa", "Beit Yahoun"],
+            "village_roles": [
+                {
+                    "village": "Talloussa",
+                    "role": "target",
+                    "deaths": None,
+                    "injuries": None,
+                    "evidence_span": None,
+                    "qualifier_text": None,
+                },
+                {
+                    "village": "Beit Yahoun",
+                    "role": "target",
+                    "deaths": None,
+                    "injuries": None,
+                    "evidence_span": None,
+                    "qualifier_text": None,
+                },
+            ],
+            "action_description": "multiple actions across 2 villages",
+            "sub_events": [
+                {
+                    "locations": [
+                        {
+                            "village": "Talloussa",
+                            "role": "target",
+                            "deaths": None,
+                            "injuries": None,
+                            "evidence_span": "Sweeping operations near Talloussa",
+                            "qualifier_text": None,
+                        }
+                    ],
+                    "action_text": "sweeping operations",
+                    "casualties": {},
+                    "evidence_span": "Sweeping operations near Talloussa",
+                    "casualty_evidence": [],
+                },
+                {
+                    "locations": [
+                        {
+                            "village": "Beit Yahoun",
+                            "role": "target",
+                            "deaths": None,
+                            "injuries": None,
+                            "evidence_span": "illumination and incendiary shelling near Beit Yahoun",
+                            "qualifier_text": None,
+                        }
+                    ],
+                    "action_text": "illumination and incendiary shelling",
+                    "casualties": {},
+                    "evidence_span": "illumination and incendiary shelling near Beit Yahoun",
+                    "casualty_evidence": [],
+                },
+            ],
+            "casualties": {},
+            "casualty_evidence": [],
+            "casualty_transitions": [],
+        },
+        ensure_ascii=False,
+    )
+    service = OllamaExtractionService(
+        client=_client_for_model_contents([payload]),
+        presence_gate=_PresenceGateStub(categories=[]),
+        category_detail=_CategoryDetailStub(details={}),
+    )
+
+    result = service.extract_tier1(
+        "Sweeping operations near Talloussa. "
+        "Illumination and incendiary shelling near Beit Yahoun.",
+        raw_message_id=77,
+    )
+
+    assert [event.locations[0].village for event in result.sub_events] == [
+        "Talloussa",
+        "Beit Yahoun",
+    ]
+    assert [event.action_text for event in result.sub_events] == [
+        "sweeping operations",
+        "illumination and incendiary shelling",
+    ]
+    assert result.needs_review is False
+
+
+def test_multi_village_multi_action_without_sub_events_needs_review() -> None:
+    payload = json.dumps(
+        {
+            "is_relevant": True,
+            "village": ["Talloussa", "Beit Yahoun"],
+            "village_roles": [
+                {
+                    "village": "Talloussa",
+                    "role": "target",
+                    "deaths": None,
+                    "injuries": None,
+                    "evidence_span": None,
+                    "qualifier_text": None,
+                },
+                {
+                    "village": "Beit Yahoun",
+                    "role": "target",
+                    "deaths": None,
+                    "injuries": None,
+                    "evidence_span": None,
+                    "qualifier_text": None,
+                },
+            ],
+            "action_description": "sweeping operations",
+            "sub_events": [],
+            "casualties": {},
+            "casualty_evidence": [],
+            "casualty_transitions": [],
+        },
+        ensure_ascii=False,
+    )
+    service = OllamaExtractionService(
+        client=_client_for_model_contents([payload]),
+        presence_gate=_PresenceGateStub(categories=[]),
+        category_detail=_CategoryDetailStub(details={}),
+    )
+
+    result = service.extract_tier1(
+        "Sweeping operations near Talloussa. "
+        "Illumination and incendiary shelling near Beit Yahoun.",
+        raw_message_id=78,
+    )
+
+    assert result.needs_review is True
+    assert result.review_reason == MULTI_VILLAGE_NO_SUBEVENTS_REVIEW_REASON
+
+
+def test_extract_tier1_fills_dual_death_word_the_model_left_null() -> None:
+    """31539: «شهيدان في غارة… كفررمان» with casualties all null from the model."""
+    post_text = (
+        "وزارة الصحة اللبنانية: شهيدان في غارة إسرائيلية استهدفت دراجة نارية "
+        "في بلدة كفررمان جنوبي #لبنان."
+    )
+    response = json.dumps(
+        {
+            "is_relevant": True,
+            "village": ["كفررمان"],
+            "village_roles": [
+                {"village": "كفررمان", "role": "target", "deaths": None, "injuries": None}
+            ],
+            "action_description": "غارة على دراجة نارية",
+            "casualties": {},
+            "casualty_evidence": [],
+            "casualty_transitions": [],
+        },
+        ensure_ascii=False,
+    )
+    service = OllamaExtractionService(
+        client=_client_for_model_contents([response]),
+        presence_gate=_PresenceGateStub(categories=[]),
+    )
+
+    result = service.extract_tier1(post_text, raw_message_id=31539)
+
+    assert result.casualties.deaths == 2
+    assert result.casualties.total_deaths == 2
+    assert result.casualties.injuries is None
+    assert ("deaths", "شهيدان") in {
+        (item.field, item.evidence_span) for item in result.casualty_evidence
+    }
+    demographics = result.categories[ExtractionCategoryKey.casualty_demographics]
+    assert demographics.casualties.deaths == 2

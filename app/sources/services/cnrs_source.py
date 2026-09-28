@@ -49,9 +49,7 @@ class CNRSSourceProvider(SourceProvider):
             )
 
         payload = response.json()
-        records = payload.get("data", [])
-        next_cursor = payload.get("next_cursor")
-        has_more = bool(payload.get("has_more", False))
+        records, next_cursor, has_more = self._extract_records(payload)
 
         normalized_items = [self._normalize_record(record) for record in records]
         return (
@@ -59,6 +57,34 @@ class CNRSSourceProvider(SourceProvider):
             str(next_cursor) if next_cursor is not None else None,
             has_more,
         )
+
+    @staticmethod
+    def _extract_records(payload: Any) -> tuple[list[dict[str, Any]], Any, bool]:
+        if isinstance(payload, list):
+            return payload, None, False
+
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                f"Unexpected CNRS API payload type: {type(payload).__name__}"
+            )
+
+        records = payload.get("data")
+        if records is None:
+            for key in ("records", "items", "results", "posts"):
+                candidate = payload.get(key)
+                if isinstance(candidate, list):
+                    records = candidate
+                    break
+
+        if records is None:
+            records = []
+        if not isinstance(records, list):
+            raise RuntimeError(
+                "Unexpected CNRS API records payload type: "
+                f"{type(records).__name__}"
+            )
+
+        return records, payload.get("next_cursor"), bool(payload.get("has_more", False))
 
     @staticmethod
     def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:

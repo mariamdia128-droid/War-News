@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -61,6 +62,9 @@ class StoryRelationshipClassification(BaseModel):
     review_reason: str | None = None
     candidate_incident_id: UUID | None = None
     matched_keywords: tuple[str, ...] = ()
+    # True when only the similarity heuristic (no keyword backstop, no LLM)
+    # decided this. Such revisions may not lower casualty counts on their own.
+    heuristic_only: bool = False
 
 
 class VillageRole(str, Enum):
@@ -163,7 +167,13 @@ class ExtractionResult(BaseModel):
     is_relevant: bool
     village: list[str] | None = None
     village_roles: list[VillageRoleEntry] = Field(default_factory=list)
+    location_ambiguity: bool = False
+    location_alternatives: list[str] = Field(default_factory=list)
+    location_ambiguity_evidence: str | None = None
     action_description: str | None = None
+    action_source: str | None = None
+    source_event_subtype: str | None = None
+    source_action_hint: str | None = None
     sub_events: list[ExtractionSubEvent] = Field(default_factory=list)
 
     @field_validator("village", mode="before")
@@ -181,11 +191,26 @@ class ExtractionResult(BaseModel):
     )
     casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
     casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
+    # Deterministically derived after count fill/backstop; absent on older rows.
+    casualty_status: Literal[
+        "none_mentioned", "explicit_none", "exact", "count_missing", "aggregate_only"
+    ] | None = None
+    casualty_deaths_status: Literal[
+        "none_mentioned", "explicit_none", "exact", "count_missing", "aggregate_only"
+    ] | None = None
+    casualty_injuries_status: Literal[
+        "none_mentioned", "explicit_none", "exact", "count_missing", "aggregate_only"
+    ] | None = None
+    casualty_status_remaining_total: dict[str, int] = Field(default_factory=dict)
+    casualty_is_preliminary: bool = False
+    casualty_status_evidence: str | None = None
     casualty_transitions: list[CasualtyTransition] = Field(default_factory=list)
     casualty_scope: CasualtyScope = CasualtyScope.unspecified
     casualty_scope_evidence: str | None = None
     casualty_scope_needs_review: bool = False
     casualty_scope_review_reason: str | None = None
+    needs_review: bool = False
+    review_reason: str | None = None
     # Tier 1 stores presence-gate keys here; category detail fills `categories` in Tier 2.
     presence_category_keys: list[ExtractionCategoryKey] = Field(default_factory=list)
     # 1 = fast path (general fields only); 2 = full category detail complete.

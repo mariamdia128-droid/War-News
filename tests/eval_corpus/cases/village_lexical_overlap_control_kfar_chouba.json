@@ -1,0 +1,13 @@
+{
+  "bug_ref": "village-lexical-overlap-control-kfar-chouba",
+  "description": "A legitimate compact-vs-spaced spelling variant (\"كفرشوبا\" vs \"كفر شوبا\") must still count as overlap, not be penalized as an unrelated match.",
+  "source": "regression guard for the Bug 3 fix itself (test_raw_11553_helta_uses_conditional_kfar_chouba_candidate)",
+  "check": "village_lexical_overlap",
+  "input": {
+    "mention": "كفرشوبا",
+    "candidate_ref_name_ar": "كفر شوبا"
+  },
+  "expected": {
+    "has_overlap": true
+  }
+}
