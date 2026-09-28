@@ -393,11 +393,19 @@ def _alias_matches_in(candidate_text: str, villages: list[Village]) -> list[tupl
     matches: dict[int, tuple[Village, str]] = {}
     for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
         normalized_alias = normalize_arabic(alias)
-        alias_found = (
-            normalized_alias in normalized_candidate
-            if re.search(r"[\u0600-\u06ff]", alias)
-            else normalize_latin_location_token(alias) in normalized_latin_candidate
-        )
+        if re.search(r"[\u0600-\u06ff]", alias):
+            alias_found = normalized_alias in normalized_candidate
+        else:
+            normalized_latin_alias = normalize_latin_location_token(alias)
+            if len(normalized_latin_alias) < 5 and " " not in normalized_latin_alias:
+                alias_found = False
+            else:
+                alias_found = bool(
+                    re.search(
+                        rf"(?<![a-z0-9]){re.escape(normalized_latin_alias)}(?![a-z0-9])",
+                        normalized_latin_candidate,
+                    )
+                )
         if alias_found:
             village = next(
                 (item for item in villages if getattr(item, "acs_code", None) == acs_code),
