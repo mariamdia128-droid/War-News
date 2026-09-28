@@ -125,7 +125,14 @@ BROKEN_RED_ALERT_MAP_FALLBACKS: dict[tuple[int, int], str] = {
 BROKEN_RED_ALERT_MESSAGE_FALLBACKS: dict[int, str] = {
     45674: "Aadchit Ech-Chqif \u0639\u062f\u0634\u064a\u062a \u0627\u0644\u0634\u0642\u064a\u0641 Aalma Ech-Chaab \u0639\u0644\u0645\u0627 \u0627\u0644\u0634\u0639\u0628 Jbal El-Botm \u062c\u0628\u0627\u0644 \u0627\u0644\u0628\u0637\u0645 Yater \u064a\u0627\u0637\u0631 \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
     45675: "\u0641\u0631\u0648\u0646 \u0627\u0644\u063a\u0646\u062f\u0648\u0631\u064a\u0629 \u0637\u0648\u064a\u0631\u064a \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+    45684: "Lala \u0644\u0627\u0644\u0627 Yohmor BG \u064a\u062d\u0645\u0631 \u0628\u0642\u0627\u0639 \u0627\u0644\u063a\u0631\u0628\u064a \u062d\u0631\u0628\u064a \u0623\u0642\u0635\u0649 \u062f\u0631\u062c\u0627\u062a \u0627\u0644\u062d\u0630\u0631",
     45695: "\u0627\u0644\u0642\u0631\u0639\u0648\u0646 qaraaoun \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631",
+}
+
+IGNORED_RED_ALERT_MESSAGE_IDS: set[int] = {
+    45678,
+    45681,
+    45682,
 }
 
 
@@ -501,6 +508,8 @@ class RedAlertCollector:
         villages = list(self.db.scalars(select(Village).where(Village.is_active.is_(True))))
         saved = duplicates = failed = air_violations = new_air_violations = 0
         for post in posts:
+            if post.message_id in IGNORED_RED_ALERT_MESSAGE_IDS:
+                continue
             external_id = f"telegram:{self.channel_username}:{post.message_id}"
             existing = self.db.scalar(
                 select(RawMessage).where(
