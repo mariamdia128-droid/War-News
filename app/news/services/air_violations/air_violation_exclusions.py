@@ -30,6 +30,10 @@ _KINETIC_EVENT_RE = re.compile(
     r"(?:غارة(?! وهمية)|غارات(?! وهمية)|اغار|أغار|قصف جوي|قصف مدفعي|قذائف|مدفعية|صواريخ|صاروخ|انفجار|اشتباكات?|تمشيط|رشقات نارية|شهداء|شهيد|جرحى|إصابات)",
     re.IGNORECASE,
 )
+_RED_ALERT_STATUS_UPDATE_RE = re.compile(
+    r"(?:آخر|اخر)\s+تحديث\s+للمناطق\s+المتأثرة|عدد\s+الدوائر\s+الحمراء\s+يدل\s+على\s+عدد\s+المناطق\s+المتأثرة",
+    re.IGNORECASE,
+)
 
 
 def _span(text: str, match: re.Match[str] | None) -> str:
@@ -59,6 +63,13 @@ def air_violation_exclusion(text: str | None) -> AirViolationExclusion | None:
         return AirViolationExclusion(
             reason="excluded_kinetic_strike_or_artillery",
             evidence_span=_span(value, kinetic),
+        )
+
+    status_update = _RED_ALERT_STATUS_UPDATE_RE.search(value)
+    if status_update:
+        return AirViolationExclusion(
+            reason="excluded_red_alert_status_update",
+            evidence_span=_span(value, status_update),
         )
 
     unifil = _UNIFIL_RE.search(value)

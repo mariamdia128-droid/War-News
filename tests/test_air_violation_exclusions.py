@@ -27,3 +27,13 @@ def test_keeps_palestine_origin_route_with_concrete_lebanese_violation() -> None
     )
 
     assert result is None
+
+
+def test_excludes_red_alert_status_update() -> None:
+    result = air_violation_exclusion(
+        "اخر تحديث للمناطق المتأثرة بنشاط #المسير المعادي في أجواء جنوب لبنان\n"
+        "ملاحظة: عدد الدوائر الحمراء يدل على عدد المناطق المتأثرة وليس عدد المسيرات"
+    )
+
+    assert result is not None
+    assert result.reason == "excluded_red_alert_status_update"

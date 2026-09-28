@@ -386,3 +386,67 @@ def test_air_violation_uses_original_message_source_name() -> None:
         db.close()
         transaction.rollback()
         connection.close()
+
+
+def test_red_alert_air_violation_displays_red_alert_source_name() -> None:
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for repository integration coverage.")
+
+    engine = create_engine(database_url)
+    try:
+        connection = engine.connect()
+    except OperationalError as exc:
+        pytest.skip(f"Database is unavailable: {exc}")
+
+    transaction = connection.begin()
+    db = Session(bind=connection, join_transaction_mode="create_savepoint")
+    marker = uuid4().hex
+    try:
+        condition = db.get(Condition, 35)
+        if condition is None:
+            pytest.skip("Air-violation condition 35 is unavailable.")
+
+        source = Source(
+            type=SourceType.api,
+            name="CNRS Webhook",
+            external_id=f"red-alert-source-test-{marker}",
+            config={},
+        )
+        db.add(source)
+        db.flush()
+        message = RawMessage(
+            source_id=source.id,
+            external_message_id=f"red-alert-message-test-{marker}",
+            source_platform="telegram",
+            source_name="Red Alert Lebanon",
+            origin_account="@redlinkleb",
+            raw_payload={},
+            status=MessageStatus.parsed,
+        )
+        db.add(message)
+        db.flush()
+        db.add(
+            AirViolation(
+                raw_message_id=message.id,
+                condition_id=condition.id,
+                source_id=source.id,
+                caza_en=marker,
+                event_date=date(2026, 8, 18),
+                khabar="Red Alert source display test",
+            )
+        )
+        db.flush()
+
+        result = AirViolationRepository(db).list_all(
+            AirViolationListParams(caza_en=marker)
+        )
+
+        assert result.total == 1
+        assert result.items[0].source_name == "Red Alert Lebanon"
+    except (OperationalError, ProgrammingError) as exc:
+        pytest.skip(f"Air-violation schema is unavailable: {exc}")
+    finally:
+        db.close()
+        transaction.rollback()
+        connection.close()

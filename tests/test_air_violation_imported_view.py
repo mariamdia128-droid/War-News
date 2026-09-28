@@ -60,6 +60,18 @@ def test_village_labels_do_not_override_stored_multi_region_caza():
     assert result['village_en'] == 'Aadloun'
 
 
+def test_list_response_collapses_air_violation_window_rows():
+    rows = [
+        {"id": 2, "condition_id": 35, "window_id": "35:South Lebanon:2026-09-28T10:17:59"},
+        {"id": 1, "condition_id": 35, "window_id": "35:South Lebanon:2026-09-28T10:17:59"},
+        {"id": 3, "condition_id": 36, "window_id": None},
+    ]
+
+    result = AirViolationRepository._collapse_windowed_items(rows)
+
+    assert [item["id"] for item in result] == [2, 3]
+
+
 def test_condition_45_is_not_routed_to_air_violations():
     db = MagicMock()
     result = AirViolationRepository(db).route_from_match(

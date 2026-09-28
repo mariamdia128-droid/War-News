@@ -26,6 +26,11 @@ CAZA_ONLY_ALIASES: dict[str, tuple[str, str | None]] = {
     "القطاع الاوسط": ("Multiple regions", "مناطق متعددة"),
     "القطاع الأوسط": ("Multiple regions", "مناطق متعددة"),
 }
+CAZA_ONLY_ALIASES.update({
+    "lebanon": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+    "\u0644\u0628\u0646\u0627\u0646": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
+})
+RED_ZONE_OCR_MARKER = "__RED_ZONE_TEXT__"
 
 
 class RedAlertAirViolationService:
@@ -136,10 +141,14 @@ class RedAlertAirViolationService:
         return None
 
     def _combined_village_matches(self, text: str, villages: list[Village]) -> list[tuple[Village, str]]:
-        matches = [
-            *(self.match_villages(text, villages) if self.match_villages else []),
-            *self._match_villages(text, villages),
-        ]
+        safe_matches = self.match_villages(text, villages) if self.match_villages else []
+        if RED_ZONE_OCR_MARKER in text and safe_matches:
+            matches = safe_matches
+        else:
+            matches = [
+                *safe_matches,
+                *self._match_villages(text, villages),
+            ]
         unique: dict[int, tuple[Village, str]] = {}
         for village, raw_location in matches:
             current = unique.get(village.id)

@@ -106,6 +106,14 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "maarakeh": 62231,
     "maarakah": 62231,
     "maarake": 62231,
+    "\u0643\u0641\u0631 \u062a\u0628\u0646\u064a\u062a": 71166,
+    "kfar tibnit": 71166,
+    "\u0642\u0644\u064a\u0644\u0629": 62287,
+    "\u0627\u0644\u0642\u0644\u064a\u0644\u0629": 62287,
+    "qlaile": 62287,
+    "qlaile sour": 62287,
+    "\u0627\u0644\u0645\u0646\u0635\u0648\u0631\u064a": 62296,
+    "mansouri sour": 62296,
 }
 
 BROKEN_RED_ALERT_MAP_FALLBACKS: dict[tuple[int, int], str] = {
@@ -367,7 +375,10 @@ def _alias_matches_in(candidate_text: str, villages: list[Village]) -> list[tupl
             else normalize_latin_location_token(alias) in normalized_latin_candidate
         )
         if alias_found:
-            village = next((item for item in villages if item.acs_code == acs_code), None)
+            village = next(
+                (item for item in villages if getattr(item, "acs_code", None) == acs_code),
+                None,
+            )
             if village is not None:
                 current = matches.get(village.id)
                 if current is None or len(alias) > len(current[1]):

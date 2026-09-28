@@ -143,6 +143,27 @@ def test_routes_south_region_air_violation_without_fake_village() -> None:
     repository.route_from_match.assert_called_once()
 
 
+def test_routes_lebanon_region_air_violation_as_multiple_regions() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 35, lambda text, villages: None)
+    message = SimpleNamespace(
+        id=103,
+        raw_text="#\u0645\u0642\u0627\u062a\u0644\u0627\u062a_\u062d\u0631\u0628\u064a\u0629 #\u0644\u0628\u0646\u0627\u0646",
+        raw_payload={},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(message, []) is True
+    routed_result = repository.route_from_match.call_args.args[1]
+
+    assert routed_result.village_matches == []
+    assert routed_result.raw_condition_text == "#\u0645\u0642\u0627\u062a\u0644\u0627\u062a_\u062d\u0631\u0628\u064a\u0629 #\u0644\u0628\u0646\u0627\u0646"
+
+
 def test_red_alert_air_violation_routes_all_exact_villages_from_ocr_text() -> None:
     repository = MagicMock()
     repository.route_from_match.return_value = True
@@ -224,6 +245,35 @@ def test_red_alert_air_violation_routes_all_alias_villages_from_ocr_text() -> No
         207,
         208,
     }
+
+
+def test_red_alert_ocr_red_zone_aliases_do_not_add_generic_village_noise() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
+    froun = _village(301, "\u0641\u0631\u0648\u0646", caza_en="Bint Jubail")
+    froun.ref_name_en = "Froun"
+    froun.acs_code = 72276
+    qsair_aakkar = _village(302, "\u0627\u0644\u0642\u0635\u064a\u0631", caza_en="Akkar")
+    qsair_aakkar.ref_name_en = "Qsair Aakkar"
+    qsair_aakkar.acs_code = 35415
+    message = SimpleNamespace(
+        id=106,
+        raw_text=(
+            f"redalert.com.lb \u0645\u0633\u064a\u0631\u0629 \u062d\u064a\u0637\u0629 \u0648\u062d\u0630\u0631 "
+            f"{RED_ZONE_OCR_MARKER} \u0641\u0631\u0648\u0646 \u0627\u0644\u0642\u0635\u064a\u0631"
+        ),
+        raw_payload={"ocr_text": "\u0641\u0631\u0648\u0646 \u0627\u0644\u0642\u0635\u064a\u0631"},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(message, [froun, qsair_aakkar]) is True
+    routed_result = repository.route_from_match.call_args.args[1]
+
+    assert [match.matched_village_id for match in routed_result.village_matches] == [301]
 
 
 def _village(village_id: int, arabic: str, caza_en: str = "Sour") -> SimpleNamespace:

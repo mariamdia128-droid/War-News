@@ -321,6 +321,23 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         return items
 
     @staticmethod
+    def _collapse_windowed_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+        collapsed: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for item in items:
+            window_id = item.get("window_id")
+            key = (
+                str(window_id)
+                if window_id and int(item["condition_id"]) in AIR_VIOLATION_CONDITION_IDS
+                else f"record-{item['id']}"
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            collapsed.append(item)
+        return collapsed
+
+    @staticmethod
     def _location_entries_from_match(result: MatchResultDTO) -> list[dict[str, object]]:
         entries: list[dict[str, object]] = []
         seen: set[int] = set()
@@ -503,6 +520,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 Condition.action_ar,
                 case(
                     (RawMessage.raw_payload['import'].as_string() == 'khabar', func.coalesce(RawMessage.source_name, Source.name)),
+                    (RawMessage.source_name == "Red Alert Lebanon", RawMessage.source_name),
                     (
                         RawMessage.id.is_not(None),
                         func.coalesce(
@@ -520,38 +538,25 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             .where(*filters)
         )
 
-        rows = self.db.execute(
+        all_rows = self.db.execute(
             base_query.order_by(
                 AirViolation.event_date.desc(),
                 AirViolation.event_time.desc().nullslast(),
                 AirViolation.id.desc(),
             )
-            .limit(params.limit)
-            .offset(params.offset)
         ).all()
-        total = self.db.scalar(
-            select(func.count(AirViolation.id))
-            .join(Condition, Condition.id == AirViolation.condition_id)
-            .join(Source, Source.id == AirViolation.source_id)
-            .where(*filters)
-        )
-
-        all_rows = self.db.execute(
-            base_query.order_by(
-                AirViolation.event_date.asc(),
-                AirViolation.event_time.asc().nullsfirst(),
-                AirViolation.id.asc(),
-            )
-        ).all()
-        page_items = self._with_village_labels(rows)
         all_items = self._with_village_labels(all_rows)
+        collapsed_items = self._collapse_windowed_items(
+            self._attach_window_metadata(all_items, all_items)
+        )
+        page_items = collapsed_items[params.offset:params.offset + params.limit]
 
         return AirViolationListResponse(
             items=[
                 AirViolationDTO.model_validate(item)
-                for item in self._attach_window_metadata(page_items, all_items)
+                for item in page_items
             ],
-            total=int(total or 0),
+            total=len(collapsed_items),
             limit=params.limit,
             offset=params.offset,
         )
@@ -618,6 +623,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 Condition.action_ar,
                 case(
                     (RawMessage.raw_payload['import'].as_string() == 'khabar', func.coalesce(RawMessage.source_name, Source.name)),
+                    (RawMessage.source_name == "Red Alert Lebanon", RawMessage.source_name),
                     (
                         RawMessage.id.is_not(None),
                         func.coalesce(
