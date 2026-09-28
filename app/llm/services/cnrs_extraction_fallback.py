@@ -59,19 +59,25 @@ def trusted_cnrs_action(
     """Map a supported CNRS subtype to its trusted incident condition."""
     if not classification or classification.get("include") is not True:
         return None
-    if verdict_from_cnrs_classification(classification) != ClassificationVerdict.relevant:
-        return None
     subtype = str(classification.get("event_subtype") or "").strip().lower()
+    if subtype == "fire_incident":
+        # verdict_from_cnrs_classification rejects domain=fire outright unless
+        # mentions_israeli_actor is set (39f79d5f), which made this branch dead:
+        # a fire attributed only in the post text (e.g. "قصف مدفعي إسرائيلي",
+        # "درون معادية القت مواد حارقة") could never reach has_conflict_attribution.
+        # Fires require explicit war/conflict causal attribution (flag OR text)
+        # to avoid civilian/traffic false positives; check that directly instead
+        # of the domain-based verdict gate.
+        if not has_conflict_attribution(classification, post_text):
+            return None
+    elif verdict_from_cnrs_classification(classification) != ClassificationVerdict.relevant:
+        return None
     if subtype == "direct_attack":
         return (
             "Tank Fire"
             if any(marker in post_text for marker in _TANK_MARKERS)
             else "Bombs"
         )
-    if subtype == "fire_incident":
-        # Fires require explicit war/conflict causal attribution to avoid civilian/traffic false positives.
-        if not has_conflict_attribution(classification, post_text):
-            return None
     return SUBTYPE_ACTIONS.get(subtype)
 
 

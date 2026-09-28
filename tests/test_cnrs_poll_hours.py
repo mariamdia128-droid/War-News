@@ -219,6 +219,12 @@ def test_run_poll_pass_resolves_cnrs_source_by_external_id(monkeypatch) -> None:
         "scripts.cnrs_poll_worker._resolve_cnrs_api_key",
         lambda: "cnrs-api-key",
     )
+    # A successful insert enqueues a pipeline sweep (bf8139b); _FakeDb has no
+    # SQL engine behind it, so the enqueue itself is out of scope here.
+    monkeypatch.setattr(
+        "scripts.cnrs_poll_worker.enqueue_pipeline_sweep",
+        lambda db, **kwargs: 1,
+    )
 
     summary = run_poll_pass(after_id="731000")
 
