@@ -16,7 +16,13 @@ from app.llm.dtos import (
     ClassificationVerdict,
     FilterPendingMessagesData,
 )
+from app.llm.services.relevance_guardrails import GUARDRAIL_BACKEND
 from app.news.models import MessageStatus
+
+# Palestine/West Bank/Gaza scope is rejected before extraction either by the
+# rule guardrail (bf8139b, runs first) or by the older Lebanon scope filter.
+# Which one fires is an ordering detail; the contract is "rejected, no LLM".
+PRE_EXTRACTION_LOCATION_BACKENDS = {GUARDRAIL_BACKEND, NON_LEBANON_LOCATION_BACKEND}
 
 
 class _RepoStub:
@@ -168,7 +174,7 @@ async def test_west_bank_bulletin_is_rejected_even_with_matching_village_name() 
     assert summary.rejected == 1
     assert classifier.calls == []
     assert keyword.calls == []
-    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+    assert repo.saved[0]["result"].backend in PRE_EXTRACTION_LOCATION_BACKENDS
     assert repo.saved[0]["result"].verdict == ClassificationVerdict.not_relevant
 
 
@@ -186,7 +192,7 @@ async def test_west_bank_bulletin_overrides_trusted_source() -> None:
 
     assert summary.rejected == 1
     assert summary.relevant == 0
-    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+    assert repo.saved[0]["result"].backend in PRE_EXTRACTION_LOCATION_BACKENDS
 
 
 @pytest.mark.asyncio
@@ -202,7 +208,7 @@ async def test_west_bank_bulletin_overrides_cnrs_include_true() -> None:
     summary = await action.execute_async(FilterPendingMessagesData(batch_size=10))
 
     assert summary.rejected == 1
-    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+    assert repo.saved[0]["result"].backend in PRE_EXTRACTION_LOCATION_BACKENDS
 
 
 @pytest.mark.asyncio
@@ -229,7 +235,7 @@ async def test_gaza_beit_lahia_bulletin_overrides_cnrs_include_true() -> None:
     assert summary.rejected == 1
     assert summary.relevant == 0
     assert repo.saved[0]["new_status"] == MessageStatus.rejected
-    assert repo.saved[0]["result"].backend == NON_LEBANON_LOCATION_BACKEND
+    assert repo.saved[0]["result"].backend in PRE_EXTRACTION_LOCATION_BACKENDS
 
 
 @pytest.mark.asyncio

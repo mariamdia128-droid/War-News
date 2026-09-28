@@ -106,6 +106,7 @@ export const getIncidents = async (
   if (filters.verificationStatus) {
     params.set("verification_status", filters.verificationStatus);
   }
+  if (filters.verificationType) params.set("verification_type", filters.verificationType);
   if (filters.duplicateOnly) {
     params.set("duplicate_only", "true");
   }

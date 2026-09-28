@@ -151,3 +151,77 @@ def test_claim_sql_excludes_air_violations_and_requires_village() -> None:
     assert "village_matches" in compiled
     assert "matched_low_confidence" in compiled
     assert FAST_PATH_MATERIALIZABLE_SQL.strip() in compiled or "village_matches" in compiled
+
+
+def test_unmatched_named_place_is_held_not_errored() -> None:
+    # raw_message 29077: «قصف مدفعي يستهدف وادي الحجير لجهة بلدة الغندورية»,
+    # the place was missing from the gazetteer/aliases and the row was lost.
+    from app.news.models import MessageStatus
+    from app.news.services.dedup.fast_path_eligibility import (
+        HELD_UNMATCHED_PLACE,
+        terminal_status_for_reason,
+        unmatched_target_places,
+    )
+
+    match_result = {
+        "condition_match_status": "matched",
+        "matched_condition_id": 5,
+        "village_matches": [
+            {
+                "raw_village_text": "الغندورية",
+                "matched_village_id": None,
+                "village_match_status": "unmatched",
+                "village_role": "target",
+            }
+        ],
+    }
+
+    reason = permanent_ineligibility_reason(match_result)
+
+    assert reason == HELD_UNMATCHED_PLACE
+    assert terminal_status_for_reason(reason) == MessageStatus.held_for_review
+    assert unmatched_target_places(match_result) == ["الغندورية"]
+
+
+def test_origin_only_unmatched_place_is_not_held() -> None:
+    reason = permanent_ineligibility_reason(
+        {
+            "condition_match_status": "matched",
+            "matched_condition_id": 5,
+            "village_matches": [
+                {
+                    "raw_village_text": "حداثا",
+                    "matched_village_id": None,
+                    "village_match_status": "unmatched",
+                    "village_role": "origin",
+                }
+            ],
+        }
+    )
+
+    assert reason == ERROR_NO_VILLAGE
+
+
+def test_terminal_status_mapping_keeps_existing_statuses() -> None:
+    from app.news.models import MessageStatus
+    from app.news.services.dedup.fast_path_eligibility import terminal_status_for_reason
+
+    assert terminal_status_for_reason(ERROR_AIR_VIOLATION) == MessageStatus.routed_air_violation
+    assert terminal_status_for_reason(ERROR_NO_VILLAGE) == MessageStatus.error
+    assert terminal_status_for_reason(ERROR_UNMATCHED_CONDITION) == MessageStatus.error
+
+
+def test_bulk_terminalize_sql_holds_unmatched_places() -> None:
+    from app.news.services.dedup.fast_path_eligibility import (
+        HELD_UNMATCHED_PLACE,
+        ineligible_fast_path_update_sql,
+    )
+
+    statement = ineligible_fast_path_update_sql()
+    sql = str(statement)
+    params = statement.compile().params
+
+    assert ":held_status" in sql
+    assert "village_match_status' = 'unmatched'" in sql
+    assert params["held_status"] == "held_for_review"
+    assert params["held_unmatched_place"] == HELD_UNMATCHED_PLACE

@@ -1,0 +1,466 @@
+# Arabic casualty wording for deterministic (non-LLM) casualty checks.
+# Consumed by app/news/services/incident_details/casualty_text.py only.
+# Not listed in index.yaml on purpose: these entries do not reach prompts.
+# Singular / dual / plural casualty nouns live in casualty_gender.yaml.
+
+# --- Page headers that name a past victim, not a new casualty ---
+
+- term: "صفحة الإعلامي الشهيد علي شعيب"
+  category: page_header
+  meaning: source_header
+  notes: "Seen in ~464 messages (2026-08/09). Tokens before الشهيد are optional in matching."
+
+# --- Extra casualty terms (verbs / verbal nouns) used for number adjacency ---
+
+- term: "استشهاد"
+  category: death_term
+  meaning: death
+- term: "استشهد"
+  category: death_term
+  meaning: death
+- term: "استشهدت"
+  category: death_term
+  meaning: death
+- term: "ارتقاء"
+  category: death_term
+  meaning: death
+- term: "ارتقى"
+  category: death_term
+  meaning: death
+- term: "ارتقت"
+  category: death_term
+  meaning: death
+- term: "مقتل"
+  category: death_term
+  meaning: death
+- term: "قتلى"
+  category: death_term
+  meaning: death
+- term: "وفاة"
+  category: death_term
+  meaning: death
+- term: "وفيات"
+  category: death_term
+  meaning: death
+- term: "ضحايا"
+  category: death_term
+  meaning: death
+- term: "ضحية"
+  category: death_term
+  meaning: death
+- term: "إصابة"
+  category: injury_term
+  meaning: injury
+- term: "إصابات"
+  category: injury_term
+  meaning: injury
+- term: "إصابتين"
+  category: injury_term
+  meaning: injury
+  normalized: "2"
+- term: "إصابتان"
+  category: injury_term
+  meaning: injury
+  normalized: "2"
+- term: "أصيب"
+  category: injury_term
+  meaning: injury
+- term: "أصيبت"
+  category: injury_term
+  meaning: injury
+- term: "أصيبوا"
+  category: injury_term
+  meaning: injury
+- term: "جرح"
+  category: injury_term
+  meaning: injury
+- term: "بجروح"
+  category: injury_term
+  meaning: injury
+
+# --- Demographic nouns (children / women / men) for demographic count fields ---
+
+- term: "طفل"
+  category: demographic_noun
+  meaning: children
+- term: "طفلة"
+  category: demographic_noun
+  meaning: children
+- term: "طفلان"
+  category: demographic_noun
+  meaning: children
+  normalized: "2"
+- term: "طفلين"
+  category: demographic_noun
+  meaning: children
+  normalized: "2"
+- term: "أطفال"
+  category: demographic_noun
+  meaning: children
+- term: "رضيع"
+  category: demographic_noun
+  meaning: children
+- term: "سيدة"
+  category: demographic_noun
+  meaning: female
+- term: "سيدات"
+  category: demographic_noun
+  meaning: female
+- term: "امرأة"
+  category: demographic_noun
+  meaning: female
+- term: "نساء"
+  category: demographic_noun
+  meaning: female
+- term: "رجال"
+  category: demographic_noun
+  meaning: male
+- term: "رجل"
+  category: demographic_noun
+  meaning: male
+
+# --- Vague quantifiers: never a number ---
+
+- term: "عشرات"
+  category: vague_quantifier
+  meaning: vague
+- term: "مئات"
+  category: vague_quantifier
+  meaning: vague
+- term: "عدد من"
+  category: vague_quantifier
+  meaning: vague
+- term: "عدد كبير من"
+  category: vague_quantifier
+  meaning: vague
+- term: "كثير من"
+  category: vague_quantifier
+  meaning: vague
+- term: "العديد من"
+  category: vague_quantifier
+  meaning: vague
+- term: "بضعة"
+  category: vague_quantifier
+  meaning: vague
+- term: "بعض"
+  category: vague_quantifier
+  meaning: vague
+- term: "وقوع"
+  category: vague_quantifier
+  meaning: vague
+  notes: "«وقوع إصابات» asserts casualties without a count."
+- term: "سقوط"
+  category: vague_quantifier
+  meaning: vague
+  notes: "«سقوط ضحايا» asserts casualties without a count; «سقوط شهيد» is still a singular count."
+
+# --- Explicit "no casualties" phrases: negator + optional filler + casualty noun ---
+
+- term: "دون"
+  category: none_negator
+  meaning: negation
+- term: "بدون"
+  category: none_negator
+  meaning: negation
+- term: "من دون"
+  category: none_negator
+  meaning: negation
+- term: "لا"
+  category: none_negator
+  meaning: negation
+- term: "لم تسجل"
+  category: none_negator
+  meaning: negation
+- term: "لم يسجل"
+  category: none_negator
+  meaning: negation
+- term: "لم تسفر عن"
+  category: none_negator
+  meaning: negation
+- term: "لم يسفر عن"
+  category: none_negator
+  meaning: negation
+- term: "لم تؤد إلى"
+  category: none_negator
+  meaning: negation
+- term: "لم يؤد إلى"
+  category: none_negator
+  meaning: negation
+- term: "لم تفد التقارير عن"
+  category: none_negator
+  meaning: negation
+- term: "وقوع"
+  category: none_filler
+  meaning: filler
+- term: "سقوط"
+  category: none_filler
+  meaning: filler
+- term: "تسجيل"
+  category: none_filler
+  meaning: filler
+- term: "أي"
+  category: none_filler
+  meaning: filler
+- term: "إصابات"
+  category: none_noun
+  meaning: injuries
+- term: "إصابة"
+  category: none_noun
+  meaning: injuries
+- term: "جرحى"
+  category: none_noun
+  meaning: injuries
+- term: "مصابين"
+  category: none_noun
+  meaning: injuries
+- term: "شهداء"
+  category: none_noun
+  meaning: deaths
+- term: "قتلى"
+  category: none_noun
+  meaning: deaths
+- term: "وفيات"
+  category: none_noun
+  meaning: deaths
+- term: "ضحايا"
+  category: none_noun
+  meaning: both
+- term: "خسائر بشرية"
+  category: none_noun
+  meaning: both
+- term: "إصابات بشرية"
+  category: none_noun
+  meaning: both
+- term: "إصابات في الأرواح"
+  category: none_noun
+  meaning: both
+
+# --- Obituary / mourning markers: a named victim, not a new casualty event ---
+
+- term: "تنعى"
+  category: obituary_marker
+  meaning: obituary
+- term: "تنعي"
+  category: obituary_marker
+  meaning: obituary
+- term: "ينعى"
+  category: obituary_marker
+  meaning: obituary
+- term: "نعي"
+  category: obituary_marker
+  meaning: obituary
+- term: "نعت"
+  category: obituary_marker
+  meaning: obituary
+- term: "تزف"
+  category: obituary_marker
+  meaning: obituary
+- term: "يزف"
+  category: obituary_marker
+  meaning: obituary
+
+# --- Headings that introduce per-place strike counts: «الغارات: • النبطية (١١)» ---
+
+- term: "الغارات"
+  category: strike_heading
+  meaning: strike
+- term: "غارات"
+  category: strike_heading
+  meaning: strike
+- term: "القصف"
+  category: strike_heading
+  meaning: strike
+- term: "القذائف"
+  category: strike_heading
+  meaning: strike
+- term: "التفجيرات"
+  category: strike_heading
+  meaning: strike
+- term: "التفجير"
+  category: strike_heading
+  meaning: strike
+- term: "الاستهدافات"
+  category: strike_heading
+  meaning: strike
+
+# --- Spelled-out numbers (only meaningful next to a casualty noun) ---
+
+- term: "اثنان"
+  category: spelled_number
+  meaning: number
+  normalized: "2"
+- term: "اثنين"
+  category: spelled_number
+  meaning: number
+  normalized: "2"
+- term: "ثلاثة"
+  category: spelled_number
+  meaning: number
+  normalized: "3"
+- term: "ثلاث"
+  category: spelled_number
+  meaning: number
+  normalized: "3"
+- term: "أربعة"
+  category: spelled_number
+  meaning: number
+  normalized: "4"
+- term: "أربع"
+  category: spelled_number
+  meaning: number
+  normalized: "4"
+- term: "خمسة"
+  category: spelled_number
+  meaning: number
+  normalized: "5"
+- term: "خمس"
+  category: spelled_number
+  meaning: number
+  normalized: "5"
+- term: "ستة"
+  category: spelled_number
+  meaning: number
+  normalized: "6"
+- term: "ست"
+  category: spelled_number
+  meaning: number
+  normalized: "6"
+- term: "سبعة"
+  category: spelled_number
+  meaning: number
+  normalized: "7"
+- term: "سبع"
+  category: spelled_number
+  meaning: number
+  normalized: "7"
+- term: "ثمانية"
+  category: spelled_number
+  meaning: number
+  normalized: "8"
+- term: "ثماني"
+  category: spelled_number
+  meaning: number
+  normalized: "8"
+- term: "تسعة"
+  category: spelled_number
+  meaning: number
+  normalized: "9"
+- term: "تسع"
+  category: spelled_number
+  meaning: number
+  normalized: "9"
+- term: "عشرة"
+  category: spelled_number
+  meaning: number
+  normalized: "10"
+- term: "عشر"
+  category: spelled_number
+  meaning: number
+  normalized: "10"
+
+# --- «استشهاد مسعف»، «إصابة مواطن»: verbal noun + indefinite singular person = 1 ---
+
+- term: "استشهاد"
+  category: singular_verbal_noun
+  meaning: deaths
+- term: "مقتل"
+  category: singular_verbal_noun
+  meaning: deaths
+- term: "ارتقاء"
+  category: singular_verbal_noun
+  meaning: deaths
+- term: "وفاة"
+  category: singular_verbal_noun
+  meaning: deaths
+- term: "إصابة"
+  category: singular_verbal_noun
+  meaning: injuries
+- term: "جرح"
+  category: singular_verbal_noun
+  meaning: injuries
+- term: "مواطن"
+  category: person_singular
+  meaning: male
+- term: "مواطنة"
+  category: person_singular
+  meaning: female
+- term: "شاب"
+  category: person_singular
+  meaning: male
+- term: "شابة"
+  category: person_singular
+  meaning: female
+- term: "رجل"
+  category: person_singular
+  meaning: male
+- term: "امرأة"
+  category: person_singular
+  meaning: female
+- term: "سيدة"
+  category: person_singular
+  meaning: female
+- term: "طفل"
+  category: person_singular
+  meaning: children
+- term: "طفلة"
+  category: person_singular
+  meaning: children
+- term: "رضيع"
+  category: person_singular
+  meaning: children
+- term: "عامل"
+  category: person_singular
+  meaning: male
+- term: "مزارع"
+  category: person_singular
+  meaning: male
+
+# --- Recovered bodies: «انتشال جثمان» = 1, «انتشال جثمانَي فلان وفلان» = 2 ---
+
+- term: "جثمان"
+  category: body_noun
+  meaning: deaths
+  normalized: "1"
+- term: "جثة"
+  category: body_noun
+  meaning: deaths
+  normalized: "1"
+- term: "جثماني"
+  category: body_noun
+  meaning: deaths
+  normalized: "2"
+  notes: "Construct dual «جثمانَي حسين شكر واحمد روماني»."
+- term: "جثمانين"
+  category: body_noun
+  meaning: deaths
+  normalized: "2"
+- term: "جثتين"
+  category: body_noun
+  meaning: deaths
+  normalized: "2"
+- term: "جثتي"
+  category: body_noun
+  meaning: deaths
+  normalized: "2"
+
+# --- «وقوع إصابة»: an event verb + singular verbal noun = 1 (not «إصابة مباشرة») ---
+
+- term: "وقوع"
+  category: event_lead
+  meaning: lead
+- term: "بوقوع"
+  category: event_lead
+  meaning: lead
+- term: "تسجيل"
+  category: event_lead
+  meaning: lead
+- term: "سقوط"
+  category: event_lead
+  meaning: lead
+- term: "مباشرة"
+  category: hit_qualifier
+  meaning: hit
+  notes: "«إصابة مباشرة» is a direct hit on a target, not an injury."
+- term: "دقيقة"
+  category: hit_qualifier
+  meaning: hit

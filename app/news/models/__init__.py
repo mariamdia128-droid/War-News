@@ -12,6 +12,7 @@ from app.news.models.emergency_organization import EmergencyOrganization
 from app.news.models.incident import PIPELINE_DELETED_REASONS, DeletedReason, Incident
 from app.news.models.incident_detail import DidValue, IncidentDetail
 from app.news.models.incident_update import IncidentUpdate, UpdateAction
+from app.news.models.incident_verification_flag import IncidentVerificationFlag
 from app.news.models.pipeline_stage_run import PipelineStageRun
 from app.news.models.raw_message import MessageStatus, RawMessage
 from app.news.models.sweep_cursor import SweepCursor
@@ -33,6 +34,7 @@ __all__ = [
     "Incident",
     "IncidentDetail",
     "IncidentUpdate",
+    "IncidentVerificationFlag",
     "PIPELINE_DELETED_REASONS",
     "PipelineStageRun",
     "MatchStatus",

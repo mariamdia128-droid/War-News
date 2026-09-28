@@ -603,7 +603,13 @@ class _MatchingServiceStub:
         self.result = result
         self.received: ExtractionResult | None = None
 
-    def match(self, extraction_result: ExtractionResult) -> MatchResultDTO:
+    def match(
+        self,
+        extraction_result: ExtractionResult,
+        *,
+        cnrs_classification: dict | None = None,
+    ) -> MatchResultDTO:
+        # MatchIncidentAction passes CNRS context since 8ebac94.
         self.received = extraction_result
         return self.result
 
@@ -1093,7 +1099,9 @@ def test_sub_event_locations_fall_back_to_matched_root_condition() -> None:
     villages = _MultiSimilarRepositoryStub([(976, 1.0), (1153, 0.9)])
     conditions = _TextSimilarRepositoryStub(
         {
-            "bombs": [(SimpleNamespace(id=46), 1.0)],
+            # The mention is passed as-is; the real repository lower()s English
+            # labels in SQL, so the stub is keyed by the text actually sent.
+            "Bombs": [(SimpleNamespace(id=46), 1.0)],
             normalize_arabic_text(
                 "اغار الطيران الحربي المعادي مستهدفا المنصوري والنبطية الفوقا"
             ): [],

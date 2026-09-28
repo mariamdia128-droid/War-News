@@ -66,9 +66,12 @@ class Settings(BaseSettings):
     extraction_llm_retry_backoff_seconds: float = 2.0
     relevance_llm_batch_size: int = 4
     relevance_llm_timeout_seconds: int = 240
-    relevance_classifier_backend: str = "cnrs_provided"
+    relevance_classifier_backend: str = "local_llm"
     relevance_classifier_max_retries: int = 3
     relevance_classifier_retry_backoff_seconds: float = 1.0
+    codecraft_api_key: str | None = None
+    codecraft_base_url: str = "https://codecraftapi.com/v1"
+    codecraft_model: str | None = None
     ingestion_poll_interval_seconds: int = 120
     poll_interval_minutes: int = 5
     login_max_failed_attempts: int = 3
@@ -173,6 +176,8 @@ class Settings(BaseSettings):
     village_geo_context_min_distance_advantage_meters: int = 5000
     redis_url: str = "redis://redis:6379/0"
     cache_enabled: bool = True
+    casualty_flags_enabled: bool = False
+    casualty_flag_grace_minutes: int = 120
 
     class Config:
         env_file = ".env"

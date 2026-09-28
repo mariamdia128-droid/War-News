@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -190,6 +191,19 @@ class ExtractionResult(BaseModel):
     )
     casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
     casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
+    # Deterministically derived after count fill/backstop; absent on older rows.
+    casualty_status: Literal[
+        "none_mentioned", "explicit_none", "exact", "count_missing", "aggregate_only"
+    ] | None = None
+    casualty_deaths_status: Literal[
+        "none_mentioned", "explicit_none", "exact", "count_missing", "aggregate_only"
+    ] | None = None
+    casualty_injuries_status: Literal[
+        "none_mentioned", "explicit_none", "exact", "count_missing", "aggregate_only"
+    ] | None = None
+    casualty_status_remaining_total: dict[str, int] = Field(default_factory=dict)
+    casualty_is_preliminary: bool = False
+    casualty_status_evidence: str | None = None
     casualty_transitions: list[CasualtyTransition] = Field(default_factory=list)
     casualty_scope: CasualtyScope = CasualtyScope.unspecified
     casualty_scope_evidence: str | None = None

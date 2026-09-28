@@ -80,11 +80,6 @@
   meaning: male_injury
   normalized: "2"
 
-- term: "مصابين"
-  category: male_injury_dual
-  meaning: male_injury
-  normalized: "2"
-
 - term: "جريحة"
   category: female_injury_singular
   meaning: female_injury
@@ -136,7 +131,7 @@
 - term: "مصابين"
   category: male_injury_plural
   meaning: male_injury
-  notes: "Also dual/plural overlap in Arabic orthography."
+  notes: "Plural only. Unvocalized مصابين is almost always «المصابين/نقل مصابين»; only مصابان counts as dual."
 
 - term: "جريحات"
   category: female_injury_plural

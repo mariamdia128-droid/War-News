@@ -157,3 +157,25 @@ def test_matching_service_prefers_alias_over_fuzzy_douair() -> None:
     assert result.village_matches[0].village_confidence == 1.0
     assert result.village_matches[0].village_match_status.value == "matched"
     assert villages.similar_calls == []
+
+
+def test_resolve_alias_also_matches_alias_text_normalized_at_read_time() -> None:
+    # Migration 0061 stored alias_normalized = alias_text verbatim, so «الدبشة»
+    # (29 errored messages) never equalled the normalized mention «الدبشه».
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    from app.news.models.village_location_alias import VillageLocationAlias
+    from app.news.repositories.village_repository import _alias_key_matches
+
+    normalized = normalize_arabic_text("الدبشة")
+    sql = str(
+        select(VillageLocationAlias.id)
+        .where(_alias_key_matches(normalized))
+        .compile(dialect=postgresql.dialect())
+    )
+
+    assert normalized == "الدبشه"
+    assert "village_location_aliases.alias_normalized =" in sql
+    assert "village_location_aliases.alias_text" in sql
+    assert " OR " in sql

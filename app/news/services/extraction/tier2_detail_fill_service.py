@@ -31,6 +31,11 @@ from app.news.services.incident_details.category_mapper import (
     suppress_category_casualties,
 )
 from app.news.services.incident_details.casualty_demographic_consistency import reconcile_root_demographics
+from app.news.services.incident_details.casualty_status import (
+    status_for_incident_row,
+    target_location_count_from_extraction,
+)
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.clustering.embedding_service import EmbeddingService
 from app.news.services.matching.emergency_organization_matching_service import (
@@ -244,21 +249,20 @@ class Tier2DetailFillService:
                 after = getattr(root, extraction_field)
                 if before != after:
                     setattr(detail, detail_field, after)
-            # Multi-village rows keep fast-path's per-village counts: None means
-            # "not stated for this village" and 0 means "stated as zero". Copying
-            # the bulletin-wide root toll here recreated the multi-village
-            # casualty misattribution bug, whatever casualty_scope said.
+            # None means "not stated" and may be filled from the root toll; 0 is a
+            # stated zero (the extraction backstop only keeps 0 with an explicit
+            # «دون تسجيل إصابات»-style phrase) and is never overwritten here.
+            # Multi-village rows keep fast-path's per-village counts: copying the
+            # bulletin-wide root toll recreated the multi-village casualty
+            # misattribution bug, whatever casualty_scope said.
             if not is_multi_village:
-                if incident.deaths in (None, 0) and root.deaths is not None:
+                if incident.deaths is None and root.deaths is not None:
                     incident.deaths = root.deaths
-                if incident.injuries in (None, 0) and root.injuries is not None:
+                if incident.injuries is None and root.injuries is not None:
                     incident.injuries = root.injuries
-                if incident.total_deaths in (None, 0) and total_deaths is not None:
+                if incident.total_deaths is None and total_deaths is not None:
                     incident.total_deaths = total_deaths
-                if (
-                    incident.total_injuries in (None, 0)
-                    and total_injuries is not None
-                ):
+                if incident.total_injuries is None and total_injuries is not None:
                     incident.total_injuries = total_injuries
             self._fill_missing_matches(
                 incident,
@@ -280,6 +284,29 @@ class Tier2DetailFillService:
                     raw_message_id=raw_message_id,
                     reason=extraction.casualty_scope_review_reason,
                 )
+            row_status = status_for_incident_row(
+                raw_message.raw_text or "",
+                extraction,
+                {
+                    "deaths": incident.deaths,
+                    "injuries": incident.injuries,
+                    "total_deaths": incident.total_deaths,
+                    "total_injuries": incident.total_injuries,
+                },
+                target_location_count=target_location_count_from_extraction(
+                    extraction.village,
+                    extraction.village_roles,
+                    extraction.sub_events,
+                ),
+                row_village_id=incident.village_id,
+                match_result=raw_message.match_result,
+            )
+            incident.casualty_status = row_status.status
+            incident.casualty_deaths_status = row_status.deaths_status
+            incident.casualty_injuries_status = row_status.injuries_status
+            incident.casualty_status_remaining_total = row_status.remaining_total
+            incident.casualty_is_preliminary = row_status.is_preliminary
+            incident.casualty_status_evidence = row_status.evidence
             self._apply_dedup_backstop(
                 incident,
                 embedding,
@@ -303,6 +330,8 @@ class Tier2DetailFillService:
             raw_message.status = MessageStatus.materialized
         raw_message.error_message = None
         self.db.add(raw_message)
+        for incident in incidents:
+            evaluate_casualty_flags_safely(self.db, incident.id)
         self.db.commit()
         logger.info(
             "tier2_detail_fill raw_message_id=%s updated_incidents=%s categories=%s",

@@ -92,7 +92,8 @@ def test_condition_query_includes_evidence_backed_aliases() -> None:
     # Alias similarity must affect both score and bidirectional coverage ranking.
     # SQL repeats score inside coverage_rank, so each alias appears three times:
     # selected score, the score factor in coverage_rank, and alias coverage.
-    assert sql.count("CASE") == 1 + 3 * sum(
+    # The exact-label CASE (8ebac94) is part of score, so it appears twice.
+    assert sql.count("CASE") == 2 + 3 * sum(
         len(aliases) for aliases in CONDITION_ALIASES.values()
     )
 

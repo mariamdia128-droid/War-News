@@ -15,7 +15,7 @@ Both stacks run concurrently on the same machine under separate Docker Compose p
 | **Compose Files Used** | `docker-compose.yml` | `docker-compose.yml`<br>`docker-compose.dev.yml` | Dev file re-enables live bind mounts (`.:/app`) for hot-reload |
 | **Environment File** | `.env.main` (or `.env`) | `.env.dev` | Ignored by git; distinct ports & DB |
 | **Postgres Database** | `war_news_dev` | `war_news_devtest` | **CRITICAL:** `war_news_dev` is live production data; never overwrite or drop |
-| **Postgres Host Port** | **`5432`** | **`5434`** | Connect via host psql/DBeaver on these ports |
+| **Postgres Host Port** | **`5433`** | **`5434`** | Set by `POSTGRES_HOST_PORT`. `5432` is reserved for the native Windows PostgreSQL 18 service. Connect via host psql/pgAdmin/DBeaver on `127.0.0.1` (not `localhost`: WSL relays `::1` on these ports) |
 | **Backend API Port** | **`8000`** (`http://localhost:8000`) | **`8001`** (`http://localhost:8001`) | FastAPI / Uvicorn API endpoints & Swagger docs (`/docs`) |
 | **Frontend UI Port** | **`5173`** (`http://localhost:5173`) | **`5174`** (`http://localhost:5174`) | Vite React Dashboard |
 | **Redis Port** | Internal only (`6379`) | Internal only (`6379`) | Separated by Docker network bridge |

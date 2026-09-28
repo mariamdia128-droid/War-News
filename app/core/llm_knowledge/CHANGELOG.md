@@ -11,6 +11,109 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-28 - Lost incidents: dead alias keys, unmatched places parked in error, un-retried disconnects
+
+**Bug / accuracy gap** (read-only recon of the 1,875 `status=error` messages):
+- 13 of 49 `village_location_aliases` rows (all from migration 0061) stored
+  `alias_normalized` verbatim, e.g. «الدبشة» instead of «الدبشه», so exact
+  alias lookup never hit. «الدبشة» alone left 29 errored messages
+  (e.g. 28838, 28898, 29109: «غارات استهدفت … محيط الدبشة»).
+- A usable extraction whose only target place was missing from the gazetteer
+  went to terminal `error` ("no materializable village match"), e.g. 29077
+  «قصف مدفعي يستهدف وادي الحجير لجهة بلدة الغندورية». Nobody could see or re-run it.
+- 11 messages failed with httpx `RemoteProtocolError` stored as «Server
+  disconnected without sending a response.»; no transient marker matched, so
+  the extraction retry reset never picked them up.
+
+**Rule / knowledge files changed:** none. Rationale for staying code-only:
+none of the three is model behavior. The alias key is a lookup/data bug
+(fixed at read time plus `scripts/fixes/out/proposed_village_aliases.sql`),
+the hold is a pipeline status policy, and the retry marker classifies a
+transport error. The LLM-side gaps found in the same recon (English
+transliterations such as «Tbaineen»/«Tabbin» for تبنين, truncations such as
+«شقا» for شقرا, and villages dropped entirely, e.g. 31548 «رئيس بلدية كفررمان…
+ارتقاء 11 شهيداً») are NOT fixed here and remain open for a Tier 1 prompt change.
+
+**Code paths fixed:**
+- `village_repository.py`: `resolve_alias` / `find_geo_conditional_aliases`
+  also compare `normalize_arabic_sql(alias_text)` to the normalized mention.
+- `fast_path_eligibility.py`: `HELD_UNMATCHED_PLACE` + `terminal_status_for_reason`;
+  a named-but-unresolved target place maps to `held_for_review` in both the
+  per-message path and the bulk terminalize SQL (live sweep uses the same map).
+- `transient_llm_errors.py`: «server disconnected» / `RemoteProtocolError`
+  are transient.
+
+**Regression tests:** `tests/test_village_location_aliases.py::test_resolve_alias_also_matches_alias_text_normalized_at_read_time`,
+`tests/test_fast_path_eligibility.py::test_unmatched_named_place_is_held_not_errored`
+(+ origin-only, status map, bulk SQL), `tests/test_transient_llm_errors.py`
+(disconnect cases), `tests/test_incident_materialization_service.py::test_unmatched_village_or_condition_is_skipped` (updated expectation).
+
+## 2026-09-28 - Casualty data foundations: dual/singular words, strike lists, vague phrases, zeros
+
+**Bug / accuracy gap** (read-only recon `Docs/recon/casualty_verification_recon.md`):
+- Dual/singular words missed: only 16 of 32 messages with a dual death form
+  were extracted as 2. Msg 31539 «وزارة الصحة اللبنانية: شهيدان في غارة
+  إسرائيلية استهدفت دراجة نارية في بلدة كفررمان» and 30335 «شهيدان جراء غارة
+  معادية على دراجة نارية في كفررمان» → all counts null.
+- Strike counts read as deaths: msg 32708 «عمليات التفجير : • حولا (٢)» → deaths=2.
+- Vague phrases read as numbers: 30496 «وقوع إصابات في غارة كفررمان» →
+  injuries=1; 31816 «عشرات الجرحى، بينهم أطفال ونساء» → injuries=10,
+  children=6; 31315 «… ووقوع إصابات» → injuries=0.
+- The count backstop kept a value when its digit appeared anywhere in the
+  text (dates, clock times, links), and every stored 0 was an extraction error.
+- `casualty_gender.yaml` listed «مصابين» as both dual and plural.
+
+**Rule / knowledge files changed:**
+- `rules/tier1_general_prompt.md` (live Tier 1) and `rules/combined_tier1_prompt.md`
+  (flagged-off path, kept in sync): «شهيد/جريح = 1، شهيدان/جريحان/مصابان = 2؛
+  مصابين جمع»; «الرقم بين قوسين بعد اسم بلدة في قائمة غارات أو قصف أو تفجيرات
+  هو عدد الغارات لا عدد الضحايا»; «وقوع إصابات / سقوط ضحايا / عدد من الجرحى →
+  null، لا 1 ولا 0»; «اكتب 0 فقط مع نفي صريح (دون تسجيل إصابات)».
+- `rules/tier1_multi_village.md` rule 4: per-village dual/singular example
+  («النبطية الفوقا: شهيدان وجريحان» → 2/2) and the strike-list rule.
+- `terminology/casualty_gender.yaml`: «مصابين» is plural only (removed from
+  `male_injury_dual`).
+- New `terminology/casualty_wording.yaml` (code-only, not in `index.yaml`):
+  page header «صفحة الإعلامي الشهيد علي شعيب», casualty verbs, demographic
+  nouns, vague quantifiers, explicit-none phrases, obituary markers,
+  strike-list headings, spelled-out numbers 2–10.
+
+**Code paths fixed** (deterministic, post-LLM):
+- `casualty_text.py`: single source of truth for the wording above.
+- `casualty_count_backstop.py`: no "digit anywhere" fallback. A count is kept
+  only when its value sits next to a matching casualty noun, in the evidence
+  span or (span missing) in a local source phrase that becomes the evidence.
+  Dates, times, links and «place (n)» entries never validate a count; 0 needs
+  an explicit-none phrase. Implicit counts that stay valid (found by the
+  cleanup dry-run on real rows): «استشهاد مسعف» = 1 (31492), «وقوع إصابة» = 1
+  (28394; not «إصابة مباشرة»), «انتشال جثمانَي …» = 2 (28576), «⭕شهيدان»
+  with a glued emoji (31537), and one named victim with a death verb in the
+  same sentence («الشهيدة إسراء بهجة… إرتقت», 31703) — the last one supports a
+  kept LLM value but never triggers the fill.
+- `casualty_count_fill.py`: fills null deaths/injuries from singular/dual words
+  or «ثلاثة شهداء» only for single-target messages, same sentence as the
+  target, never for obituaries, named victims, the page header or when an
+  explicit-none phrase covers that type. Logs `casualty_count_fill filled ...`.
+- `tier2_detail_fill_service.py`: only `None` is "empty"; a stated 0 is kept.
+
+**Regression tests added:**
+- `tests/test_casualty_text.py` (all helpers, incl. 29191, 30616, 31831, 32708)
+- `tests/test_casualty_count_fill.py::test_dual_death_single_village_fills_two_with_evidence` (31539)
+- `tests/test_casualty_count_fill.py::test_dual_death_with_later_plural_mention_still_fills` (30335)
+- `tests/test_casualty_count_fill.py::test_multi_village_bulletin_is_never_filled` (29191)
+- `tests/test_casualty_count_fill.py::test_singular_death_fills_and_vague_injuries_stay_null` (31495)
+- `tests/test_casualty_count_fill.py::test_obituary_line_is_not_filled`, `::test_page_header_only_is_not_filled`
+- `tests/test_extraction_service.py::test_extract_tier1_fills_dual_death_word_the_model_left_null`
+- `tests/test_casualty_count_backstop.py::test_strike_count_list_number_is_not_a_death_count` (32708)
+- `tests/test_casualty_count_backstop.py::test_vague_waqu_isabat_never_becomes_one` (30496)
+- `tests/test_casualty_count_backstop.py::test_dozens_injured_without_evidence_never_becomes_ten` (31816)
+- `tests/test_casualty_count_backstop.py::test_zero_without_explicit_none_is_nulled` (31315)
+- `tests/test_casualty_count_backstop.py::test_date_time_or_url_digit_never_validates_a_count`
+- `tests/test_tier2_detail_fill.py::test_single_village_stated_zero_is_not_overwritten_by_root_toll`
+- `tests/test_max_preserving_empty.py` (NULL/0 merge semantics, unchanged)
+
+Existing rows are corrected by `scripts/fixes/casualty_cleanup.py` (dry-run by default).
+
 ## 2026-09-28 - Flare Bomb vs Bombs and skipped extraction override path
 
 **Bug / accuracy gap:** Mansouri, Sour on 2026-09-26
