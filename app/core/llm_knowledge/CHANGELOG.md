@@ -11,6 +11,36 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-28 - Test triage: dead branch in the CNRS fire-attribution override
+
+**Bug / accuracy gap** (test triage, baseline failure `test_eval_corpus_case[burning-properties-tp-conflict]`
+plus `test_cnrs_fire_incident_with_conflict_attribution_accepts_override` /
+`..._hostile_drone_materials_sets_burning_properties`):
+`trusted_cnrs_action` gated on `verdict_from_cnrs_classification` before its
+own `fire_incident` branch could run. Since `39f79d5f` (2026-09-21) that
+verdict function rejects any `event_domain=fire` classification unless the
+CNRS `mentions_israeli_actor` flag is set — it never reads the post text. So
+"اندلاع حريق في منزل في عيتا الشعب إثر قصف مدفعي إسرائيلي" (fire from Israeli
+artillery shelling; CNRS flag false, text explicit) and "درون معادية القت
+مواد حارقة" (hostile drone dropped incendiary materials) were rejected before
+`has_conflict_attribution`'s own text check ever ran, making that branch dead
+for every fire attributed only in the source text.
+
+**Rule / knowledge files changed:** none. This is a control-flow bug in the
+deterministic CNRS override (`cnrs_extraction_fallback.py`), not a model
+prompt or terminology gap; `has_conflict_attribution` (text + flag) already
+encodes the correct rule and needed no change.
+
+**Code paths fixed:** `trusted_cnrs_action` now branches on `has_conflict_attribution`
+for `fire_incident` instead of the blanket domain-based verdict gate; every
+other subtype is unaffected.
+
+**Regression tests (already existed, now pass for the right reason):**
+`tests/eval_corpus/cases/burning_properties_tp_conflict.json`,
+`tests/test_cnrs_extraction_fallback.py::test_cnrs_fire_incident_with_conflict_attribution_accepts_override`,
+`tests/test_cnrs_extraction_fallback.py::test_cnrs_fire_incident_hostile_drone_materials_sets_burning_properties`,
+`tests/test_cnrs_extraction_fallback.py::test_cnrs_fire_incident_without_conflict_attribution_rejects_override` (still passes, confirms no regression on the false-positive side).
+
 ## 2026-09-28 - Lost incidents: dead alias keys, unmatched places parked in error, un-retried disconnects
 
 **Bug / accuracy gap** (read-only recon of the 1,875 `status=error` messages):
