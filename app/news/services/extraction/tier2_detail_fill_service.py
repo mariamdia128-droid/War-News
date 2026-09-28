@@ -297,6 +297,8 @@ class Tier2DetailFillService:
                     extraction.village_roles,
                     extraction.sub_events,
                 ),
+                row_village_id=incident.village_id,
+                match_result=raw_message.match_result,
             )
             incident.casualty_status = row_status.status
             incident.casualty_deaths_status = row_status.deaths_status

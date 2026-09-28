@@ -16,7 +16,7 @@ from sqlalchemy import inspect, select, update
 from app.core.database import SessionLocal
 from app.news.models import Incident, RawMessage, UpdateAction
 from app.news.services.incident_details.casualty_status import (
-    derive_casualty_status,
+    status_for_incident_row,
     target_location_count_from_extraction,
 )
 from app.news.services.incidents.incident_change_log import record_incident_change
@@ -41,6 +41,7 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
     selected = [
         Incident.id.label("incident_id"),
         Incident.raw_message_id,
+        Incident.village_id,
         Incident.deaths,
         Incident.injuries,
         Incident.total_deaths,
@@ -49,6 +50,7 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
         Incident.version,
         RawMessage.raw_text,
         RawMessage.extraction_result,
+        RawMessage.match_result,
     ]
     if has_status:
         selected.extend(
@@ -75,8 +77,9 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
             row["extraction_payload"].get("village_roles"),
             row["extraction_payload"].get("sub_events"),
         )
-        row["derived"] = derive_casualty_status(
+        row["derived"] = status_for_incident_row(
             row.get("raw_text") or "",
+            row["extraction_payload"],
             {
                 "deaths": row.get("deaths"),
                 "injuries": row.get("injuries"),
@@ -84,6 +87,8 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
                 "total_injuries": row.get("total_injuries"),
             },
             target_location_count=row["target_location_count"],
+            row_village_id=row.get("village_id"),
+            match_result=row.get("match_result"),
         )
         rows.append(row)
     return rows, has_status

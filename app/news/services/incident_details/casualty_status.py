@@ -124,6 +124,71 @@ def _locations_with_counts(
     return list(per_location.items())
 
 
+def _matched_location_counts(
+    match_result: Any,
+    kind: str,
+) -> dict[int, int]:
+    """Return trusted per-location counts keyed by the matched village id.
+
+    Low-confidence and unmatched village resolutions do not establish that a
+    count belongs to the resolved database village. They still remain part of
+    the bulletin's raw per-location breakdown via ``village_roles``.
+    """
+    counts: dict[int, int] = {}
+    matches = _get(match_result, "village_matches", ()) or ()
+    for item in matches:
+        if _get(item, "village_role", "target") != "target":
+            continue
+        if _get(item, "village_match_status") != "matched":
+            continue
+        village_id = _get(item, "matched_village_id")
+        count = _get(item, kind)
+        if (
+            isinstance(village_id, int)
+            and not isinstance(village_id, bool)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and count > 0
+        ):
+            counts[village_id] = max(counts.get(village_id, 0), count)
+    return counts
+
+
+def _bulletin_total(text: str, casualties: Any, kind: str) -> int | None:
+    total = _get(casualties, f"total_{kind}")
+    if isinstance(total, int) and not isinstance(total, bool) and total > 0:
+        return total
+    direct = _get(casualties, kind)
+    if isinstance(direct, int) and not isinstance(direct, bool) and direct > 0:
+        return direct
+    mentions = [
+        mention.value
+        for mention in find_count_mentions(text)
+        if mention.kind == kind and mention.counts_total and mention.value > 0
+    ]
+    return max(mentions, default=None)
+
+
+_SAME_DAY_DEATH_ANCHOR = re.compile(
+    normalize_casualty_text(r"(?:اليوم|صباح\s+اليوم|اثر\s+الغاره)")
+)
+_NAMED_VICTIM_DEATH_VERB = re.compile(
+    normalize_casualty_text(r"(?:ارتقى|ارتقت|استشهد|استشهدت)")
+)
+
+
+def _current_named_victim_death(text: str) -> bool:
+    normalized = normalize_casualty_text(text)
+    return bool(
+        _NAMED_VICTIM_DEATH_VERB.search(normalized)
+        and _SAME_DAY_DEATH_ANCHOR.search(normalized)
+        and any(
+            mention.kind == DEATHS and mention.value == 1
+            for mention in find_count_mentions(text)
+        )
+    )
+
+
 def _has_explicit_count(text: str, kind: str) -> bool:
     return any(mention.kind == kind and mention.value > 0 for mention in find_count_mentions(text))
 
@@ -151,44 +216,43 @@ def _status_for_kind(
     village_roles: Any,
     sub_events: Any,
     target_location_count: int,
+    row_village_id: int | None,
+    match_result: Any,
 ) -> tuple[CasualtyStatusCode, int | None, str | None]:
-    if is_obituary(text):
+    if is_obituary(text) and not (kind == DEATHS and _current_named_victim_death(text)):
         return "none_mentioned", None, None
 
     located = _locations_with_counts(village_roles, sub_events, kind)
-    root_values = _positive_counts(casualties, kind)
-    root_direct = _get(casualties, kind)
-    root_total = _get(casualties, f"total_{kind}")
+    matched_counts = _matched_location_counts(match_result, kind)
+    if row_village_id is not None and row_village_id in matched_counts:
+        return "exact", None, _evidence(text, kind)
+
+    if kind == DEATHS and _current_named_victim_death(text):
+        return "exact", None, _evidence(text, kind)
+
+    total = _bulletin_total(text, casualties, kind)
     if located:
-        total = root_total if isinstance(root_total, int) and root_total > 0 else None
-        if total is None:
-            mentions = [
-                mention.value
-                for mention in find_count_mentions(text)
-                if mention.kind == kind and mention.counts_total and mention.value > 0
-            ]
-            total = max(mentions, default=None)
         located_sum = sum(count for _, count in located)
         if total is not None and total > located_sum:
             return "aggregate_only", total - located_sum, _evidence(text, kind)
+        if row_village_id is None and match_result is None:
+            return "exact", None, _evidence(text, kind)
+        evidence = _evidence(text, kind)
+        if row_village_id is None or row_village_id not in matched_counts:
+            note = "Location not tied to a trusted per-location casualty role; not stated for this location."
+            evidence = f"{evidence} [{note}]" if evidence else note
+        return "none_mentioned", None, evidence
+
+    if (
+        row_village_id is None
+        and match_result is None
+        and target_location_count == 1
+        and _positive_counts(casualties, kind)
+    ):
         return "exact", None, _evidence(text, kind)
 
-    if target_location_count == 1 and root_values:
-        return "exact", None, _evidence(text, kind)
-
-    if target_location_count >= 2:
-        aggregate = root_total if isinstance(root_total, int) and root_total > 0 else None
-        if aggregate is None and isinstance(root_direct, int) and root_direct > 0:
-            aggregate = root_direct
-        if aggregate is None:
-            mentions = [
-                mention.value
-                for mention in find_count_mentions(text)
-                if mention.kind == kind and mention.counts_total and mention.value > 0
-            ]
-            aggregate = max(mentions, default=None)
-        if aggregate is not None:
-            return "aggregate_only", aggregate, _evidence(text, kind)
+    if target_location_count >= 2 and total is not None:
+        return "aggregate_only", total, _evidence(text, kind)
 
     if _has_explicit_count(text, kind) and target_location_count == 1:
         # The text has an exact toll, but the extraction did not persist it.
@@ -220,6 +284,8 @@ def derive_casualty_status(
     village_roles: Any = (),
     sub_events: Any = (),
     target_location_count: int,
+    row_village_id: int | None = None,
+    match_result: Any = None,
 ) -> CasualtyStatusResult:
     """Derive overall and type-specific statuses from final counts and wording.
 
@@ -228,21 +294,14 @@ def derive_casualty_status(
     If no location breakdown exists, it contains the full unallocated total.
     """
     cleaned = strip_page_header(message_text)
-    if is_obituary(cleaned):
-        return CasualtyStatusResult(
-            status="none_mentioned",
-            deaths_status="none_mentioned",
-            injuries_status="none_mentioned",
-            is_preliminary=False,
-            evidence=None,
-            remaining_total={},
-        )
 
     deaths_status, deaths_remaining, deaths_evidence = _status_for_kind(
-        cleaned, DEATHS, casualties, village_roles, sub_events, target_location_count
+        cleaned, DEATHS, casualties, village_roles, sub_events, target_location_count,
+        row_village_id, match_result,
     )
     injuries_status, injuries_remaining, injuries_evidence = _status_for_kind(
-        cleaned, INJURIES, casualties, village_roles, sub_events, target_location_count
+        cleaned, INJURIES, casualties, village_roles, sub_events, target_location_count,
+        row_village_id, match_result,
     )
     status = max(
         (deaths_status, injuries_status),
@@ -322,35 +381,24 @@ def status_for_incident_row(
     row_casualties: Any,
     *,
     target_location_count: int,
+    row_village_id: int | None = None,
+    match_result: Any = None,
 ) -> CasualtyStatusResult:
-    """Use row counts when present; otherwise retain the message-level status."""
-    row_has_counts = any(
-        _get(row_casualties, field) is not None
-        for field in (
-            "deaths",
-            "injuries",
-            "total_deaths",
-            "total_injuries",
-            "male_deaths",
-            "male_injuries",
-            "female_deaths",
-            "female_injuries",
-            "children_deaths",
-            "children_injuries",
-        )
-    )
-    if row_has_counts:
-        return derive_casualty_status(
-            message_text,
-            row_casualties,
-            target_location_count=1,
-        )
+    """Derive status for one incident row from source-to-village attribution.
+
+    Stored row counts are intentionally ignored because legacy materialization
+    may have copied bulletin totals onto a location. When another location has
+    a complete per-location breakdown and this row does not, ``none_mentioned``
+    means "not stated for this location" rather than "no casualties".
+    """
     return derive_casualty_status(
         message_text,
         _get(extraction, "casualties"),
         village_roles=_get(extraction, "village_roles", ()),
         sub_events=_get(extraction, "sub_events", ()),
         target_location_count=target_location_count,
+        row_village_id=row_village_id,
+        match_result=match_result,
     )
 
 

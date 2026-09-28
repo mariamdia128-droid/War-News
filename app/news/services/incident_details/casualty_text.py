@@ -38,6 +38,7 @@ _BREAK_CHARS = "؛!؟?•●▪📌\n"
 _ATTACHED_PREFIXES = ("و", "ف", "ب", "ل", "ك")
 # Obfuscated martyr stem used to dodge platform moderation: «4 شهـ..» → «شه».
 _OBFUSCATED_DEATH_STEM = "شه"
+_CENSORED_DEATH_WORD = re.compile(r"(?<![ء-ي])(?P<article>ال)?(?:شه[.,،…_\-]+|شهي)(?![ء-ي])")
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +70,19 @@ def normalize_with_offsets(text: str | None) -> NormalizedText:
             continue
         chars.append(char.translate(_LETTER_MAP))
         offsets.append(index)
-    return NormalizedText(source=source, text="".join(chars), offsets=tuple(offsets))
+    normalized = "".join(chars)
+    # Restore moderation-censored martyr spellings before token detection:
+    # «الشهـ..» / «الشهـ,,,» / «شهيـ» -> «الشهيد» / «شهيد».
+    while (match := _CENSORED_DEATH_WORD.search(normalized)) is not None:
+        replacement = f"{match.group('article') or ''}شهيد"
+        source_offset = offsets[max(match.start(), match.end() - 1)]
+        normalized = normalized[: match.start()] + replacement + normalized[match.end() :]
+        offsets = (
+            offsets[: match.start()]
+            + [source_offset] * len(replacement)
+            + offsets[match.end() :]
+        )
+    return NormalizedText(source=source, text=normalized, offsets=tuple(offsets))
 
 
 def normalize_casualty_text(text: str | None) -> str:

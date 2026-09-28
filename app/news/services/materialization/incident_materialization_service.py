@@ -468,6 +468,7 @@ class IncidentMaterializationService:
                     village_injuries=village_injuries,
                     origin_villages=origin_villages,
                     is_multi_village=is_multi_village,
+                    village_id=village_id,
                     similarity_score=1.0,
                     similarity_method="story",
                 )
@@ -495,6 +496,7 @@ class IncidentMaterializationService:
                         village_deaths=revision_casualties.deaths,
                         village_injuries=revision_casualties.injuries,
                         is_multi_village=is_multi_village,
+                        village_id=village_id,
                     ),
                     raw_message_id=representative.id,
                     heuristic_only=story_route.classification.heuristic_only,
@@ -517,7 +519,7 @@ class IncidentMaterializationService:
                 incident = self._insert_fast_incident(
                     representative=representative,
                     casualty_status_values=self._casualty_status_values(
-                        representative, extraction, village_casualties
+                        representative, extraction, village_casualties, village_id
                     ),
                     casualties=village_casualties,
                     village_id=village_id,
@@ -609,7 +611,7 @@ class IncidentMaterializationService:
                                     for item in extraction.casualty_transitions
                                 ],
                                 **self._casualty_status_values(
-                                    representative, extraction, village_casualties
+                                    representative, extraction, village_casualties, village_id
                                 ),
                             },
                             raw_message_id=representative.id,
@@ -666,7 +668,7 @@ class IncidentMaterializationService:
             incident = self._insert_fast_incident(
                 representative=representative,
                 casualty_status_values=self._casualty_status_values(
-                    representative, extraction, village_casualties
+                    representative, extraction, village_casualties, village_id
                 ),
                 casualties=village_casualties,
                 village_id=village_id,
@@ -775,6 +777,7 @@ class IncidentMaterializationService:
         village_injuries: int | None,
         origin_villages: list[str],
         is_multi_village: bool,
+        village_id: int | None,
         similarity_score: float,
         similarity_method: str,
     ) -> None:
@@ -800,7 +803,7 @@ class IncidentMaterializationService:
                 item.model_dump(mode="json") for item in extraction.casualty_transitions
             ],
             **self._casualty_status_values(
-                representative, extraction, village_casualties
+                representative, extraction, village_casualties, village_id
             ),
         }
         incidents = (
@@ -849,6 +852,7 @@ class IncidentMaterializationService:
         village_deaths: int | None,
         village_injuries: int | None,
         is_multi_village: bool,
+        village_id: int | None,
     ) -> dict[str, Any]:
         mapped_fields = map_categories(
             extraction.categories,
@@ -874,7 +878,7 @@ class IncidentMaterializationService:
             "children_d": village_casualties.children_deaths,
             "children_i": village_casualties.children_injuries,
             **self._casualty_status_values(
-                representative, extraction, village_casualties
+                representative, extraction, village_casualties, village_id
             ),
         }
 
@@ -962,6 +966,7 @@ class IncidentMaterializationService:
         representative: RawMessage,
         extraction: ExtractionResult,
         row_casualties: ExtractionCasualties,
+        village_id: int | None,
     ) -> dict[str, Any]:
         target_count = target_location_count_from_extraction(
             extraction.village,
@@ -973,6 +978,8 @@ class IncidentMaterializationService:
             extraction,
             row_casualties,
             target_location_count=target_count,
+            row_village_id=village_id,
+            match_result=representative.match_result,
         )
         return {
             "casualty_status": result.status,
@@ -1332,7 +1339,7 @@ class IncidentMaterializationService:
                                     for item in extraction.casualty_transitions
                                 ],
                                 **self._casualty_status_values(
-                                    representative, extraction, village_casualties
+                                    representative, extraction, village_casualties, village_id
                                 ),
                             },
                             raw_message_id=representative.id,
@@ -1427,7 +1434,7 @@ class IncidentMaterializationService:
                 deaths=village_deaths,
                 injuries=village_injuries,
                 **self._casualty_status_values(
-                    representative, extraction, village_casualties
+                    representative, extraction, village_casualties, village_id
                 ),
                 exact_hash=exact_hash,
                 duplicate_flag=duplicate_flag,
