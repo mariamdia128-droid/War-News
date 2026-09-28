@@ -122,14 +122,14 @@ export const AllNewsPage = () => {
     },
     {
       key: "incident_link",
-      header: "Related Incident",
+      header: "Related Record",
       headerClassName: "w-[16rem]",
       cellClassName: "w-[16rem]",
       render: (row) => {
-        if (!row.incident_id) {
+        if (!row.incident_id && !row.air_violation_id) {
           return (
             <span className="inline-flex items-center rounded-md bg-surface-subtle px-2.5 py-1 text-caption text-text-muted">
-              No incident linked
+              No record linked
             </span>
           );
         }
@@ -137,7 +137,9 @@ export const AllNewsPage = () => {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="font-medium text-text-primary text-small">Incident linked</span>
+              <span className="font-medium text-text-primary text-small">
+                {row.air_violation_id ? "Air violation linked" : "Incident linked"}
+              </span>
             </div>
             {row.village_name || row.condition_name ? (
               <p className="text-caption text-text-secondary">
@@ -177,7 +179,7 @@ export const AllNewsPage = () => {
         <div className="space-y-1">
           <h1 className="text-h3 font-semibold text-text-primary">Filtered News</h1>
           <p className="max-w-3xl text-small leading-6 text-text-muted">
-            All filtered news saved in the database, ordered chronologically day by day and hour by hour with direct linkage to incidents.
+            All filtered news saved in the database, ordered chronologically day by day and hour by hour with direct linkage to incidents and air violations.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -189,7 +191,7 @@ export const AllNewsPage = () => {
               setPage(1);
             }}
           >
-            {relatedOnly ? "Showing: Related to Incidents only" : "Filter: Related to Incidents"}
+            {relatedOnly ? "Showing: Related records only" : "Filter: Related records"}
           </Button>
         </div>
       </section>
@@ -264,12 +266,13 @@ export const AllNewsPage = () => {
           <Button
             type="button"
             variant="secondary"
-            disabled={!row.incident_id}
+            disabled={!row.incident_id && !row.air_violation_id}
             onClick={() => {
               if (row.incident_id) navigate(`../incidents/${row.incident_id}`);
+              else if (row.air_violation_id) navigate(`../air-violations?event_date_from=${row.event_at.slice(0, 10)}&event_date_to=${row.event_at.slice(0, 10)}`);
             }}
           >
-            Open incident
+            {row.air_violation_id ? "Open air violations" : "Open incident"}
           </Button>
         )}
       />

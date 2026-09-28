@@ -142,7 +142,7 @@ def _item(row) -> FilteredNewsItem:
         incident_id=str(row.incident_id) if row.incident_id is not None else None,
         air_violation_id=row.air_violation_id,
         status=message.status.value,
-        khabar=message.raw_text or "",
+        khabar=row.display_khabar or message.raw_text or "",
         message_datetime=message.message_datetime,
         received_at=message.received_at,
         event_at=row.event_at,
@@ -243,6 +243,11 @@ def list_filtered_news(
         AirViolation.caza_ar,
         AirViolation.caza_en,
     )
+    display_khabar = func.coalesce(
+        Incident.khabar,
+        AirViolation.khabar,
+        RawMessage.raw_text,
+    )
     condition_label = func.coalesce(
         Condition.action_ar,
         Condition.action_en,
@@ -269,6 +274,7 @@ def list_filtered_news(
             resolved_village_id.label("village_id"),
             village_label.label("village_name"),
             condition_label.label("condition_name"),
+            display_khabar.label("display_khabar"),
         )
         .outerjoin(
             Incident,
