@@ -23,7 +23,14 @@ import { createIncident, reviewIncident } from "../api";
 import { useContentSourcesQuery } from "../../sources/hooks";
 import type { Incident } from "../types";
 import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
-import { verificationTypeFromSearch, verificationTypeLabel } from "../verificationLogic";
+import {
+  ALL_DATES_RANGE,
+  hasNonDefaultFilters,
+  isVerificationView,
+  outsideRangeNotice,
+  verificationTypeFromSearch,
+  verificationTypeLabel,
+} from "../verificationLogic";
 
 const DEFAULT_PAGE_SIZE = 150;
 const PAGE_SIZE_OPTIONS = new Set([50, 100, 150]);
@@ -138,9 +145,13 @@ export const IncidentsPage = () => {
   const duplicateOnly = params.get("duplicate_only") === "true";
   const hasCasualties = params.get("has_casualties") === "true";
   const pageSize = parsePageSize(params.get("page_size"));
-  const hasFilters = Boolean(
-    village || condition || sourceName || verificationStatus || verificationType || eventDateFrom || eventDateTo || duplicateOnly || hasCasualties,
+  const hasFilters = hasNonDefaultFilters(
+    { village, condition, sourceName, verificationStatus, verificationType, duplicateOnly, hasCasualties },
+    eventDateFrom,
+    eventDateTo,
+    { from: DEFAULT_EVENT_DATE_FROM, to: getBeirutDate() },
   );
+  const verificationView = isVerificationView(verificationStatus, verificationType);
 
   const filters = useMemo(
     () => ({
@@ -195,6 +206,9 @@ export const IncidentsPage = () => {
   const total = data?.total ?? 0;
   const flaggedCount = data?.needs_verification_count ?? 0;
   const casualtiesCount = data?.casualties_count ?? 0;
+  const outsideRangeText = verificationView
+    ? outsideRangeNotice(data?.needs_verification_outside_range_count)
+    : null;
   const verificationOptions: SelectOption[] = [
     { value: "needs_verification", label: "Needs verification" },
     { value: "verified", label: "Verified" },
@@ -592,9 +606,31 @@ export const IncidentsPage = () => {
                 </h2>
                 <p className="text-small text-text-muted">
                   {total} result{total === 1 ? "" : "s"}
+                  {verificationView
+                    ? ` | sorted by event date, ${sortOrder === "oldest" ? "oldest" : "newest"} first`
+                    : ""}
                 </p>
               </div>
             </div>
+            {outsideRangeText ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-warning/40 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-small text-text-primary">{outsideRangeText}</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-9"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.set("event_date_from", ALL_DATES_RANGE.from);
+                    next.set("event_date_to", ALL_DATES_RANGE.to);
+                    setCursorHistory([]);
+                    setParams(next);
+                  }}
+                >
+                  Show all dates
+                </Button>
+              </div>
+            ) : null}
 
             <DataTable
               columns={columns}

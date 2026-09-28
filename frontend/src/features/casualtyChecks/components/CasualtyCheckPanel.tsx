@@ -4,7 +4,8 @@ import { ShellContext } from "../../../app/AppShell";
 import { Button, Dialog, Input } from "../../../components/ui";
 import { formatDate, formatDateTime } from "../../../lib/formatters";
 import { roleBaseFromPath } from "../../../lib/rolePath";
-import { assignedTotal, buildResolutionEntries, canSubmitResolution, dismissReasonError, isWholeNonNegative, mapApiError, mapFieldErrors, type AllocationValues } from "../logic";
+import { getIncidentCasualtyFlags } from "../api";
+import { assignedTotal, buildResolutionEntries, canSubmitResolution, dismissReasonError, isWholeNonNegative, mapApiError, mapFieldErrors, unresolvedSiblingIds, type AllocationValues } from "../logic";
 import { useCasualtyFlag, useDismissCasualtyFlag, useResolveCasualtyFlag } from "../hooks";
 import type { CasualtyFlagDetail, CasualtyKind } from "../types";
 
@@ -29,9 +30,12 @@ const ReadOnlyResolution = ({ flag }: { flag: CasualtyFlagDetail }) => (
   </section>
 );
 
-export const CasualtyCheckPanel = ({ id, onClose, onComplete, inline = false }: { id: string; onClose: () => void; onComplete: () => void; inline?: boolean }) => {
+export const CasualtyCheckPanel = ({ id: initialId, onClose, onComplete, inline = false }: { id: string; onClose: () => void; onComplete: () => void; inline?: boolean }) => {
   const location = useLocation();
   const shell = useContext(ShellContext);
+  // After a partial aggregate save the panel moves on to an open sibling flag.
+  const [id, setId] = useState(initialId);
+  useEffect(() => setId(initialId), [initialId]);
   const query = useCasualtyFlag(id);
   const resolve = useResolveCasualtyFlag();
   const dismiss = useDismissCasualtyFlag();
@@ -46,7 +50,15 @@ export const CasualtyCheckPanel = ({ id, onClose, onComplete, inline = false }: 
   const [saveResult, setSaveResult] = useState("");
   const [serverRemaining, setServerRemaining] = useState<Partial<Record<CasualtyKind, number>>>({});
 
-  useEffect(() => { setValues({}); setUnknown(false); setUnknownRows({}); setNote(""); setError(""); setFieldErrors({}); setSaveResult(""); setServerRemaining({}); }, [id]);
+  useEffect(() => { setValues({}); setUnknown(false); setUnknownRows({}); setNote(""); setError(""); setFieldErrors({}); setServerRemaining({}); }, [id]);
+  useEffect(() => setSaveResult(""), [initialId]);
+  const nextOpenSiblingFlag = async (siblingIds: string[]) => {
+    for (const incidentId of siblingIds) {
+      const open = (await getIncidentCasualtyFlags(incidentId)).find((item) => item.reason_code === flag?.reason_code);
+      if (open) return open.id;
+    }
+    return null;
+  };
   const flag = query.data;
   const totals = flag?.detail.bulletin_totals ?? {};
   const baseAssigned = (kind: CasualtyKind) => typeof totals[kind] === "number" ? totals[kind] - (serverRemaining[kind] ?? flag?.detail.remaining_total?.[kind] ?? totals[kind]) : 0;
@@ -78,8 +90,13 @@ export const CasualtyCheckPanel = ({ id, onClose, onComplete, inline = false }: 
       setServerRemaining(response.remaining_total);
       setValues({}); setUnknown(false); setUnknownRows({});
       shell?.showToast("Casualty check saved.");
-      if (!response.results.some((item) => item.still_open)) onComplete();
-      else await query.refetch();
+      if (response.results.some((item) => item.still_open)) { await query.refetch(); return; }
+      const nextId = flag.reason_code === "aggregate_no_breakdown"
+        ? await nextOpenSiblingFlag(unresolvedSiblingIds(flag.incidents.map((incident) => incident.id), response.results))
+        : null;
+      if (nextId === id) await query.refetch();
+      else if (nextId) setId(nextId);
+      else onComplete();
     } catch (requestError) { const mapped = mapFieldErrors(requestError); setFieldErrors(mapped.fields); setError(mapped.summary.join(" ") || mapApiError(requestError)); }
   };
 

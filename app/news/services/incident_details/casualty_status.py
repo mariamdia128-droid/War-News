@@ -235,11 +235,13 @@ def _status_for_kind(
     if target_location_count == 1:
         if _positive_counts(casualties, kind):
             return "exact", None, _evidence(text, kind)
-        target_names = [str(name).strip() for name in target_villages or () if str(name).strip()]
+        # Same precedence as target_location_count_from_extraction: role targets
+        # first. The plain village list also names places merely mentioned.
+        target_names = _target_location_names(village_roles, sub_events)
+        if not target_names:
+            target_names = [str(name).strip() for name in target_villages or () if str(name).strip()]
         if not target_names:
             target_names = [name for name, _ in located]
-        if not target_names:
-            target_names = _target_location_names(village_roles, sub_events)
         inferred = infer_count_from_count_words(
             text, kind, target_villages=target_names
         )

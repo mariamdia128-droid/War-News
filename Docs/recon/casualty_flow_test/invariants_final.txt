@@ -1,0 +1,27 @@
+guard ok: war_news_casualty_test
+database=war_news_casualty_test since=2026-08-17 at=2026-09-28T11:11:28.415237+00:00
+live incidents=1445 flags=46
+I1: checked=46 violations=0
+I2: checked=46 violations=0 (logged skips {})
+I3: checked=46 violations=0
+I4: checked=31 violations=0 (unverifiable (merged source purged): 13 fields on 9 incidents)
+    unverifiable 06d07ee4-86b2-4ff4-8db9-2b1710feab10: deaths=4 not in any available source extraction (msg 31831; 18 merged sources missing)
+    unverifiable 06d07ee4-86b2-4ff4-8db9-2b1710feab10: injuries=20 not in any available source extraction (msg 31831; 18 merged sources missing)
+    unverifiable 0a10e831-a3f3-40d4-9f17-614408378e95: deaths=4 not in any available source extraction (msg 31336; 1 merged sources missing)
+    unverifiable 0a10e831-a3f3-40d4-9f17-614408378e95: injuries=20 not in any available source extraction (msg 31336; 1 merged sources missing)
+    unverifiable 10fbab84-11a3-4990-8608-7e8e7cc73725: injuries=3 not in any available source extraction (msg 32058; 5 merged sources missing)
+    unverifiable 1a5b73de-fb96-4c4a-ae64-7f71b73c9a12: deaths=2 not in any available source extraction (msg 28698; 1 merged sources missing)
+    unverifiable 2d19c8a1-957f-4a61-b0fe-ed37fbbf740f: deaths=4 not in any available source extraction (msg 30057; 22 merged sources missing)
+    unverifiable 2d19c8a1-957f-4a61-b0fe-ed37fbbf740f: injuries=20 not in any available source extraction (msg 30057; 22 merged sources missing)
+    unverifiable 3c1db7e5-b8c7-4f61-95b2-43e2af75efe1: deaths=40 not in any available source extraction (msg 31925; 8 merged sources missing)
+    unverifiable 711adf5b-5d46-4a5c-8e21-1554c7d975b1: deaths=12 not in any available source extraction (msg 30033; 18 merged sources missing)
+    unverifiable 711adf5b-5d46-4a5c-8e21-1554c7d975b1: injuries=10 not in any available source extraction (msg 30033; 18 merged sources missing)
+    unverifiable 8ee662bf-d73a-4751-88d7-6e4816136336: injuries=15 not in any available source extraction (msg 32504; 3 merged sources missing)
+    unverifiable fdd35f95-9a80-4596-bb89-3eef0ab4c6d7: deaths=2 not in any available source extraction (msg 31007; 1 merged sources missing)
+I5: checked=181 violations=0 (id column is the bulletin message id)
+I6: checked=19 violations=0
+I7: checked=0 violations=0
+I10: checked=5 violations=0 (needs_verification=48 (flagged 45, duplicates 3, overlap 0))
+I8: checked=2148 violations=0 (totals {'opened': 0, 'updated': 0, 'auto_cleared': 0, 'skipped': 0})
+I9: checked=3 violations=0 (target 15477afa-51e2-49f4-a9b6-fbceafa1c95c, aggregate message 32095; rolled back)
+summary: I1=0, I2=0, I3=0, I4=0, I5=0, I6=0, I7=0, I10=0, I8=0, I9=0

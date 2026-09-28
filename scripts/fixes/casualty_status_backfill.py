@@ -19,6 +19,7 @@ from app.news.services.incident_details.casualty_merge_guard import guard_casual
 from app.news.services.incident_details.casualty_status import (
     CasualtyStatusResult,
     merge_casualty_status,
+    status_fields,
     status_for_incident_row,
     target_location_count_from_extraction,
 )
@@ -112,6 +113,9 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
                 Incident.casualty_status,
                 Incident.casualty_is_preliminary,
                 Incident.casualty_status_evidence,
+                Incident.casualty_deaths_status,
+                Incident.casualty_injuries_status,
+                Incident.casualty_status_remaining_total,
             ]
         )
     query = (
@@ -307,17 +311,10 @@ def _apply(rows: list[dict[str, Any]], db) -> dict[str, int]:
     processed = succeeded = failed = 0
     for row in rows:
         processed += 1
-        result = row["derived"]
-        before = {
-            "casualty_status": row.get("casualty_status"),
-            "casualty_is_preliminary": row.get("casualty_is_preliminary"),
-            "casualty_status_evidence": row.get("casualty_status_evidence"),
-        }
-        after = {
-            "casualty_status": result.status,
-            "casualty_is_preliminary": result.is_preliminary,
-            "casualty_status_evidence": result.evidence,
-        }
+        # Per-type statuses and the remaining total drive the flag evaluator.
+        after = status_fields(row["derived"])
+        after["casualty_status_remaining_total"] = after["casualty_status_remaining_total"] or None
+        before = {key: row.get(key) for key in after}
         if before == after:
             succeeded += 1
             continue
@@ -327,9 +324,6 @@ def _apply(rows: list[dict[str, Any]], db) -> dict[str, int]:
                 .where(
                     Incident.id == row["incident_id"],
                     Incident.version == row["version"],
-                    Incident.casualty_status == before["casualty_status"],
-                    Incident.casualty_is_preliminary == before["casualty_is_preliminary"],
-                    Incident.casualty_status_evidence == before["casualty_status_evidence"],
                 )
                 .values(**after, version=Incident.version + 1)
             )

@@ -201,3 +201,20 @@ def test_legacy_single_location_dual_is_exact() -> None:
         1,
     )
     assert result.deaths_status == "exact"
+
+
+def test_30335_dual_with_mentioned_non_target_villages_is_exact() -> None:
+    # The village list also names places only mentioned; the single role target owns the dual.
+    result = _derive(
+        "شهيدان جراء غارة معادية على دراجة نارية في كفررمان يستمر العدو في التصعيد مما أسفر عن سقوط شهداء، "
+        "كما شن طيرانه الحربي عددا من الغارات على المنصوري والنبطية الفوقا",
+        {
+            "village": ["كفررمان", "المنصوري", "النبطية الفوقا"],
+            "village_roles": [{"role": "target", "village": "كفررمان"}],
+            "casualties": {},
+        },
+        851,
+        _match(_role("كفررمان", 851)),
+        1,
+    )
+    assert result.deaths_status == "exact"

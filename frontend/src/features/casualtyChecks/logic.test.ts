@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignedTotal, buildResolutionEntries, canSubmitResolution, dismissReasonError, filtersFromSearch, filtersToSearch, isOverTotal, mapApiError, mapFieldErrors } from "./logic";
+import { assignedTotal, buildResolutionEntries, canSubmitResolution, dismissReasonError, filtersFromSearch, filtersToSearch, isOverTotal, mapApiError, mapFieldErrors, unresolvedSiblingIds } from "./logic";
 
 describe("casualty check logic", () => {
   it("reads defaults and persists filters in the query string", () => {
@@ -49,5 +49,14 @@ describe("casualty check logic", () => {
     ] } } });
     expect(mapped.fields).toEqual({ "tyre.deaths": "Too many deaths." });
     expect(mapped.summary).toEqual(["Add an entry."]);
+  });
+});
+
+describe("aggregate toll partial save", () => {
+  it("keeps the panel on the sibling locations this save did not resolve", () => {
+    const siblings = ["a", "b", "c", "d", "e"];
+    expect(unresolvedSiblingIds(siblings, [{ incident_id: "d", resolved: true }])).toEqual(["a", "b", "c", "e"]);
+    expect(unresolvedSiblingIds(siblings, [{ incident_id: "d", resolved: false }])).toEqual(siblings);
+    expect(unresolvedSiblingIds(["a"], [{ incident_id: "a", resolved: true }])).toEqual([]);
   });
 });

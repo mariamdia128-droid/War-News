@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.api.verification_flags_router import DismissRequest, ResolveRequest, ResolutionEntry, _entry_fields, _grouped_rows, _resolution_error, _summary_payload, resolve
+from app.api.verification_flags_router import DismissRequest, ResolveRequest, ResolutionEntry, _entry_fields, _grouped_rows, _resolution_error, _summary_payload, _live_remaining_total, resolve
 from app.news.repositories.incident_repository import IncidentRepository
 
 
@@ -154,3 +154,19 @@ def test_count_missing_flags_remain_individual_groups():
         resolved_at=None, resolved_by=None, resolution=None, auto_clear_reason=None,
     ) for index in range(2)]
     assert len(_grouped_rows(flags, {}, "open")) == 2
+
+
+def test_list_open_for_incident_skips_flag_resolved_earlier_in_session():
+    # The session does not autoflush; the resolve endpoint re-evaluates before commit.
+    from app.news.repositories.incident_verification_flag_repository import IncidentVerificationFlagRepository
+    open_flag = SimpleNamespace(status="open"); resolved = SimpleNamespace(status="resolved")
+    db = SimpleNamespace(scalars=lambda _query: _Rows([resolved, open_flag]))
+    assert IncidentVerificationFlagRepository(db).list_open_for_incident(uuid4()) == [open_flag]
+
+
+def test_sibling_flag_shows_remaining_after_partial_save_on_another_location():
+    # Bulletin 32095: 3 deaths / 23 injured; Rmadiye was saved as 1 / 15 from a sibling's flag.
+    siblings = [SimpleNamespace(deaths=1, injuries=15), SimpleNamespace(deaths=None, injuries=None), SimpleNamespace(deaths=None, injuries=None)]
+    assert _live_remaining_total({"deaths": 3, "injuries": 23}, siblings) == {"deaths": 2, "injuries": 8}
+    assert _live_remaining_total({"deaths": 3, "injuries": None}, siblings) == {"deaths": 2}
+    assert _live_remaining_total({"deaths": 1}, [SimpleNamespace(deaths=4, injuries=0)]) == {"deaths": 0}

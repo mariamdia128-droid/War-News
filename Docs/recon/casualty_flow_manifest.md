@@ -195,3 +195,100 @@ No migration, schema change, extraction-prompt change, or condition-table
 addition is part of Lost incidents. The changelog documents why the behavior
 changes are lookup, pipeline-status, and transport-retry policy rather than LLM
 knowledge changes.
+
+## Scratch-DB verification run (2026-09-28)
+
+Report: `Docs/recon/casualty_flow_test_report.md`. Suggested single commit
+"Fix casualty backfill and flag resolution defects found on scratch DB":
+
+- `scripts/fixes/casualty_status_backfill.py`: `--apply` stores all six status fields.
+- `scripts/fixes/casualty_flags_backfill.py`: re-evaluates open flags; prints flag changes.
+- `app/news/services/casualty_flag_evaluator.py`: unchanged flags are not rewritten;
+  bulletin totals from stored status and kept once set; village-name fallback.
+- `app/news/repositories/incident_verification_flag_repository.py`: `is_unchanged`,
+  no-op `open_flag`, `list_open_for_incident` in-memory status check.
+- `app/news/services/incident_details/casualty_status.py`: single-target count words use
+  role targets first.
+- `app/api/verification_flags_router.py`: location-name fallback (5 lines).
+- Tests: `tests/test_casualty_flag_evaluator.py` (3 tests),
+  `tests/test_casualty_status_row_rules.py` (1), `tests/test_verification_flags_api.py` (1).
+
+New files: `scripts/recon/casualty_flow_invariants.py`, `Docs/recon/casualty_flow_test_report.md`,
+`Docs/recon/casualty_flow_test/` (CSVs and run logs). Do not commit
+`docker-compose.casualty-test.yml` (scratch stack only).
+
+Not ours, required before rollout: `app/news/dtos/incident_dto.py` `duplicate_level` must allow
+`"segment"` (two places), otherwise the Incidents list returns 500 on the real data.
+
+## Manual-test setup and Verification filter fixes (2026-09-28, second run)
+
+Suggested commit "Fix Incidents verification view: outside-range notice, partial-save panel,
+duplicate reason, live-stream filter". All hunks below are ours; the shared files had no other
+dirty hunks from this run.
+
+- `app/news/repositories/incident_repository.py` (shared file; ours only):
+  `outside_range_filters` / `outside_range_count` block in `list_all` right after the summary query,
+  `needs_verification_outside_range_count=` in the `IncidentListResponse(...)` call, new classmethod
+  `_outside_range_needs_verification_filters` just above `_list_ordering`, and in
+  `_verification_payload` the duplicate branch `verification_reason=duplicate_reason or
+  "Possible duplicate of another incident"`. HEAD has mixed CRLF/LF in this file; the working copy
+  keeps HEAD's line endings (diff is +36/-1).
+- `app/news/dtos/incident_dto.py`: `IncidentListResponse.needs_verification_outside_range_count`
+  (1 line). The `duplicate_level` "segment" fix is still NOT in the working tree (not ours; see above).
+- `app/api/verification_flags_router.py`: `_live_remaining_total` helper and its use in `get_flag`
+  for aggregate flags (sibling flags now show the remainder after a partial save on another location).
+- `frontend/src/features/news/verificationLogic.ts`: `ALL_DATES_RANGE`, `isVerificationView`,
+  `outsideRangeNotice`, `hasNonDefaultFilters`.
+- `frontend/src/features/news/pages/IncidentsPage.tsx`: imports, `hasFilters` via
+  `hasNonDefaultFilters` (default dates no longer count as filters), `verificationView`,
+  `outsideRangeText`, sort note after the result count, outside-range notice with "Show all dates".
+- `frontend/src/features/news/types.ts`: optional `needs_verification_outside_range_count`.
+- `frontend/src/features/news/hooks.ts`: `matchesFilters` exported; it rejects stream events while a
+  check type or channel filter is active; non-matching events no longer bump `total`.
+- `frontend/src/features/casualtyChecks/logic.ts`: `unresolvedSiblingIds`.
+- `frontend/src/features/casualtyChecks/components/CasualtyCheckPanel.tsx`: internal active flag id;
+  after a partial aggregate save the panel moves to the next open sibling flag instead of closing.
+- Tests: `tests/test_incident_visible_verification_flags.py` (4 new),
+  `tests/test_verification_flags_api.py` (1 new + import), `frontend/src/features/news/verificationLogic.test.ts`
+  (3 new), new `frontend/src/features/news/incidentStreamFilters.test.ts` (3),
+  `frontend/src/features/casualtyChecks/logic.test.ts` (1 new + import).
+
+Optional (docs, commit if wanted): `Docs/recon/manual_test_checklist.md`,
+`Docs/recon/casualty_flow_rollout_runbook.md`, `scripts/rollout/casualty_flow_rollout.ps1`,
+`scripts/rollout/reset_scratch.ps1`, `Docs/recon/casualty_flow_test/u2_api_read_checks.txt`,
+`Docs/recon/casualty_flow_test/u2_api_write_flow.txt`.
+
+Do not commit: `docker-compose.casualty-test.yml`, `backups/` (contains
+`backups/scratch/war_news_casualty_test_baseline.dump`, 23.6 MB, used by `reset_scratch.ps1`;
+suggest adding `backups/` to `.gitignore`), the CSVs under `Docs/recon/casualty_flow_test/`.
+No screenshots were produced (no browser automation available).
+
+No new migration. `alembic heads` from code: exactly one, `20260928_0072`.
+
+## Incident DTO "segment" fix and rollout preflight (2026-09-28, third run)
+
+Suggested commit "Accept segment duplicate level in incident read models". Required before the
+rollout: without it the Incidents list returns 500 on the real data.
+
+- `app/news/dtos/incident_dto.py` (ours in this run, on top of the earlier
+  `needs_verification_outside_range_count` line): `import logging`, `get_args` import,
+  module-level `logger`, `DuplicateLevel = Literal["low", "medium", "high", "segment"]`,
+  `_DUPLICATE_LEVELS`, `_display_duplicate_level`; `duplicate_level: DuplicateLevel | None` in
+  `IncidentListItemDTO` and `IncidentDetailDTO`; a `_tolerant_duplicate_level` before-validator in
+  both (unknown value -> `None` + warning). Read models only; write DTOs unchanged.
+  `"segment"` is written by `app/news/services/dedup/segment_review_dedup.py:101`, committed in
+  `3480afb` (2026-09-16); the DTO was never updated. No uncommitted work of others involved.
+  No DB check constraint exists on `incidents.duplicate_level`.
+- `frontend/src/features/news/types.ts`: `"segment"` added to `duplicate_level` (1 line).
+- New test: `tests/test_incident_dto_enum_values.py` (12 tests).
+- `scripts/rollout/casualty_flow_rollout.ps1`: preflight works out the pending revisions from the
+  DB's own `alembic_version` (graph from the migration files), prints them next to the code head,
+  skips step 4 at head, reports existing `incident_verification_flags` rows/indexes and stops if the
+  0072 index exists while 0072 is pending; rollback B defaults to the pre-rollout revision.
+- `Docs/recon/casualty_flow_rollout_runbook.md`: step 4 row, migration section and rollback B no
+  longer assume `20260924_0062`.
+- Optional: `Docs/recon/casualty_flow_test/f3_real_rows_validation.txt` (read-only validation log).
+
+**`backups/` must not be committed** (scratch baseline dump; rollout backups land there too).
+The scratch-only DTO patch is no longer used; the scratch image is now built from the working tree
+as is. No new migration; `alembic heads` from code: exactly one, `20260928_0072`.

@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy import inspect, select
 
 from app.core.database import SessionLocal
-from app.news.models import Incident, RawMessage
+from app.news.models import Incident, IncidentVerificationFlag, RawMessage
 from app.news.repositories.incident_verification_flag_repository import IncidentVerificationFlagRepository
 from app.news.services.casualty_flag_evaluator import CasualtyFlagEvaluator
 from app.news.services.incident_details.casualty_text import find_count_mentions
@@ -89,14 +89,17 @@ def main() -> None:
         print(f"count_missing_with_singular_or_dual: {len(violations)}")
         print(f"csv: {OUT}")
         if args.apply:
-            db.rollback(); stats = {"processed": 0, "succeeded": 0, "failed": 0}
+            db.rollback(); stats = {"processed": 0, "succeeded": 0, "failed": 0}; outcomes: Counter = Counter()
             with db.begin():
                 evaluator = CasualtyFlagEvaluator(db, enabled=True)
-                for incident_id in dict.fromkeys(row["incident_id"] for row in rows):
+                # Also re-evaluate open flags so a status that stopped matching is auto-cleared.
+                open_ids = db.scalars(select(IncidentVerificationFlag.incident_id).where(
+                    IncidentVerificationFlag.status == "open")).all()
+                for incident_id in dict.fromkeys([*(row["incident_id"] for row in rows), *open_ids]):
                     stats["processed"] += 1
-                    try: evaluator.evaluate_incident(incident_id); stats["succeeded"] += 1
+                    try: outcomes.update(evaluator.evaluate_incident(incident_id)); stats["succeeded"] += 1
                     except Exception: stats["failed"] += 1
-            print(f"apply: {stats}")
+            print(f"apply: {stats}"); print(f"flag_changes: {dict(outcomes)}")
 
 
 if __name__ == "__main__": main()
