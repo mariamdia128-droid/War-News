@@ -53,6 +53,7 @@ from app.news.services.incident_details.casualty_status import (
     status_for_incident_row,
     target_location_count_from_extraction,
 )
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 from app.news.services.matching.emergency_organization_matching_service import (
     EmergencyOrganizationMatchingService,
 )
@@ -1103,6 +1104,7 @@ class IncidentMaterializationService:
             )
             self._mark_materialized(representative, fast_path=True)
             _notify_new_incident(self.db, incident)
+            evaluate_casualty_flags_safely(self.db, incident.id)
             self.db.commit()
             self.fast_stats.inserted += 1
             logger.info(
@@ -1480,6 +1482,7 @@ class IncidentMaterializationService:
                 )
                 self._mark_materialized(representative, fast_path=False)
                 _notify_new_incident(self.db, incident)
+                evaluate_casualty_flags_safely(self.db, incident.id)
                 self.db.commit()
                 self.stats.inserted += 1
                 created.append(incident)

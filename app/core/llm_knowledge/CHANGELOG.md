@@ -11,6 +11,43 @@ class of bug on its own — it only patches the one instance found. Flag
 any such code-only fix as incomplete until a corresponding prompt/rule
 update or a documented rationale for staying code-only is added.
 
+## 2026-09-28 - Lost incidents: dead alias keys, unmatched places parked in error, un-retried disconnects
+
+**Bug / accuracy gap** (read-only recon of the 1,875 `status=error` messages):
+- 13 of 49 `village_location_aliases` rows (all from migration 0061) stored
+  `alias_normalized` verbatim, e.g. «الدبشة» instead of «الدبشه», so exact
+  alias lookup never hit. «الدبشة» alone left 29 errored messages
+  (e.g. 28838, 28898, 29109: «غارات استهدفت … محيط الدبشة»).
+- A usable extraction whose only target place was missing from the gazetteer
+  went to terminal `error` ("no materializable village match"), e.g. 29077
+  «قصف مدفعي يستهدف وادي الحجير لجهة بلدة الغندورية». Nobody could see or re-run it.
+- 11 messages failed with httpx `RemoteProtocolError` stored as «Server
+  disconnected without sending a response.»; no transient marker matched, so
+  the extraction retry reset never picked them up.
+
+**Rule / knowledge files changed:** none. Rationale for staying code-only:
+none of the three is model behavior. The alias key is a lookup/data bug
+(fixed at read time plus `scripts/fixes/out/proposed_village_aliases.sql`),
+the hold is a pipeline status policy, and the retry marker classifies a
+transport error. The LLM-side gaps found in the same recon (English
+transliterations such as «Tbaineen»/«Tabbin» for تبنين, truncations such as
+«شقا» for شقرا, and villages dropped entirely, e.g. 31548 «رئيس بلدية كفررمان…
+ارتقاء 11 شهيداً») are NOT fixed here and remain open for a Tier 1 prompt change.
+
+**Code paths fixed:**
+- `village_repository.py`: `resolve_alias` / `find_geo_conditional_aliases`
+  also compare `normalize_arabic_sql(alias_text)` to the normalized mention.
+- `fast_path_eligibility.py`: `HELD_UNMATCHED_PLACE` + `terminal_status_for_reason`;
+  a named-but-unresolved target place maps to `held_for_review` in both the
+  per-message path and the bulk terminalize SQL (live sweep uses the same map).
+- `transient_llm_errors.py`: «server disconnected» / `RemoteProtocolError`
+  are transient.
+
+**Regression tests:** `tests/test_village_location_aliases.py::test_resolve_alias_also_matches_alias_text_normalized_at_read_time`,
+`tests/test_fast_path_eligibility.py::test_unmatched_named_place_is_held_not_errored`
+(+ origin-only, status map, bulk SQL), `tests/test_transient_llm_errors.py`
+(disconnect cases), `tests/test_incident_materialization_service.py::test_unmatched_village_or_condition_is_skipped` (updated expectation).
+
 ## 2026-09-28 - Casualty data foundations: dual/singular words, strike lists, vague phrases, zeros
 
 **Bug / accuracy gap** (read-only recon `Docs/recon/casualty_verification_recon.md`):

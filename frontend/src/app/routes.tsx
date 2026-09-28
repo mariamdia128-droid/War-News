@@ -7,6 +7,7 @@ import { AdminDashboardPage } from "../features/dashboard/pages/AdminDashboardPa
 import { SuperAdminDashboardPage } from "../features/dashboard/pages/SuperAdminDashboardPage";
 import { LogsPage } from "../features/logs/pages/LogsPage";
 import { AirViolationsPage } from "../features/airViolations/pages/AirViolationsPage";
+import { AllNewsPage } from "../features/news/pages/AllNewsPage";
 import { IncidentDetailPage } from "../features/news/pages/IncidentDetailPage";
 import { IncidentsPage } from "../features/news/pages/IncidentsPage";
 import { RejectedNewsPage } from "../features/news/pages/RejectedNewsPage";

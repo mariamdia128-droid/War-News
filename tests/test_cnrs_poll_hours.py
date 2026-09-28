@@ -143,6 +143,8 @@ def test_run_poll_pass_resolves_cnrs_source_by_external_id(monkeypatch) -> None:
         name="CNRS Webhook",
         external_id="cnrs_webhook",
         config={"delivery_method": "webhook"},
+        is_active=True,
+        last_cursor=None,
     )
     added_messages = []
     logs = []
@@ -207,6 +209,12 @@ def test_run_poll_pass_resolves_cnrs_source_by_external_id(monkeypatch) -> None:
     monkeypatch.setattr("scripts.cnrs_poll_worker.SessionLocal", _FakeDb)
     monkeypatch.setattr("scripts.cnrs_poll_worker.SourceRepository", _FakeRepo)
     monkeypatch.setattr("scripts.cnrs_poll_worker.CNRSSourceProvider", _FakeProvider)
+    # run_poll_pass seeds the CNRS source row first (09e0eec); the fake DB has no
+    # query API, and the seeding itself is covered by test_cnrs_source_seed.py.
+    monkeypatch.setattr(
+        "scripts.cnrs_poll_worker.ensure_cnrs_source",
+        lambda db: (source, False),
+    )
     monkeypatch.setattr(
         "scripts.cnrs_poll_worker._resolve_cnrs_api_key",
         lambda: "cnrs-api-key",

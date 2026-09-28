@@ -21,6 +21,7 @@ from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
 from app.news.services.incident_details.casualty_status import merge_casualty_status
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,11 @@ class BulletinReconciliationService:
                     summary["succeeded"] += 1
                     continue
                 self._apply_candidate(group, candidate, resolved_at=now)
+                for incident in self.db.scalars(select(Incident).where(
+                    Incident.raw_message_id == group.raw_message_id,
+                    Incident.is_deleted.is_(False),
+                )).all():
+                    evaluate_casualty_flags_safely(self.db, incident.id)
                 self.db.commit()
                 summary["resolved"] += 1
                 summary["succeeded"] += 1

@@ -1,10 +1,22 @@
-from sqlalchemy import desc, func, literal, select
+from sqlalchemy import desc, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.text_normalization import normalize_arabic_sql, normalize_arabic_text
 from app.news.interfaces import VillageRepositoryInterface
 from app.news.models import Village
 from app.news.models.village_location_alias import VillageLocationAlias
+
+
+def _alias_key_matches(normalized: str):
+    """Match the stored key, or the alias text normalized at read time.
+
+    Migration 0061 stored ``alias_normalized`` verbatim (e.g. ``الدبشة`` with
+    ta marbuta), so those rows never equalled the normalized mention.
+    """
+    return or_(
+        VillageLocationAlias.alias_normalized == normalized,
+        normalize_arabic_sql(VillageLocationAlias.alias_text) == normalized,
+    )
 
 
 class VillageRepository(VillageRepositoryInterface):
@@ -38,7 +50,7 @@ class VillageRepository(VillageRepositoryInterface):
             .where(
                 VillageLocationAlias.is_active.is_(True),
                 VillageLocationAlias.requires_geo_context.is_(False),
-                VillageLocationAlias.alias_normalized == normalized,
+                _alias_key_matches(normalized),
                 Village.is_active.is_(True),
             )
             .limit(1)
@@ -64,7 +76,7 @@ class VillageRepository(VillageRepositoryInterface):
             .where(
                 VillageLocationAlias.is_active.is_(True),
                 VillageLocationAlias.requires_geo_context.is_(True),
-                VillageLocationAlias.alias_normalized == normalized,
+                _alias_key_matches(normalized),
                 Village.is_active.is_(True),
             )
             .order_by(Village.id.asc())

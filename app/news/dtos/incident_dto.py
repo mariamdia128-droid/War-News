@@ -28,6 +28,8 @@ class IncidentListItemDTO(BaseModel):
     matched: bool
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] = "auto_processed"
     verification_reason: str | None = None
+    verification_types: list[str] = Field(default_factory=list)
+    open_flags: list[dict[str, Any]] = Field(default_factory=list)
     verified_by_user_id: UUID | None = None
     verified_at: datetime | None = None
     duplicate_flag: Literal["none", "possible"]
@@ -55,6 +57,7 @@ class IncidentListParams(BaseModel):
     event_date_to: date | None = None
     flagged_only: bool = False
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] | None = None
+    verification_type: Literal["duplicate", "casualty_missing_number", "casualty_aggregate_toll"] | None = None
     duplicate_only: bool = False
     has_casualties: bool = False
     sort_order: Literal["newest", "oldest"] = "newest"
@@ -177,6 +180,8 @@ class IncidentDetailDTO(BaseModel):
     matched: bool
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] = "auto_processed"
     verification_reason: str | None = None
+    verification_types: list[str] = Field(default_factory=list)
+    open_flags: list[dict[str, Any]] = Field(default_factory=list)
     verified_by_user_id: UUID | None = None
     verified_at: datetime | None = None
     duplicate_flag: Literal["none", "possible"]
@@ -193,6 +198,7 @@ class IncidentDetailDTO(BaseModel):
     bulletin_group: BulletinCasualtyGroupDTO | None = None
     toll_revisions: list[TollRevisionDTO] = Field(default_factory=list)
     related_incidents: list[RelatedIncidentDTO] = Field(default_factory=list)
+    open_casualty_flags_count: int = 0
     lebanese_army: IncidentCategorySectionDTO | None = None
     unifil: IncidentCategorySectionDTO | None = None
     municipality: IncidentCategorySectionDTO | None = None

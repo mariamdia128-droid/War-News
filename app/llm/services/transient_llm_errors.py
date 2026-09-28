@@ -12,6 +12,10 @@ TRANSIENT_LLM_ERROR_MARKERS = (
     "connecterror",
     "networkerror",
     "temporarily unavailable",
+    # httpx.RemoteProtocolError is stored without its class name; 11 rows were
+    # parked in status=error forever because no marker matched.
+    "server disconnected",
+    "remoteprotocolerror",
     "503",
     "502",
     "504",
@@ -38,7 +42,7 @@ def extraction_retry_cap_message(retry_count: int, exc: BaseException) -> str:
 
 def is_transient_llm_error(exc: BaseException) -> bool:
     """Return True when the failure is likely retryable (timeout/network), not bad data."""
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, (httpx.TimeoutException, httpx.RemoteProtocolError)):
         return True
 
     message = str(exc).strip().lower()

@@ -84,7 +84,11 @@ def test_fill_for_raw_message_merges_details_and_clears_pending() -> None:
     assert incident.details_pending is False
     assert incident.deaths == 1
     assert incident.injuries == 3
-    assert incident.total_deaths == 2
+    # Tier 1 never attributes categories, so its root toll already includes the
+    # soldier Tier 2 attributes to the army (root 1 == army subtotal 1 -> one
+    # person). reconcile_root_vs_entity_casualties (13f92b0) stops the rollup
+    # counting him twice; before it this fixture produced total_deaths == 2.
+    assert incident.total_deaths == 1
     assert incident.total_injuries == 3
     assert raw_message.status == MessageStatus.materialized
     assert incident.khabar_embedding == [0.1, 0.2]

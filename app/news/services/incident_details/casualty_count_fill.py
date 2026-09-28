@@ -39,6 +39,38 @@ def _sentence_mentions(sentence: str, kind: str) -> list[CountMention]:
     return [m for m in find_count_mentions(sentence) if m.kind == kind]
 
 
+def infer_count_from_count_words(
+    text: str,
+    kind: str,
+    *,
+    target_villages: list[str],
+) -> CountMention | None:
+    """Return an unambiguous single-target deterministic count mention.
+
+    This is shared by extraction-time filling and legacy status derivation so
+    old messages receive exactly the same singular/dual/spelled-number rule.
+    """
+    targets = {_village_key(name) for name in target_villages if name and name.strip()}
+    if len(targets) != 1 or is_obituary(text):
+        return None
+    (target,) = targets
+    usable = [
+        sentence
+        for sentence in sentences(strip_page_header(text))
+        if not mentions_named_victim(sentence) and not is_obituary(sentence)
+    ]
+    found: list[tuple[CountMention, bool]] = []
+    for sentence in usable:
+        mentions = _sentence_mentions(sentence, kind)
+        if any(m.rule not in _FILL_RULES for m in mentions):
+            return None
+        in_target_sentence = target in _village_key(sentence)
+        found.extend((m, in_target_sentence) for m in mentions)
+    if not found or len({mention.value for mention, _ in found}) != 1:
+        return None
+    return next((mention for mention, same_sentence in found if same_sentence), None)
+
+
 def fill_counts_from_count_words(
     text: str,
     casualties: ExtractionCasualties,
@@ -48,17 +80,6 @@ def fill_counts_from_count_words(
     raw_message_id: int | None = None,
 ) -> tuple[ExtractionCasualties, list[CasualtyCountEvidence]]:
     """Fill null deaths/injuries from explicit count words in a single-target message."""
-    targets = {_village_key(name) for name in target_villages if name and name.strip()}
-    if len(targets) != 1 or is_obituary(text):
-        return casualties, evidence
-    (target,) = targets
-
-    # Skip sentences that talk about a named, already-known victim.
-    usable = [
-        sentence
-        for sentence in sentences(strip_page_header(text))
-        if not mentions_named_victim(sentence) and not is_obituary(sentence)
-    ]
     values = casualties.model_dump(mode="python")
     kept = list(evidence)
 
@@ -68,22 +89,11 @@ def fill_counts_from_count_words(
             continue
         if has_explicit_none(text, kind):
             continue
-        found: list[tuple[CountMention, bool]] = []
-        ambiguous = False
-        for sentence in usable:
-            mentions = _sentence_mentions(sentence, kind)
-            if any(m.rule not in _FILL_RULES for m in mentions):
-                # A digit count the LLM dropped: leave it for review, don't guess.
-                ambiguous = True
-                break
-            in_target_sentence = target in _village_key(sentence)
-            found.extend((m, in_target_sentence) for m in mentions)
-        if ambiguous or not found:
+        mention = infer_count_from_count_words(
+            text, kind, target_villages=target_villages
+        )
+        if mention is None:
             continue
-        counts = {mention.value for mention, _ in found}
-        if len(counts) != 1 or not any(same_sentence for _, same_sentence in found):
-            continue
-        mention = next(m for m, same_sentence in found if same_sentence)
         values[kind] = mention.value
         values[total_field] = mention.value
         for field in (kind, total_field):

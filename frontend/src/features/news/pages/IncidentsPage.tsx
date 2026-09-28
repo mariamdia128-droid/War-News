@@ -22,6 +22,8 @@ import { useConditionsQuery, useIncidentStream, useIncidentsQuery, useVillagesQu
 import { createIncident, reviewIncident } from "../api";
 import { useContentSourcesQuery } from "../../sources/hooks";
 import type { Incident } from "../types";
+import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
+import { verificationTypeFromSearch, verificationTypeLabel } from "../verificationLogic";
 
 const DEFAULT_PAGE_SIZE = 150;
 const PAGE_SIZE_OPTIONS = new Set([50, 100, 150]);
@@ -117,6 +119,7 @@ export const IncidentsPage = () => {
   const [reviewRow, setReviewRow] = useState<Incident | null>(null);
   const [reviewError, setReviewError] = useState("");
   const [isReviewing, setIsReviewing] = useState(false);
+  const [casualtyReview, setCasualtyReview] = useState<{ row: Incident; index: number } | null>(null);
 
   const cursor = cursorHistory.at(-1);
   const page = cursorHistory.length + 1;
@@ -124,6 +127,7 @@ export const IncidentsPage = () => {
   const condition = params.get("condition") ?? "";
   const sourceName = params.get("source_name") ?? "";
   const verificationStatus = params.get("verification_status") as Incident["verification_status"] | "";
+  const verificationType = verificationTypeFromSearch(location.search) ?? "";
   const eventDateFrom = normalizeDateInputValue(params.get("event_date_from")) || DEFAULT_EVENT_DATE_FROM;
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to")) || getBeirutDate();
   const sortOrder = (params.get("sort_order") as "newest" | "oldest" | null) ?? "newest";
@@ -131,7 +135,7 @@ export const IncidentsPage = () => {
   const hasCasualties = params.get("has_casualties") === "true";
   const pageSize = parsePageSize(params.get("page_size"));
   const hasFilters = Boolean(
-    village || condition || sourceName || verificationStatus || eventDateFrom || eventDateTo || duplicateOnly || hasCasualties,
+    village || condition || sourceName || verificationStatus || verificationType || eventDateFrom || eventDateTo || duplicateOnly || hasCasualties,
   );
 
   const filters = useMemo(
@@ -142,6 +146,7 @@ export const IncidentsPage = () => {
       condition,
       sourceName,
       verificationStatus: verificationStatus || undefined,
+      verificationType: verificationType || undefined,
       eventDateFrom,
       eventDateTo,
       duplicateOnly,
@@ -159,6 +164,7 @@ export const IncidentsPage = () => {
       sortOrder,
       sourceName,
       verificationStatus,
+      verificationType,
       village,
     ],
   );
@@ -189,10 +195,15 @@ export const IncidentsPage = () => {
     { value: "needs_verification", label: "Needs verification" },
     { value: "verified", label: "Verified" },
   ];
+  const verificationTypeOptions: SelectOption[] = [
+    { value: "duplicate", label: "Duplicate" },
+    { value: "casualty_missing_number", label: "Missing number" },
+    { value: "casualty_aggregate_toll", label: "Aggregate toll" },
+  ];
   const verificationBadge = (row: Incident) => {
     if (row.verification_status === "verified") return { label: "Verified", variant: "success" as const };
     if (row.verification_status === "rejected") return { label: "Rejected", variant: "danger" as const };
-    if (row.verification_status === "needs_verification" && row.duplicate_flag === "possible") {
+    if (row.verification_status === "needs_verification") {
       return { label: "Needs verification", variant: "warning" as const };
     }
     return null;
@@ -312,6 +323,7 @@ export const IncidentsPage = () => {
       render: (row) => (
         <div className="space-y-1">
           {verificationBadge(row) ? <StatusBadge {...verificationBadge(row)!} /> : null}
+          <div className="flex flex-wrap gap-1">{row.verification_types.map((type) => <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />)}</div>
           {row.verification_reason ? <p className="text-caption text-text-muted">{row.verification_reason}</p> : null}
         </div>
       ),
@@ -450,6 +462,17 @@ export const IncidentsPage = () => {
                     options={verificationOptions}
                     className="w-full"
                     onChange={(value) => updateParam("verification_status", value)}
+                  />
+                </div>
+                <div className="space-y-2 xl:col-span-1">
+                  <Label htmlFor="incident-verification-type-filter">Check type</Label>
+                  <Select
+                    id="incident-verification-type-filter"
+                    value={verificationType}
+                    placeholder="All types"
+                    options={verificationTypeOptions}
+                    className="w-full"
+                    onChange={(value) => updateParam("verification_type", value)}
                   />
                 </div>
                 <div className="space-y-2 xl:col-span-1">
@@ -595,7 +618,9 @@ export const IncidentsPage = () => {
               actions={(row) => (
                 <div className="flex flex-nowrap justify-end gap-2">
                 {row.id && row.verification_status === "needs_verification" ? (
-                  row.duplicate_flag === "possible" ? (
+                  row.open_flags.length ? (
+                    <Button type="button" className="h-9" onClick={() => setCasualtyReview({ row, index: 0 })}>Review</Button>
+                  ) : row.duplicate_flag === "possible" ? (
                     <Button
                       type="button"
                       className="h-9 whitespace-nowrap"
@@ -758,6 +783,18 @@ export const IncidentsPage = () => {
                 <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={isReviewing} onClick={() => setReviewRow(null)}>Cancel</Button><Button type="submit" isLoading={isReviewing}>Save review</Button></div>
               </form>
             </Dialog>
+          ) : null}
+          {casualtyReview ? (
+            <CasualtyCheckPanel
+              id={casualtyReview.row.open_flags[casualtyReview.index].flag_id}
+              onClose={() => setCasualtyReview(null)}
+              onComplete={async () => {
+                const nextIndex = casualtyReview.index + 1;
+                await refetch();
+                if (nextIndex < casualtyReview.row.open_flags.length) setCasualtyReview({ ...casualtyReview, index: nextIndex });
+                else setCasualtyReview(null);
+              }}
+            />
           ) : null}
     </div>
   );

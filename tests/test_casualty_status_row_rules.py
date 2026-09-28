@@ -110,6 +110,25 @@ def test_32735_has_unallocated_injury_total_but_no_death_for_unmatched_row() -> 
     assert result.injuries_status == "aggregate_only"
 
 
+def test_32249_unlocated_brashit_sub_event_does_not_flag_every_bulletin_location() -> None:
+    result = _derive(
+        "ملخص اعتداءات: المنصوري وكفرتبنيت. استشهاد مواطن من بلدة برعشيت بعد إصابته برصاص العدو",
+        {
+            "casualties": {},
+            "village_roles": [{"village": "المنصوري"}, {"village": "كفرتبنيت"}],
+            "sub_events": [{
+                "casualties": {"deaths": 1},
+                "evidence_span": "استشهاد مواطن من بلدة برعشيت بعد إصابته برصاص العدو",
+            }],
+        },
+        976,
+        _match(_role("المنصوري", 976), _role("كفرتبنيت", 857)),
+        2,
+    )
+    assert result.deaths_status == "none_mentioned"
+    assert result.remaining_total == {}
+
+
 def test_per_location_sum_below_total_retains_only_remainder() -> None:
     result = _derive(
         "الحصيلة 5 شهداء: شهيدان في ألف وشهيد في باء",
@@ -160,3 +179,25 @@ def test_older_obituary_stays_unmentioned_even_with_stored_counts(message_id) ->
         1,
     )
     assert result.deaths_status == result.injuries_status == "none_mentioned"
+
+
+def test_single_location_low_confidence_root_counts_are_exact() -> None:
+    result = _derive(
+        "استشهاد مسعف وإصابة 2 آخرين في كفررمان",
+        {"village": ["كفررمان"], "casualties": {"deaths": 1, "injuries": 2}},
+        20,
+        _match(_role("كفررمان", 20, status="matched_low_confidence")),
+        1,
+    )
+    assert result.deaths_status == result.injuries_status == "exact"
+
+
+def test_legacy_single_location_dual_is_exact() -> None:
+    result = _derive(
+        "شهيدان في غارة استهدفت دراجة نارية في كفررمان",
+        {"village": ["كفررمان"], "casualties": {}},
+        20,
+        _match(_role("كفررمان", 20)),
+        1,
+    )
+    assert result.deaths_status == "exact"

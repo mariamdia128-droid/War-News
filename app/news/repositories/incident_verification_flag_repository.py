@@ -24,6 +24,7 @@ class IncidentVerificationFlagRepository:
         severity: str,
         detail: dict[str, Any],
         source_message_id: int | None,
+        visible_after: datetime | None = None,
     ) -> IncidentVerificationFlag:
         existing = self.db.scalar(
             select(IncidentVerificationFlag)
@@ -45,6 +46,7 @@ class IncidentVerificationFlagRepository:
                 severity=severity,
                 detail=detail,
                 source_message_id=source_message_id,
+                visible_after=visible_after,
                 created_at=now,
                 updated_at=now,
             )
@@ -57,6 +59,7 @@ class IncidentVerificationFlagRepository:
         existing.detail = detail
         existing.severity = severity
         existing.source_message_id = source_message_id
+        existing.visible_after = visible_after
         existing.updated_at = now
         self.db.add(existing)
         self._audit(existing, old_values=old_values)
@@ -72,6 +75,16 @@ class IncidentVerificationFlagRepository:
         flag.resolved_by = user_id
         flag.resolution = resolution
         flag.updated_at = flag.resolved_at
+        return self._save_state(flag, old_values)
+
+    def update_open_resolution(
+        self, flag_id: UUID, resolution: dict[str, Any], detail: dict[str, Any]
+    ) -> IncidentVerificationFlag:
+        flag = self._get_open(flag_id)
+        old_values = self._flag_snapshot(flag)
+        flag.detail = detail
+        flag.resolution = resolution
+        flag.updated_at = datetime.now(timezone.utc)
         return self._save_state(flag, old_values)
 
     def dismiss_flag(
@@ -115,6 +128,16 @@ class IncidentVerificationFlagRepository:
                 .order_by(IncidentVerificationFlag.created_at, IncidentVerificationFlag.id)
             ).all()
         )
+
+    def has_previously_reviewed(self, incident_id: UUID, reason_code: str) -> bool:
+        return self.db.scalar(
+            select(IncidentVerificationFlag.id).where(
+                IncidentVerificationFlag.incident_id == incident_id,
+                IncidentVerificationFlag.flag_type == "casualty_check",
+                IncidentVerificationFlag.reason_code == reason_code,
+                IncidentVerificationFlag.status.in_(("resolved", "dismissed")),
+            ).limit(1)
+        ) is not None
 
     def list_flags(
         self,

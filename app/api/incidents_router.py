@@ -34,6 +34,26 @@ from app.sources.models import SourceType
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
 
+@router.get("/{incident_id}/verification-flags")
+def get_incident_verification_flags(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_admin),
+) -> list[dict]:
+    from app.news.repositories.incident_verification_flag_repository import IncidentVerificationFlagRepository
+
+    return [
+        {
+            "id": flag.id,
+            "reason_code": flag.reason_code,
+            "severity": flag.severity,
+            "summary": (flag.detail or {}).get("summary"),
+            "created_at": flag.created_at,
+        }
+        for flag in IncidentVerificationFlagRepository(db).list_open_for_incident(incident_id)
+    ]
+
+
 @router.post("", response_model=IncidentDetailDTO, status_code=status.HTTP_201_CREATED)
 def create_incident(
     payload: IncidentCreateDTO,
@@ -58,6 +78,7 @@ def list_incidents(
     event_date_to: date | None = Query(default=None),
     flagged_only: bool = Query(default=False),
     verification_status: Literal["auto_processed", "needs_verification", "verified", "rejected"] | None = Query(default=None),
+    verification_type: Literal["duplicate", "casualty_missing_number", "casualty_aggregate_toll"] | None = Query(default=None),
     duplicate_only: bool = Query(default=False),
     has_casualties: bool = Query(default=False),
     sort_order: Literal["newest", "oldest"] = Query(default="newest"),
@@ -75,6 +96,7 @@ def list_incidents(
         event_date_to=event_date_to,
         flagged_only=flagged_only,
         verification_status=verification_status,
+        verification_type=verification_type,
         duplicate_only=duplicate_only,
         has_casualties=has_casualties,
         sort_order=sort_order,

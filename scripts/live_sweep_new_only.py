@@ -28,9 +28,9 @@ from app.news.repositories.raw_message_repository import (
 from app.news.repositories.sweep_cursor_repository import SweepCursorRepository
 from app.news.services.pipeline import pipeline_concurrent_sweeps as concurrent_sweeps
 from app.news.services.dedup.fast_path_eligibility import (
-    ERROR_AIR_VIOLATION,
     fast_path_materializable_clause,
     permanent_ineligibility_reason,
+    terminal_status_for_reason,
 )
 from app.news.services.pipeline.pipeline_concurrent_sweeps import (
     sweep_extraction_concurrent,
@@ -411,10 +411,7 @@ def _terminalize_ineligible_fast_path_filtered(
         reason = permanent_ineligibility_reason(message.match_result)
         if reason is None:
             continue
-        if reason == ERROR_AIR_VIOLATION:
-            message.status = MessageStatus.routed_air_violation
-        else:
-            message.status = MessageStatus.error
+        message.status = terminal_status_for_reason(reason)
         message.error_message = reason
         self.db.add(message)
         updated += 1

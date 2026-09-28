@@ -14,11 +14,15 @@ from typing import Any
 from sqlalchemy import inspect, select, update
 
 from app.core.database import SessionLocal
-from app.news.models import Incident, RawMessage, UpdateAction
+from app.news.models import Incident, IncidentUpdate, RawMessage, UpdateAction
+from app.news.services.incident_details.casualty_merge_guard import guard_casualty_merge
 from app.news.services.incident_details.casualty_status import (
+    CasualtyStatusResult,
+    merge_casualty_status,
     status_for_incident_row,
     target_location_count_from_extraction,
 )
+from app.news.services.incident_details.casualty_text import find_count_mentions, has_vague_quantifier
 from app.news.services.incidents.incident_change_log import record_incident_change
 
 OUT_CSV = Path(__file__).resolve().parent / "out" / "casualty_status_backfill_dryrun.csv"
@@ -29,6 +33,55 @@ STATUSES = (
     "count_missing",
     "aggregate_only",
 )
+
+
+def _status_from_message(row: dict[str, Any], message: dict[str, Any]) -> CasualtyStatusResult:
+    extraction = message.get("extraction_result") or {}
+    target_count = target_location_count_from_extraction(
+        extraction.get("village"), extraction.get("village_roles"), extraction.get("sub_events")
+    )
+    return status_for_incident_row(
+        message.get("raw_text") or "", extraction, {},
+        target_location_count=target_count,
+        row_village_id=row.get("village_id"),
+        match_result=message.get("match_result"),
+    )
+
+
+def _combine(current: CasualtyStatusResult, incoming: CasualtyStatusResult) -> CasualtyStatusResult:
+    values = merge_casualty_status(
+        current.status, current.is_preliminary, current.evidence,
+        incoming.status, incoming.is_preliminary, incoming.evidence,
+        incoming_is_newest=True,
+        current_deaths_status=current.deaths_status,
+        incoming_deaths_status=incoming.deaths_status,
+        current_injuries_status=current.injuries_status,
+        incoming_injuries_status=incoming.injuries_status,
+        current_remaining_total=current.remaining_total,
+        incoming_remaining_total=incoming.remaining_total,
+    )
+    return CasualtyStatusResult(
+        status=values["casualty_status"],
+        deaths_status=values.get("casualty_deaths_status", current.deaths_status),
+        injuries_status=values.get("casualty_injuries_status", current.injuries_status),
+        is_preliminary=values["casualty_is_preliminary"],
+        evidence=values["casualty_status_evidence"],
+        remaining_total=values.get("casualty_status_remaining_total") or {},
+    )
+
+
+def _merged_sources(db) -> dict[Any, list[int]]:
+    rows = db.execute(
+        select(IncidentUpdate.incident_id, IncidentUpdate.new_values)
+        .where(IncidentUpdate.action == UpdateAction.pipeline_merge)
+        .order_by(IncidentUpdate.created_at, IncidentUpdate.id)
+    ).all()
+    result: dict[Any, list[int]] = defaultdict(list)
+    for incident_id, values in rows:
+        raw_id = ((values or {}).get("merged_from") or {}).get("raw_message_id")
+        if isinstance(raw_id, int) and raw_id not in result[incident_id]:
+            result[incident_id].append(raw_id)
+    return result
 
 
 def _int(value: Any) -> int | None:
@@ -47,6 +100,7 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
         Incident.total_deaths,
         Incident.total_injuries,
         Incident.verification_status,
+        Incident.created_at,
         Incident.version,
         RawMessage.raw_text,
         RawMessage.extraction_result,
@@ -67,6 +121,17 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
         .where(Incident.is_deleted.is_(False))
         .order_by(Incident.id)
     )
+    merges = _merged_sources(db)
+    merged_ids = {raw_id for ids in merges.values() for raw_id in ids}
+    merged_messages = {
+        item["id"]: dict(item)
+        for item in db.execute(
+            select(
+                RawMessage.id, RawMessage.raw_text, RawMessage.extraction_result,
+                RawMessage.match_result,
+            ).where(RawMessage.id.in_(merged_ids))
+        ).mappings()
+    } if merged_ids else {}
     rows = []
     for record in db.execute(query).mappings():
         row = dict(record)
@@ -90,6 +155,31 @@ def _rows(db) -> tuple[list[dict[str, Any]], bool]:
             row_village_id=row.get("village_id"),
             match_result=row.get("match_result"),
         )
+        row["merged_message_ids"] = merges.get(row["incident_id"], [])
+        row["missing_merged_message_ids"] = []
+        row["suppressed_merged_message_ids"] = []
+        for raw_id in row["merged_message_ids"]:
+            message = merged_messages.get(raw_id)
+            if message is None:
+                row["missing_merged_message_ids"].append(raw_id)
+                continue
+            extraction = message.get("extraction_result") or {}
+            target_count = target_location_count_from_extraction(
+                extraction.get("village"), extraction.get("village_roles"), extraction.get("sub_events")
+            )
+            matches = (message.get("match_result") or {}).get("village_matches") or []
+            incoming = _status_from_message(row, message)
+            decision = guard_casualty_merge(
+                incident_village_id=row.get("village_id"),
+                target_location_count=target_count,
+                casualty_scope=extraction.get("casualty_scope"),
+                incoming_status=incoming.status,
+                village_matches=matches,
+            )
+            if decision.suppress:
+                row["suppressed_merged_message_ids"].append(raw_id)
+                continue
+            row["derived"] = _combine(row["derived"], incoming)
         rows.append(row)
     return rows, has_status
 
@@ -111,12 +201,38 @@ def _disagreements(row: dict[str, Any]) -> list[str]:
     return issues
 
 
+def _classification(row: dict[str, Any]) -> str:
+    if row.get("missing_merged_message_ids"):
+        return "merged source missing"
+    extraction = row.get("extraction_payload") or {}
+    matches = (row.get("match_result") or {}).get("village_matches") or []
+    if any(item.get("village_match_status") in {"unmatched", "matched_low_confidence"} for item in matches):
+        return "unmatched village"
+    text = row.get("raw_text") or ""
+    mentions = find_count_mentions(text)
+    if row["derived"].status == "count_missing":
+        if row["target_location_count"] >= 2:
+            return "multi-location summary digest"
+        if any(item.rule in {"dual", "singular"} for item in mentions):
+            return "dual/singular missed"
+        if has_vague_quantifier(text, "deaths") or has_vague_quantifier(text, "injuries"):
+            return "vague wording"
+        return "other"
+    if row["derived"].status == "aggregate_only":
+        if extraction.get("casualty_scope") == "bulletin_aggregate" or row["target_location_count"] >= 2:
+            if extraction.get("village_roles"):
+                return "multi-location summary digest"
+            return "bulletin total with no breakdown"
+    return "other"
+
+
 def _write_csv(rows: list[dict[str, Any]]) -> None:
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     fields = (
         "incident_id", "raw_message_id", "stored_status", "derived_status",
         "deaths_status", "injuries_status", "is_preliminary", "evidence",
         "deaths", "total_deaths", "injuries", "total_injuries", "disagreement",
+        "merged_message_ids", "missing_merged_message_ids", "suppressed_merged_message_ids", "classification",
     )
     with OUT_CSV.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
@@ -138,6 +254,10 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
                     "injuries": row["injuries"],
                     "total_injuries": row["total_injuries"],
                     "disagreement": ";".join(_disagreements(row)),
+                    "merged_message_ids": ";".join(map(str, row["merged_message_ids"])),
+                    "missing_merged_message_ids": ";".join(map(str, row["missing_merged_message_ids"])),
+                    "suppressed_merged_message_ids": ";".join(map(str, row["suppressed_merged_message_ids"])),
+                    "classification": _classification(row),
                 }
             )
 
@@ -163,6 +283,16 @@ def _report(rows: list[dict[str, Any]]) -> None:
                 f"counts=({row['deaths']},{row['injuries']}) evidence={row['derived'].evidence!r}"
             )
     disagreements = [row for row in rows if _disagreements(row)]
+    classified = [row for row in rows if row["derived"].status in {"aggregate_only", "count_missing"} or _disagreements(row)]
+    classes = Counter(_classification(row) for row in classified)
+    print(f"classified_remainder: {dict(classes)}")
+    print("classified_examples (up to 20):")
+    for row in classified[:20]:
+        print(f"  {_classification(row)} incident={row['incident_id']} message={row['raw_message_id']} text={(row.get('raw_text') or '')[:240]!r}")
+    missing = [(row["incident_id"], raw_id) for row in rows for raw_id in row["missing_merged_message_ids"]]
+    print(f"merged_sources_missing: {len(missing)}")
+    for incident_id, raw_id in missing[:20]:
+        print(f"  incident={incident_id} merged_message={raw_id} skipped=raw_message_missing")
     print(f"disagreements: {len(disagreements)}")
     for row in disagreements:
         print(

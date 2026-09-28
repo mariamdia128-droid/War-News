@@ -35,6 +35,7 @@ from app.news.services.incident_details.casualty_status import (
     status_for_incident_row,
     target_location_count_from_extraction,
 )
+from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.clustering.embedding_service import EmbeddingService
 from app.news.services.matching.emergency_organization_matching_service import (
@@ -329,6 +330,8 @@ class Tier2DetailFillService:
             raw_message.status = MessageStatus.materialized
         raw_message.error_message = None
         self.db.add(raw_message)
+        for incident in incidents:
+            evaluate_casualty_flags_safely(self.db, incident.id)
         self.db.commit()
         logger.info(
             "tier2_detail_fill raw_message_id=%s updated_incidents=%s categories=%s",

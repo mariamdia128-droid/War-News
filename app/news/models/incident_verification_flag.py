@@ -43,6 +43,10 @@ class IncidentVerificationFlag(Base):
             "status",
             "visible_after",
         ),
+        Index(
+            "ix_incident_verification_flags_incident_status_visible_after",
+            "incident_id", "status", "visible_after",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(

@@ -673,7 +673,7 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         village_roles: list[VillageRoleEntry],
         sub_events: list[ExtractionSubEvent],
     ) -> list[str]:
-        """Target locations for count-word filling; empty means do not fill.
+        """Target locations for the count-word fill; empty means "do not fill".
 
         Several sub-events split casualties across actions, so their root
         totals are not a single-location count.

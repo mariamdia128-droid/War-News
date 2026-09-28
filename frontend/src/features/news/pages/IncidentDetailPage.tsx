@@ -11,6 +11,8 @@ import { acquireIncidentEditLock, deleteIncident, releaseIncidentEditLock, resol
 import { IncidentCategorySectionFields } from "../components/IncidentCategorySectionFields";
 import { IncidentCategorySectionEditForm } from "../components/IncidentCategorySectionEditForm";
 import { VillageMatchNotice } from "../components/VillageMatchNotice";
+import { useIncidentCasualtyFlags } from "../../casualtyChecks/hooks";
+import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
 import { fieldGroupForSection, incidentCategorySections } from "../incidentCategorySections";
 import type { IncidentCategorySectionKey } from "../incidentCategorySections";
 import { reportedCount } from "../incidentSchema";
@@ -78,6 +80,7 @@ export const IncidentDetailPage = () => {
   const { incidentId } = useParams();
   const location = useLocation();
   const roleBase = roleBaseFromPath(location.pathname);
+  const casualtyFlags = useIncidentCasualtyFlags(incidentId);
   const incidentsPath = `${roleBase}/incidents${location.search}`;
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
@@ -276,6 +279,16 @@ export const IncidentDetailPage = () => {
           </div>
         </dl>
       </section>
+
+      {casualtyFlags.data?.map((flag) => (
+        <CasualtyCheckPanel
+          key={flag.id}
+          id={flag.id}
+          inline
+          onClose={() => undefined}
+          onComplete={async () => { await Promise.all([refetch(), casualtyFlags.refetch()]); }}
+        />
+      ))}
 
       {incident.duplicate_flag === "possible" ? (
         <section className="rounded-lg border border-warning/40 bg-warning/5 p-5 sm:p-6">

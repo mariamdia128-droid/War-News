@@ -54,6 +54,58 @@ class RawMessageRepository(RawMessageRepositoryInterface):
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def requeue_for_matching(
+        self,
+        message: RawMessage,
+        *,
+        extraction_result: dict[str, Any],
+        audit: dict[str, Any],
+    ) -> None:
+        """Put a parked message back where ``claim_pending_match`` picks it up."""
+        self._append_requeue_audit(message, audit)
+        message.extraction_result = extraction_result
+        message.match_result = None
+        message.matched_at = None
+        message.match_retry_count = 0
+        message.fast_path_completed_at = None
+        message.materialized_at = None
+        self._reset_to_parsed(message)
+
+    def requeue_for_extraction(self, message: RawMessage, *, audit: dict[str, Any]) -> None:
+        """Put a parked message back where ``claim_pending_extraction`` picks it up."""
+        self._append_requeue_audit(message, audit)
+        message.extraction_result = None
+        message.extracted_at = None
+        message.extraction_retry_count = 0
+        message.match_result = None
+        message.matched_at = None
+        message.match_retry_count = 0
+        message.fast_path_completed_at = None
+        message.materialized_at = None
+        self._reset_to_parsed(message)
+
+    def _reset_to_parsed(self, message: RawMessage) -> None:
+        message.status = MessageStatus.parsed
+        message.error_message = None
+        message.failed_stage = None
+        self._clear_processing_claim(message)
+        self.db.add(message)
+
+    @staticmethod
+    def _append_requeue_audit(message: RawMessage, audit: dict[str, Any]) -> None:
+        filter_result = dict(message.filter_result or {})
+        history = list(filter_result.get("requeue_history") or [])
+        history.append(
+            {
+                **audit,
+                "at": datetime.now(timezone.utc).isoformat(),
+                "from_status": getattr(message.status, "value", message.status),
+                "from_error": message.error_message,
+            }
+        )
+        filter_result["requeue_history"] = history
+        message.filter_result = filter_result
+
     def _clear_processing_claim(self, message: RawMessage) -> None:
         message.processing_claim_stage = None
         message.processing_claimed_at = None

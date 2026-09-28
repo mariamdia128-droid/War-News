@@ -27,6 +27,9 @@ from app.news.services.incident_details.casualty_text import (
     sentences,
     strip_page_header,
 )
+from app.news.services.incident_details.casualty_count_fill import (
+    infer_count_from_count_words,
+)
 
 CasualtyStatusCode = Literal[
     "none_mentioned",
@@ -218,12 +221,30 @@ def _status_for_kind(
     target_location_count: int,
     row_village_id: int | None,
     match_result: Any,
+    target_villages: Any = (),
 ) -> tuple[CasualtyStatusCode, int | None, str | None]:
     if is_obituary(text) and not (kind == DEATHS and _current_named_victim_death(text)):
         return "none_mentioned", None, None
 
     located = _locations_with_counts(village_roles, sub_events, kind)
     matched_counts = _matched_location_counts(match_result, kind)
+
+    # With one extracted target, root/sub-event casualties belong to that
+    # target. Village matching confidence identifies the place; it does not
+    # determine ownership of an otherwise unambiguous count.
+    if target_location_count == 1:
+        if _positive_counts(casualties, kind):
+            return "exact", None, _evidence(text, kind)
+        target_names = [str(name).strip() for name in target_villages or () if str(name).strip()]
+        if not target_names:
+            target_names = [name for name, _ in located]
+        if not target_names:
+            target_names = _target_location_names(village_roles, sub_events)
+        inferred = infer_count_from_count_words(
+            text, kind, target_villages=target_names
+        )
+        if inferred is not None:
+            return "exact", None, _evidence(text, kind)
     if row_village_id is not None and row_village_id in matched_counts:
         return "exact", None, _evidence(text, kind)
 
@@ -243,15 +264,19 @@ def _status_for_kind(
             evidence = f"{evidence} [{note}]" if evidence else note
         return "none_mentioned", None, evidence
 
-    if (
-        row_village_id is None
-        and match_result is None
-        and target_location_count == 1
-        and _positive_counts(casualties, kind)
-    ):
-        return "exact", None, _evidence(text, kind)
-
     if target_location_count >= 2 and total is not None:
+        all_target_names = [str(name).strip() for name in target_villages or () if str(name).strip()]
+        all_target_names.extend(_target_location_names(village_roles, sub_events))
+        if (
+            not _positive_counts(casualties, kind)
+            and (
+                _count_is_tied_to_named_location(text, kind, all_target_names)
+                or _unlocated_subevent_names_another_place(sub_events, kind)
+            )
+        ):
+            # A count belonging to another named place is not a bulletin total
+            # and therefore says nothing about this row.
+            return "none_mentioned", None, _evidence(text, kind)
         return "aggregate_only", total, _evidence(text, kind)
 
     if _has_explicit_count(text, kind) and target_location_count == 1:
@@ -267,6 +292,57 @@ def _status_for_kind(
     if has_wording:
         return "count_missing", None, _evidence(text, kind)
     return "none_mentioned", None, None
+
+
+_NAMED_PLACE_ATTRIBUTION = re.compile(
+    normalize_casualty_text("(?:من|في) بلدة") + r"\s+[\u0600-\u06ff]"
+)
+
+
+def _unlocated_subevent_names_another_place(sub_events: Any, kind: str) -> bool:
+    """Catch a casualty sub-event whose named place was omitted from locations."""
+    for event in sub_events or ():
+        if not _positive_counts(_get(event, "casualties"), kind):
+            continue
+        if _get(event, "locations", ()):
+            continue
+        evidence = str(_get(event, "evidence_span", "") or _get(event, "action_description", ""))
+        if _NAMED_PLACE_ATTRIBUTION.search(normalize_casualty_text(evidence)):
+            return True
+    return False
+
+
+def _target_location_names(village_roles: Any, sub_events: Any) -> list[str]:
+    names: list[str] = []
+    for role in village_roles or ():
+        value = _get(role, "role", "target")
+        if value in ("target", getattr(value, "value", None)):
+            name = str(_get(role, "village", "")).strip()
+            if name:
+                names.append(name)
+    for event in sub_events or ():
+        for location in _get(event, "locations", ()) or ():
+            value = _get(location, "role", "target")
+            if value in ("target", getattr(value, "value", None)):
+                name = str(_get(location, "village", "")).strip()
+                if name:
+                    names.append(name)
+    return names
+
+
+def _count_is_tied_to_named_location(
+    text: str, kind: str, target_names: list[str]
+) -> bool:
+    normalized_names = {
+        normalize_casualty_text(name) for name in target_names if name.strip()
+    }
+    for sentence in sentences(strip_page_header(text)):
+        if not any(mention.kind == kind for mention in find_count_mentions(sentence)):
+            continue
+        normalized_sentence = normalize_casualty_text(sentence)
+        if any(name and name in normalized_sentence for name in normalized_names):
+            return True
+    return False
 
 
 def _evidence(text: str, kind: str) -> str | None:
@@ -286,6 +362,7 @@ def derive_casualty_status(
     target_location_count: int,
     row_village_id: int | None = None,
     match_result: Any = None,
+    target_villages: Any = (),
 ) -> CasualtyStatusResult:
     """Derive overall and type-specific statuses from final counts and wording.
 
@@ -297,11 +374,11 @@ def derive_casualty_status(
 
     deaths_status, deaths_remaining, deaths_evidence = _status_for_kind(
         cleaned, DEATHS, casualties, village_roles, sub_events, target_location_count,
-        row_village_id, match_result,
+        row_village_id, match_result, target_villages,
     )
     injuries_status, injuries_remaining, injuries_evidence = _status_for_kind(
         cleaned, INJURIES, casualties, village_roles, sub_events, target_location_count,
-        row_village_id, match_result,
+        row_village_id, match_result, target_villages,
     )
     status = max(
         (deaths_status, injuries_status),
@@ -399,6 +476,7 @@ def status_for_incident_row(
         target_location_count=target_location_count,
         row_village_id=row_village_id,
         match_result=match_result,
+        target_villages=_get(extraction, "village", ()),
     )
 
 

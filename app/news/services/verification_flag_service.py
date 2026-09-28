@@ -22,6 +22,7 @@ class VerificationFlagService:
         severity: str,
         detail: dict[str, Any],
         source_message_id: int | None,
+        visible_after: datetime | None = None,
     ) -> IncidentVerificationFlag:
         return self.repository.open_flag(
             incident_id=incident_id,
@@ -30,6 +31,7 @@ class VerificationFlagService:
             severity=severity,
             detail=detail,
             source_message_id=source_message_id,
+            visible_after=visible_after,
         )
 
     def resolve_flag(

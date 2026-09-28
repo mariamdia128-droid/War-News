@@ -18,6 +18,7 @@ const statusVariant = (status: string) => {
   if (status === "materialized") return "success" as const;
   if (status === "duplicate") return "neutral" as const;
   if (status === "error") return "danger" as const;
+  if (status === "held_for_review") return "warning" as const;
   return "accent" as const;
 };
 
@@ -232,6 +233,7 @@ export const AllNewsPage = () => {
               { value: "materialized", label: "Materialized" },
               { value: "duplicate", label: "Duplicate" },
               { value: "error", label: "Error" },
+              { value: "held_for_review", label: "Held for review" },
             ]}
             onChange={(value) => {
               setStatus(value);
