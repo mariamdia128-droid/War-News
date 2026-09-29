@@ -200,7 +200,9 @@ export const AllNewsPage = () => {
         <div className="space-y-2">
           <Label htmlFor="filtered-from">From Date</Label>
           <Input id="filtered-from" type="date" value={eventDateFrom} onChange={(event) => {
-            setEventDateFrom(event.target.value);
+            const value = event.target.value;
+            setEventDateFrom(value);
+            setEventDateTo(value);
             setPage(1);
           }} />
         </div>

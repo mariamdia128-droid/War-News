@@ -116,6 +116,12 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "qlaile sour": 62287,
     "\u0627\u0644\u0645\u0646\u0635\u0648\u0631\u064a": 62296,
     "mansouri sour": 62296,
+    "\u0637\u064a\u0628\u0629 \u0645\u0631\u062c\u0639\u064a\u0648\u0646": 73232,
+    "taybet matjaayoun": 73232,
+    "taybet marjaayoun": 73232,
+    "\u0643\u0641\u0631\u0643\u064a\u0644\u0627": 73159,
+    "\u0643\u0641\u0631 \u0643\u064a\u0644\u0627": 73159,
+    "kfar kila": 73159,
 }
 
 BROKEN_RED_ALERT_MAP_FALLBACKS: dict[tuple[int, int], str] = {

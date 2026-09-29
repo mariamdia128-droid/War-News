@@ -285,6 +285,9 @@ export const AirViolationsPage = () => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
+    if (key === "event_date_from" && value && !next.get("event_date_to")) {
+      next.set("event_date_to", value);
+    }
     if (value) {
       next.delete("last_hours");
       setCustomHoursMode(false);
