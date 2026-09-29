@@ -15,6 +15,7 @@ import { importAirViolationKhabar } from "../api";
 import type { WorkbookImportSummary } from "../../news/api";
 
 const PAGE_SIZE = 25;
+const REVIEW_DEFAULT_DATE = "2026-09-28";
 
 const emptyText = "—";
 
@@ -158,7 +159,7 @@ export const AirViolationsPage = () => {
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to"));
   const cazaEn = params.get("caza_en") ?? "";
   const lastHours = params.get("last_hours") ?? "";
-  const effectiveEventDateFrom = eventDateFrom || (!eventDateTo && !lastHours ? getBeirutDate() : "");
+  const effectiveEventDateFrom = eventDateFrom || (!eventDateTo && !lastHours ? REVIEW_DEFAULT_DATE : "");
   const effectiveEventDateTo = eventDateTo || effectiveEventDateFrom;
   const hourPresets = ["1", "6", "12", "24", "48", "72", "168"];
   const [customHoursMode, setCustomHoursMode] = useState(
