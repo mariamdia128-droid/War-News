@@ -158,8 +158,9 @@ export const AirViolationsPage = () => {
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to"));
   const cazaEn = params.get("caza_en") ?? "";
   const lastHours = params.get("last_hours") ?? "";
-  const effectiveEventDateFrom = eventDateFrom;
-  const effectiveEventDateTo = eventDateTo || eventDateFrom;
+  const defaultEventDateFrom = !eventDateFrom && !eventDateTo && !lastHours ? getBeirutDate(-1) : "";
+  const effectiveEventDateFrom = eventDateFrom || defaultEventDateFrom;
+  const effectiveEventDateTo = eventDateTo;
   const hourPresets = ["1", "6", "12", "24", "48", "72", "168"];
   const [customHoursMode, setCustomHoursMode] = useState(
     lastHours !== "" && !hourPresets.includes(lastHours),
