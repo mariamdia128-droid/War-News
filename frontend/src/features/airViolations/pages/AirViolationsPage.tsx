@@ -14,7 +14,7 @@ import type { AirViolation } from "../types";
 import { importAirViolationKhabar } from "../api";
 import type { WorkbookImportSummary } from "../../news/api";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 100;
 const REVIEW_DEFAULT_FROM = "2026-09-28";
 const REVIEW_DEFAULT_TO = "2026-09-29";
 
