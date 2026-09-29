@@ -159,6 +159,7 @@ export const AirViolationsPage = () => {
   const cazaEn = params.get("caza_en") ?? "";
   const lastHours = params.get("last_hours") ?? "";
   const effectiveEventDateFrom = eventDateFrom || (!eventDateTo && !lastHours ? getBeirutDate() : "");
+  const effectiveEventDateTo = eventDateTo || effectiveEventDateFrom;
   const hourPresets = ["1", "6", "12", "24", "48", "72", "168"];
   const [customHoursMode, setCustomHoursMode] = useState(
     lastHours !== "" && !hourPresets.includes(lastHours),
@@ -185,11 +186,11 @@ export const AirViolationsPage = () => {
       conditionId,
       importedOnly,
       eventDateFrom: effectiveEventDateFrom,
-      eventDateTo,
+      eventDateTo: effectiveEventDateTo,
       cazaEn,
       lastHours,
     }),
-    [cazaEn, conditionId, effectiveEventDateFrom, eventDateTo, lastHours, offset, importedOnly],
+    [cazaEn, conditionId, effectiveEventDateFrom, effectiveEventDateTo, lastHours, offset, importedOnly],
   );
 
   const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } =
@@ -215,7 +216,7 @@ export const AirViolationsPage = () => {
     limit: 1,
     offset: 0,
     eventDateFrom: effectiveEventDateFrom,
-    eventDateTo,
+    eventDateTo: effectiveEventDateTo,
     cazaEn,
     lastHours,
   };
@@ -285,7 +286,7 @@ export const AirViolationsPage = () => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
-    if (key === "event_date_from" && value && !next.get("event_date_to")) {
+    if (key === "event_date_from" && value) {
       next.set("event_date_to", value);
     }
     if (value) {
@@ -463,10 +464,18 @@ export const AirViolationsPage = () => {
             <Input
               id="air-to-filter"
               type="date"
-              value={eventDateTo}
+              value={effectiveEventDateTo}
               onChange={(event) => updateDateParam("event_date_to", event.target.value)}
             />
           </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" className="h-9" onClick={() => { setCustomHoursMode(false); setParams({ event_date_from: "2026-09-28", event_date_to: "2026-09-28" }); }}>
+            Sep 28 records
+          </Button>
+          <Button type="button" variant="secondary" className="h-9" onClick={() => { setCustomHoursMode(false); setParams({ event_date_from: "2026-09-29", event_date_to: "2026-09-29" }); }}>
+            Sep 29 records
+          </Button>
         </div>
       </div>
 
