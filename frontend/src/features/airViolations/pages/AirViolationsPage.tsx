@@ -64,8 +64,10 @@ const TextCell = ({ value }: { value: string | null }) => (
 
 const villageList = (row: AirViolation | null) => {
   if (!row) return [];
+  if (row.villages?.length) {
+    return Array.from(new Set(row.villages.filter((value) => value.trim() !== "")));
+  }
   const values: string[] = [
-    ...(row.villages ?? []),
     ...(row.village_en ? [row.village_en] : []),
     ...(row.village_ar && row.village_ar !== row.village_en ? [row.village_ar] : []),
   ];
