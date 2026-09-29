@@ -76,6 +76,7 @@ const villageList = (row: AirViolation | null) => {
 
 const redAlertFallbackVillages = (row: AirViolation | null) => {
   if (!row) return [];
+  return [];
   const text = `${row.caza_en ?? ""} ${row.caza_ar ?? ""} ${row.village_en ?? ""} ${row.village_ar ?? ""} ${row.khabar ?? ""}`.toLowerCase();
   const isWestBekaa = text.includes("west bekaa") || text.includes("البقاع");
   const isLibbayaRedZone = text.includes("libbaya") || text.includes("lebbaya") || text.includes("لبايا");
