@@ -142,7 +142,7 @@ class RedAlertAirViolationService:
 
     def _combined_village_matches(self, text: str, villages: list[Village]) -> list[tuple[Village, str]]:
         safe_matches = self.match_villages(text, villages) if self.match_villages else []
-        if RED_ZONE_OCR_MARKER in text and safe_matches:
+        if RED_ZONE_OCR_MARKER in text:
             matches = safe_matches
         else:
             matches = [

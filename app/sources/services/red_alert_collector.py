@@ -56,6 +56,9 @@ RED_ALERT_VILLAGE_ALIASES: dict[str, int] = {
     "bourj qalaouiye": 72264,
     "\u0641\u0631\u0648\u0646": 72276,
     "froun": 72276,
+    "\u0639\u0644\u0645\u0627\u0646\u0629": 73293,
+    "aalmane marjaayoun": 73293,
+    "aalmane": 73293,
     "\u0627\u0644\u063a\u0646\u062f\u0648\u0631\u064a\u0629": 72274,
     "\u063a\u0646\u062f\u0648\u0631\u064a\u0629": 72274,
     "ghandouriyet bent jbayl": 72274,
@@ -427,10 +430,7 @@ def _alias_matches_in(candidate_text: str, villages: list[Village]) -> list[tupl
 
 def match_villages(text: str, villages: list[Village]) -> list[tuple[Village, str]]:
     location_text = text.rsplit(RED_ZONE_OCR_MARKER, 1)[-1] if RED_ZONE_OCR_MARKER in text else text
-    alias_matches = _alias_matches_in(location_text, villages)
-    if not alias_matches and RED_ZONE_OCR_MARKER in text:
-        alias_matches = _alias_matches_in(text, villages)
-    return alias_matches
+    return _alias_matches_in(location_text, villages)
 
 
 def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | None:
@@ -446,16 +446,12 @@ def match_village(text: str, villages: list[Village]) -> tuple[Village, str] | N
     normalized_text = normalize_arabic(location_text)
     normalized_latin_text = normalize_latin_location_token(location_text)
     alias_matches = _alias_matches_in(location_text, villages)
-    if not alias_matches and RED_ZONE_OCR_MARKER in text:
-        # Exact, whitelisted OCR aliases sometimes land just outside the focused
-        # red-zone crop. Use the full OCR text only when it names one place.
-        full_alias_matches = _alias_matches_in(text, villages)
-        if len({village.id for village, _alias in full_alias_matches}) == 1:
-            alias_matches = full_alias_matches
     if alias_matches:
         if RED_ZONE_OCR_MARKER in text and len({village.id for village, _alias in alias_matches}) > 1:
             return None
         return max(alias_matches, key=lambda item: len(item[1]))
+    if RED_ZONE_OCR_MARKER in text:
+        return None
     hashtags = [normalize_arabic(value) for value in HASHTAG_RE.findall(location_text)]
     non_location_terms = {normalize_arabic(value) for value in _NON_LOCATION_TERMS}
     candidates = [value for value in hashtags if value and value not in non_location_terms]
