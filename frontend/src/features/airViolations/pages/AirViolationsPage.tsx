@@ -15,7 +15,8 @@ import { importAirViolationKhabar } from "../api";
 import type { WorkbookImportSummary } from "../../news/api";
 
 const PAGE_SIZE = 25;
-const REVIEW_DEFAULT_DATE = "2026-09-28";
+const REVIEW_DEFAULT_FROM = "2026-09-28";
+const REVIEW_DEFAULT_TO = "2026-09-29";
 
 const emptyText = "—";
 
@@ -159,8 +160,8 @@ export const AirViolationsPage = () => {
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to"));
   const cazaEn = params.get("caza_en") ?? "";
   const lastHours = params.get("last_hours") ?? "";
-  const effectiveEventDateFrom = eventDateFrom || (!eventDateTo && !lastHours ? REVIEW_DEFAULT_DATE : "");
-  const effectiveEventDateTo = eventDateTo || effectiveEventDateFrom;
+  const effectiveEventDateFrom = eventDateFrom || (!eventDateTo && !lastHours ? REVIEW_DEFAULT_FROM : "");
+  const effectiveEventDateTo = eventDateTo || (!eventDateFrom && !lastHours ? REVIEW_DEFAULT_TO : effectiveEventDateFrom);
   const hourPresets = ["1", "6", "12", "24", "48", "72", "168"];
   const [customHoursMode, setCustomHoursMode] = useState(
     lastHours !== "" && !hourPresets.includes(lastHours),
@@ -476,6 +477,9 @@ export const AirViolationsPage = () => {
           </Button>
           <Button type="button" variant="secondary" className="h-9" onClick={() => { setCustomHoursMode(false); setParams({ event_date_from: "2026-09-29", event_date_to: "2026-09-29" }); }}>
             Sep 29 records
+          </Button>
+          <Button type="button" variant="secondary" className="h-9" onClick={() => { setCustomHoursMode(false); setParams({ event_date_from: REVIEW_DEFAULT_FROM, event_date_to: REVIEW_DEFAULT_TO }); }}>
+            Sep 28-29 records
           </Button>
         </div>
       </div>
