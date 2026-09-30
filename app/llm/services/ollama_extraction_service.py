@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,10 +43,13 @@ from app.llm.services.ollama_relevance_classifier_service import is_valid_reason
 from app.llm.services.split_phase_extraction import (
     SegmentCasualties,
     SegmentEvent,
+    SegmentPresence,
+    assemble_split_payload,
+    assign_presence,
     extract_segment_casualties,
     extract_segment_event,
 )
-from app.llm.services.tier1_segmenter import TextSegment
+from app.llm.services.tier1_segmenter import TextSegment, split_segments
 from app.news.services.incident_details.casualty_count_backstop import (
     apply_casualty_count_backstop,
 )
@@ -77,6 +82,8 @@ _BETWEEN_ROUTE_RE = re.compile(
     r"(?=$|[\n،؛.!؟])"
 )
 MULTI_VILLAGE_NO_SUBEVENTS_REVIEW_REASON = "multi_village_no_subevents"
+# ExtractionResult.extraction_flow marker for split-phase results.
+EXTRACTION_FLOW_SPLIT = "split"
 _ACTION_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sweeping", ("تمشيط", "مشط", "مشطت", "sweep", "sweeping")),
     (
@@ -461,6 +468,16 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         post_text: str,
         raw_message_id: int | None = None,
     ) -> ExtractionResult:
+        if settings.tier1_split_phases_enabled:
+            return self._extract_tier1_split(post_text, raw_message_id=raw_message_id)
+        return self._extract_tier1_current(post_text, raw_message_id=raw_message_id)
+
+    def _extract_tier1_current(
+        self,
+        post_text: str,
+        raw_message_id: int | None = None,
+    ) -> ExtractionResult:
+        """Default Tier 1: presence gate + one general call on the whole message."""
         if settings.tier1_use_combined_presence_extraction:
             return self._extract_tier1_combined(
                 post_text,
@@ -548,13 +565,21 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         categories_present: list[ExtractionCategoryKey],
         general_response: _RawExtractionResponse,
         raw_message_id: int | None,
+        root_casualties_validated: bool = False,
     ) -> ExtractionResult:
-        casualties, casualty_evidence = apply_casualty_count_backstop(
-            post_text,
-            general_response.casualties,
-            list(general_response.casualty_evidence),
-            raw_message_id=raw_message_id,
-        )
+        if root_casualties_validated:
+            # Split-phase root: sums of per-item counts that each passed the
+            # count backstop on their own item text. A sum across items is not
+            # a literal number in the message, so the backstop would null it.
+            casualties = general_response.casualties
+            casualty_evidence = list(general_response.casualty_evidence)
+        else:
+            casualties, casualty_evidence = apply_casualty_count_backstop(
+                post_text,
+                general_response.casualties,
+                list(general_response.casualty_evidence),
+                raw_message_id=raw_message_id,
+            )
         village_roles = self._validated_village_roles(
             general_response.village_roles,
             post_text=post_text,
@@ -1034,6 +1059,157 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             villages=villages,
             raw_message_id=raw_message_id,
         )
+
+    def _extract_tier1_split(
+        self,
+        post_text: str,
+        raw_message_id: int | None = None,
+        *,
+        fallback: Callable[..., ExtractionResult] | None = None,
+    ) -> ExtractionResult:
+        """Split-phase Tier 1: segment, then small per-item calls, then code.
+
+        Too many items, or any failed item call, sends the whole message to
+        *fallback* (the current single-call path by default): a message is
+        never dropped because one item failed.
+        """
+        fallback = fallback or self._extract_tier1_current
+        started = time.perf_counter()
+        segments = split_segments(post_text)
+        segment_ms = (time.perf_counter() - started) * 1000
+        max_segments = max(1, settings.tier1_split_max_segments)
+        if len(segments) > max_segments:
+            logger.warning(
+                "tier1_split raw_message_id=%s segments=%s exceeds "
+                "tier1_split_max_segments=%s; using the single-call path",
+                raw_message_id,
+                len(segments),
+                max_segments,
+            )
+            return fallback(post_text, raw_message_id=raw_message_id)
+        try:
+            return self._run_tier1_split(
+                post_text,
+                segments,
+                raw_message_id=raw_message_id,
+                started=started,
+                segment_ms=segment_ms,
+            )
+        except Exception as exc:
+            auth_failure = coerce_ollama_auth_failure(exc, stage="tier1_extraction")
+            if auth_failure is not None:
+                raise auth_failure from exc
+            logger.warning(
+                "tier1_split raw_message_id=%s failed (%s: %s); "
+                "falling back to the single-call path",
+                raw_message_id,
+                type(exc).__name__,
+                exc,
+            )
+            return fallback(post_text, raw_message_id=raw_message_id)
+
+    def _run_tier1_split(
+        self,
+        post_text: str,
+        segments: list[TextSegment],
+        *,
+        raw_message_id: int | None,
+        started: float,
+        segment_ms: float,
+    ) -> ExtractionResult:
+        calls = {"event": 0, "presence": 0, "casualty": 0}
+
+        phase_started = time.perf_counter()
+        events: list[SegmentEvent | None] = []
+        for segment in segments:
+            if not segment.text:
+                events.append(None)
+                continue
+            events.append(self._extract_segment_event(segment, raw_message_id))
+            calls["event"] += 1
+        eligible = [
+            index for index, event in enumerate(events) if event is not None and event.is_relevant
+        ]
+        event_ms = (time.perf_counter() - phase_started) * 1000
+
+        phase_started = time.perf_counter()
+        if eligible:
+            gate_result = self.presence_gate.evaluate(
+                post_text,
+                raw_message_id=raw_message_id,
+            )
+            presence = assign_presence(
+                self.presence_gate,
+                gate_result,
+                segments,
+                eligible=eligible,
+                raw_message_id=raw_message_id,
+            )
+            calls["presence"] = 1 + presence.segment_gate_calls
+        else:
+            presence = SegmentPresence(per_segment=[[] for _ in segments])
+        presence_ms = (time.perf_counter() - phase_started) * 1000
+
+        phase_started = time.perf_counter()
+        casualties_by_segment: dict[int, SegmentCasualties] = {}
+        for index in eligible:
+            if ExtractionCategoryKey.casualty_demographics not in presence.per_segment[index]:
+                continue
+            event = events[index]
+            casualties_by_segment[index] = self._extract_segment_casualties(
+                segments[index],
+                event.target_names if event is not None else [],
+                raw_message_id,
+            )
+            calls["casualty"] += 1
+        casualty_ms = (time.perf_counter() - phase_started) * 1000
+
+        phase_started = time.perf_counter()
+        assembly = assemble_split_payload(
+            segments,
+            events,
+            eligible=eligible,
+            casualties_by_segment=casualties_by_segment,
+            presence=presence,
+        )
+        general_response = self._parse_general_response(
+            json.dumps(assembly.payload, ensure_ascii=False),
+            raw_message_id=raw_message_id,
+        )
+        result = self._build_tier1_result(
+            post_text=post_text,
+            categories_present=assembly.root_category_keys,
+            general_response=general_response,
+            raw_message_id=raw_message_id,
+            root_casualties_validated=True,
+        )
+        update: dict[str, object] = {"extraction_flow": EXTRACTION_FLOW_SPLIT}
+        if assembly.scope_review_reason and not result.casualty_scope_needs_review:
+            update["casualty_scope_needs_review"] = True
+            update["casualty_scope_review_reason"] = assembly.scope_review_reason
+        result = result.model_copy(update=update)
+        assemble_ms = (time.perf_counter() - phase_started) * 1000
+
+        logger.info(
+            "tier1_split raw_message_id=%s segments=%s relevant=%s llm_calls=%s "
+            "(event=%s presence=%s casualty=%s) unplaced=%s ms segment=%.0f "
+            "event=%.0f presence=%.0f casualty=%.0f assemble=%.0f total=%.0f",
+            raw_message_id,
+            len(segments),
+            len(eligible),
+            sum(calls.values()),
+            calls["event"],
+            calls["presence"],
+            calls["casualty"],
+            [key.value for key in presence.unplaced],
+            segment_ms,
+            event_ms,
+            presence_ms,
+            casualty_ms,
+            assemble_ms,
+            (time.perf_counter() - started) * 1000,
+        )
+        return result
 
     def _parse_general_response(
         self,

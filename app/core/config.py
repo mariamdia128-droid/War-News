@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     tier1_use_combined_presence_extraction: bool = False
     # When true, Tier 2 uses one batched category-detail LLM call per message.
     tier2_use_batched_category_detail: bool = False
+    # Split-phase flow: Tier 1 segments each message into news items and runs
+    # small per-item calls (event, casualties); Tier 2 fills categories per
+    # item. Off by default; enable only for evaluation runs (TIER1_SPLIT_PHASES_ENABLED).
+    tier1_split_phases_enabled: bool = False
+    # Messages with more items than this keep the current single-call path:
+    # items run sequentially in one worker slot and must fit the claim lease.
+    tier1_split_max_segments: int = 10
     # When true, borderline sparse story revisions (similarity 0.40-0.55) ask the
     # story_revision prompt instead of trusting similarity. Off by default: the
     # call runs inside fast-path while it holds the village advisory lock and a

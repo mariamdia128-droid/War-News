@@ -603,3 +603,254 @@ def assign_presence(
         unplaced=unplaced,
         segment_gate_calls=calls,
     )
+
+
+# --- Assembler ----------------------------------------------------------------
+
+SPLIT_MIXED_SCOPE_REVIEW_REASON = (
+    "Split extraction: a bulletin-wide casualty toll sits next to other item tolls"
+)
+
+_ROOT_SUM_FIELDS = (
+    "total_deaths",
+    "total_injuries",
+    "deaths",
+    "injuries",
+    "male_deaths",
+    "male_injuries",
+    "female_deaths",
+    "female_injuries",
+    "children_deaths",
+    "children_injuries",
+)
+
+
+@dataclass(frozen=True)
+class SplitAssembly:
+    """Whole-message fields built from the per-segment results."""
+
+    # Shaped like the general Tier 1 response (_RawExtractionResponse).
+    payload: dict
+    # Presence keys for the root, in first-seen order (segments, then unplaced).
+    root_category_keys: list[ExtractionCategoryKey]
+    scope_review_reason: str | None = None
+
+
+def _add(left: int | None, right: int | None) -> int | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return left + right
+
+
+def _unit_casualties(
+    targets: list[str],
+    casualties: SegmentCasualties | None,
+) -> tuple[ExtractionCasualties, list[CasualtyCountEvidence], str]:
+    """(casualties, evidence, kind) for one item.
+
+    kind is "none" (no counts), "exact" (one target, or per-village counts),
+    "aggregate" (one toll shared by several targets) or "unattributed".
+    """
+    if casualties is None:
+        return ExtractionCasualties(), [], "none"
+    counts = casualties.casualties
+    evidence = list(casualties.casualty_evidence)
+    if counts.deaths is None and counts.injuries is None and casualties.village_casualties:
+        deaths = injuries = None
+        for entry in casualties.village_casualties:
+            deaths = _add(deaths, entry.deaths)
+            injuries = _add(injuries, entry.injuries)
+        counts = counts.model_copy(update={"deaths": deaths, "injuries": injuries})
+    if counts.deaths is None and counts.injuries is None:
+        return counts, evidence, "none"
+    if len(targets) >= 2 and not casualties.village_casualties:
+        # One shared toll for several villages: totals only, like the
+        # whole-message prompt's bulletin_aggregate convention.
+        aggregate = counts.model_copy(
+            update={
+                "total_deaths": counts.deaths,
+                "total_injuries": counts.injuries,
+                "deaths": None,
+                "injuries": None,
+            }
+        )
+        renamed = [
+            item.model_copy(update={"field": f"total_{item.field}"})
+            if item.field in {"deaths", "injuries"}
+            else item
+            for item in evidence
+        ]
+        return aggregate, renamed, "aggregate"
+    exact = counts.model_copy(
+        update={"total_deaths": counts.deaths, "total_injuries": counts.injuries}
+    )
+    kind = "exact" if targets else "unattributed"
+    return exact, evidence, kind
+
+
+def _unit_locations(
+    event: SegmentEvent,
+    casualties: SegmentCasualties | None,
+    unit: ExtractionCasualties,
+    kind: str,
+    segment_text: str,
+) -> list[VillageRoleEntry]:
+    per_village = {
+        _name_key(entry.village): entry
+        for entry in (casualties.village_casualties if casualties else [])
+    }
+    locations: list[VillageRoleEntry] = []
+    for entry in event.village_roles:
+        if entry.role != VillageRole.target:
+            locations.append(entry)
+            continue
+        own = per_village.get(_name_key(entry.village))
+        if own is not None:
+            entry = entry.model_copy(
+                update={
+                    "deaths": own.deaths,
+                    "injuries": own.injuries,
+                    "evidence_span": own.evidence_span,
+                }
+            )
+        elif kind == "exact" and len(event.target_names) == 1:
+            # The item's own toll belongs to its only target; the item text is
+            # the literal span (it holds the village name and the numbers).
+            entry = entry.model_copy(
+                update={
+                    "deaths": unit.deaths,
+                    "injuries": unit.injuries,
+                    "evidence_span": segment_text,
+                }
+            )
+        locations.append(entry)
+    return locations
+
+
+def assemble_split_payload(
+    segments: list[TextSegment],
+    events: list[SegmentEvent | None],
+    *,
+    eligible: list[int],
+    casualties_by_segment: dict[int, SegmentCasualties],
+    presence: SegmentPresence,
+) -> SplitAssembly:
+    """Build the whole-message Tier 1 fields from per-item results (no LLM).
+
+    * one sub_event per relevant item when there are two or more;
+    * root casualties are the sum over items (never re-added on top of
+      entity counts: entities are only filled in Tier 2);
+    * casualty_scope decided in code: every item with numbers has its own
+      village → per_village_exact; exactly one item with a shared toll over
+      several villages → bulletin_aggregate; anything else → unspecified
+      (a mix is flagged for review).
+    """
+    root_counts: dict[str, int | None] = dict.fromkeys(_ROOT_SUM_FIELDS)
+    root_evidence: list[CasualtyCountEvidence] = []
+    root_roles: dict[tuple[str, VillageRole], VillageRoleEntry] = {}
+    villages: list[str] = []
+    transitions: list[dict] = []
+    sub_events: list[dict] = []
+    kinds: list[tuple[str, int]] = []
+    root_keys: list[ExtractionCategoryKey] = []
+    action: str | None = None
+
+    for index in eligible:
+        segment = segments[index]
+        event = events[index]
+        if event is None:
+            continue
+        casualties = casualties_by_segment.get(index)
+        unit, evidence, kind = _unit_casualties(event.target_names, casualties)
+        if kind != "none":
+            kinds.append((kind, index))
+        locations = _unit_locations(event, casualties, unit, kind, segment.text)
+        keys = list(presence.per_segment[index])
+        if ExtractionCategoryKey.casualty_demographics in keys and (
+            casualties is None or not casualties.has_counts()
+        ):
+            keys.remove(ExtractionCategoryKey.casualty_demographics)
+        for key in keys:
+            if key not in root_keys:
+                root_keys.append(key)
+
+        for name in _ROOT_SUM_FIELDS:
+            root_counts[name] = _add(root_counts[name], getattr(unit, name))
+        root_evidence.extend(evidence)
+        for entry in locations:
+            role_key = (_name_key(entry.village), entry.role)
+            if entry.village not in villages:
+                villages.append(entry.village)
+            existing = root_roles.get(role_key)
+            if existing is None:
+                root_roles[role_key] = entry
+                continue
+            # The same village hit in two items: its counts add up.
+            root_roles[role_key] = existing.model_copy(
+                update={
+                    "deaths": _add(existing.deaths, entry.deaths),
+                    "injuries": _add(existing.injuries, entry.injuries),
+                    "evidence_span": existing.evidence_span or entry.evidence_span,
+                }
+            )
+        if casualties is not None:
+            transitions.extend(
+                item.model_dump(mode="json") for item in casualties.transitions
+            )
+        action = action or event.action_description
+        sub_events.append(
+            {
+                "locations": [entry.model_dump(mode="json") for entry in locations],
+                "action_text": event.action_description,
+                "casualties": unit.model_dump(mode="json"),
+                "evidence_span": segment.text,
+                "casualty_evidence": [item.model_dump(mode="json") for item in evidence],
+                "segment_index": segment.index,
+                "segment_span": [segment.start, segment.end],
+                "presence_category_keys": [key.value for key in keys],
+            }
+        )
+
+    for key in presence.unplaced:
+        if key not in root_keys:
+            root_keys.append(key)
+
+    scope, scope_evidence, review_reason = _decide_scope(kinds, segments)
+    roles = list(root_roles.values())
+    payload = {
+        "is_relevant": bool(sub_events),
+        "village": villages or None,
+        "village_roles": [entry.model_dump(mode="json") for entry in roles],
+        "action_description": action,
+        # A single item keeps the current single-event shape (no sub_events).
+        "sub_events": sub_events if len(sub_events) >= 2 else [],
+        "casualties": root_counts,
+        "casualty_transitions": transitions,
+        "casualty_evidence": [item.model_dump(mode="json") for item in root_evidence],
+        "casualty_scope": scope,
+        "casualty_scope_evidence": scope_evidence,
+    }
+    return SplitAssembly(
+        payload=payload,
+        root_category_keys=root_keys,
+        scope_review_reason=review_reason,
+    )
+
+
+def _decide_scope(
+    kinds: list[tuple[str, int]],
+    segments: list[TextSegment],
+) -> tuple[str, str | None, str | None]:
+    if not kinds:
+        return "unspecified", None, None
+    names = {kind for kind, _ in kinds}
+    if names == {"exact"}:
+        return "per_village_exact", segments[kinds[0][1]].text, None
+    if names == {"aggregate"} and len(kinds) == 1:
+        return "bulletin_aggregate", segments[kinds[0][1]].text, None
+    if "aggregate" in names:
+        # A shared toll next to other tolls cannot be one bulletin group.
+        return "unspecified", None, SPLIT_MIXED_SCOPE_REVIEW_REASON
+    return "unspecified", None, None

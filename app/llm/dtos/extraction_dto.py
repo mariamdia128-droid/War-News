@@ -1,9 +1,18 @@
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 
 class ExtractionCategoryKey(str, Enum):
@@ -115,24 +124,19 @@ class CasualtyCountEvidence(BaseModel):
     evidence_span: str
 
 
-class ExtractionSubEvent(BaseModel):
-    """One distinct action inside a bulletin, with locally scoped casualties."""
+def _drop_unset_optional_fields(
+    data: dict[str, Any],
+    names: tuple[str, ...],
+) -> dict[str, Any]:
+    """Omit split-phase fields while they hold their empty default.
 
-    model_config = ConfigDict(frozen=True)
-
-    locations: list[VillageRoleEntry] = Field(default_factory=list)
-    action_text: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("action_text", "action_description"),
-    )
-    casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
-    evidence_span: str | None = None
-    casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
-
-    @property
-    def action_description(self) -> str | None:
-        """Backward-compatible accessor for persisted pre-action_text payloads."""
-        return self.action_text
+    Keeps payloads written by the default (non-split) path byte-identical to
+    what they were before these optional fields existed.
+    """
+    for name in names:
+        if name in data and data[name] in (None, [], {}):
+            del data[name]
+    return data
 
 
 class ExtractionVehicleDetails(BaseModel):
@@ -159,6 +163,48 @@ class ExtractionCategory(BaseModel):
     name: str | None = None
     casualties: ExtractionCasualties | None = None
     vehicles: ExtractionVehicleDetails | None = None
+
+
+_SUB_EVENT_SPLIT_FIELDS = (
+    "segment_index",
+    "segment_span",
+    "presence_category_keys",
+    "categories",
+)
+
+
+class ExtractionSubEvent(BaseModel):
+    """One distinct action inside a bulletin, with locally scoped casualties."""
+
+    model_config = ConfigDict(frozen=True)
+
+    locations: list[VillageRoleEntry] = Field(default_factory=list)
+    action_text: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("action_text", "action_description"),
+    )
+    casualties: ExtractionCasualties = Field(default_factory=ExtractionCasualties)
+    evidence_span: str | None = None
+    casualty_evidence: list[CasualtyCountEvidence] = Field(default_factory=list)
+    # Split-phase flow only (TIER1_SPLIT_PHASES_ENABLED); absent otherwise.
+    # The news item this sub-event came from: index and [start, end) span of
+    # the raw text, so Tier 2 can run on exactly that item.
+    segment_index: int | None = None
+    segment_span: list[int] | None = None
+    # Categories present in this item, and their Tier 2 details.
+    presence_category_keys: list[ExtractionCategoryKey] = Field(default_factory=list)
+    categories: dict[ExtractionCategoryKey, ExtractionCategory] = Field(
+        default_factory=dict
+    )
+
+    @property
+    def action_description(self) -> str | None:
+        """Backward-compatible accessor for persisted pre-action_text payloads."""
+        return self.action_text
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _drop_unset_optional_fields(handler(self), _SUB_EVENT_SPLIT_FIELDS)
 
 
 class ExtractionResult(BaseModel):
@@ -215,8 +261,15 @@ class ExtractionResult(BaseModel):
     presence_category_keys: list[ExtractionCategoryKey] = Field(default_factory=list)
     # 1 = fast path (general fields only); 2 = full category detail complete.
     extraction_tier: int = Field(default=1, ge=1, le=2)
+    # "split" when produced by the split-phase flow (TIER1_SPLIT_PHASES_ENABLED);
+    # absent for the default path. Tier 2 runs segment-scoped only for "split".
+    extraction_flow: str | None = None
     model: str
     extracted_at: datetime
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _drop_unset_optional_fields(handler(self), ("extraction_flow",))
 
     @model_validator(mode="before")
     @classmethod
