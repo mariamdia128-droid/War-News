@@ -210,6 +210,14 @@ def _village_match_method(normalized_mention: str, candidate: object) -> str:
     return "trigram"
 
 
+def _non_lebanese_places() -> frozenset[str]:
+    return frozenset(
+        normalize_arabic_text(entry.term)
+        for entry in load_terminology("terminology/non_lebanese_places.yaml")
+        if entry.category == "non_lebanese_place" and entry.term
+    )
+
+
 VILLAGE_DESCRIPTOR_CATEGORY = "village_generic_descriptor"
 
 
@@ -638,14 +646,23 @@ class MatchingService(MatchingServiceInterface):
 
         resolution = self._resolve_search_text(search_text, district_hint)
         stripped = _strip_generic_descriptors(search_text)
-        if stripped == search_text:
-            return resolution
-        # A leading descriptor ("أطراف X") is dropped only when the remaining
-        # name resolves better, so real names that begin with one still match
-        # as written. The stored raw mention is never changed.
-        alternative = self._resolve_search_text(stripped, district_hint)
-        if self._resolution_rank(alternative) > self._resolution_rank(resolution):
-            return alternative
+        if stripped != search_text:
+            # A leading descriptor ("أطراف X") is dropped only when the remaining
+            # name resolves better, so real names that begin with one still match
+            # as written. The stored raw mention is never changed.
+            alternative = self._resolve_search_text(stripped, district_hint)
+            if self._resolution_rank(alternative) > self._resolution_rank(resolution):
+                resolution = alternative
+                search_text = stripped
+        if search_text in _non_lebanese_places() and not (
+            resolution.alias_hit or resolution.method == "exact"
+        ):
+            # A known foreign place with no exact Lebanese homonym is "no
+            # candidate", not the closest-sounding Lebanese village.
+            return _VillageCandidateResolution(
+                (),
+                _ClassifiedMatch(None, None, MatchResultStatus.unmatched),
+            )
         return resolution
 
     @staticmethod
@@ -897,44 +914,42 @@ class MatchingService(MatchingServiceInterface):
         row and no alias), pure similarity scoring can still clear
         MATCH_THRESHOLD against an unrelated village purely by n-gram
         coincidence (recon: "بيوت السياد" -> "المنصوري"). Require the mention
-        to share at least one meaningful token, or a substring relationship,
-        with one of the candidate's known name fields before trusting a
-        "matched" verdict. Candidates with no comparable name data (test
+        to share at least one whole meaningful word with one of the candidate's
+        known name fields (compared on the shared village match key, so the
+        definite article never hides a real match) before trusting a "matched"
+        verdict. Shared letters or a substring are not enough ("الناصرة" must not
+        pass for "الناقورة"). Candidates with no comparable name data (test
         stubs, or a mention too short to tokenize) are left unaffected.
         """
-        mention_normalized = normalize_arabic_text(normalized_mention)
-        mention_compact = normalize_arabic_text(normalized_mention, compact=True)
         mention_tokens = [
-            token for token in mention_normalized.split() if len(token) >= 3
+            token
+            for token in village_match_key(normalized_mention).split()
+            if len(token) >= 3
         ]
+        mention_compact = village_match_key(normalized_mention, compact=True)
         references = [
-            normalize_arabic_text(value or "")
+            value
             for value in (
                 getattr(candidate, "ref_name_ar", None),
                 getattr(candidate, "acs_name", None),
                 getattr(candidate, "cad_name", None),
             )
+            if isinstance(value, str) and value.strip()
         ]
-        references = [reference for reference in references if reference]
         if not mention_tokens or not references:
             return True
         for reference in references:
             reference_tokens = [
-                token for token in reference.split() if len(token) >= 3
+                token
+                for token in village_match_key(reference).split()
+                if len(token) >= 3
             ]
             if any(token in reference_tokens for token in mention_tokens):
                 return True
-            if any(
-                token in reference or reference in token for token in mention_tokens
-            ):
-                return True
-            # Compact-form comparison catches legitimate spacing variants
+            # Compact-form equality catches legitimate spacing variants
             # ("كفرشوبا" vs "كفر شوبا") that a whitespace-token split misses.
-            reference_compact = reference.replace(" ", "")
-            if mention_compact and (
-                mention_compact == reference_compact
-                or mention_compact in reference_compact
-                or reference_compact in mention_compact
+            if mention_compact and mention_compact == village_match_key(
+                reference, compact=True
             ):
                 return True
         return False

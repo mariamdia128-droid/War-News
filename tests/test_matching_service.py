@@ -1446,3 +1446,49 @@ def test_geo_context_resolution_records_the_geo_context_method() -> None:
     assert result.village_matches[0].village_match_method == "alias"
     assert result.village_matches[1].resolved_by_geo_context is True
     assert result.village_matches[1].village_match_method == "geo_context"
+
+
+@pytest.mark.parametrize(
+    ("mention", "normalized", "wrong_village"),
+    [
+        ("الناصرة", "الناصره", "الناقورة"),
+        ("خان يونس", "خان يونس", "بيت يونس"),
+    ],
+)
+def test_known_foreign_place_is_not_matched_to_a_lebanese_village(
+    mention: str, normalized: str, wrong_village: str
+) -> None:
+    village = _named_village(335, wrong_village)
+
+    vm = _match_one(mention, {normalized: [(village, 0.42)]})
+
+    assert vm.matched_village_id is None
+    assert vm.village_match_status == MatchResultStatus.unmatched
+    assert vm.village_review_required is True
+
+
+def test_foreign_place_name_with_an_exact_lebanese_homonym_still_matches() -> None:
+    homs = _named_village(4242, "حمص")
+
+    vm = _match_one("حمص", {"حمص": [(homs, 1.0)]})
+
+    assert vm.matched_village_id == 4242
+    assert vm.village_match_status == MatchResultStatus.matched
+
+
+def test_shared_letters_do_not_count_as_lexical_overlap() -> None:
+    """A confident-looking score against a name that only contains the mention's
+    letters must not be trusted ("مرج" is not مرجعيون)."""
+    marjayoun = _named_village(9, "مرجعيون")
+
+    vm = _match_one("مرج", {"مرج": [(marjayoun, 0.70)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+
+
+def test_shared_whole_word_still_counts_as_lexical_overlap() -> None:
+    village = _named_village(9, "عين الرمانة")
+
+    vm = _match_one("رمانة", {"رمانه": [(village, 0.70)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched

@@ -1,0 +1,126 @@
+# Well-known place names outside Lebanon. A village mention that equals one of
+# these exactly, and has no exact Lebanese village or alias of the same name, is
+# not matched to a Lebanese village (it becomes "no candidate" and stays
+# flagged). Terms are compared after Arabic normalization.
+# A name that is ALSO a Lebanese village (صور, جنين, القصير, العباسية) needs no
+# entry: the exact Lebanese name always wins. Only add places that are
+# unambiguous or that have no Lebanese homonym in the reference data.
+# Shape follows the other terminology YAML catalogs: term/category/meaning/notes.
+
+- term: "الناصرة"
+  category: non_lebanese_place
+  meaning: Nazareth
+  notes: "Recon 2026-09: matched الناقورة at 0.42."
+
+- term: "خان يونس"
+  category: non_lebanese_place
+  meaning: Khan Yunis
+  notes: "Recon 2026-09: matched بيت يونس at 0.38."
+
+- term: "غزة"
+  category: non_lebanese_place
+  meaning: Gaza
+
+- term: "رفح"
+  category: non_lebanese_place
+  meaning: Rafah
+
+- term: "دير البلح"
+  category: non_lebanese_place
+  meaning: Deir al-Balah
+
+- term: "حيفا"
+  category: non_lebanese_place
+  meaning: Haifa
+
+- term: "يافا"
+  category: non_lebanese_place
+  meaning: Jaffa
+
+- term: "تل أبيب"
+  category: non_lebanese_place
+  meaning: Tel Aviv
+
+- term: "القدس"
+  category: non_lebanese_place
+  meaning: Jerusalem
+
+- term: "بيت لحم"
+  category: non_lebanese_place
+  meaning: Bethlehem
+
+- term: "نابلس"
+  category: non_lebanese_place
+  meaning: Nablus
+
+- term: "رام الله"
+  category: non_lebanese_place
+  meaning: Ramallah
+
+- term: "طولكرم"
+  category: non_lebanese_place
+  meaning: Tulkarm
+
+- term: "قلقيلية"
+  category: non_lebanese_place
+  meaning: Qalqilya
+
+- term: "طبريا"
+  category: non_lebanese_place
+  meaning: Tiberias
+
+- term: "صفد"
+  category: non_lebanese_place
+  meaning: Safed
+
+- term: "نهاريا"
+  category: non_lebanese_place
+  meaning: Nahariya
+
+- term: "كريات شمونة"
+  category: non_lebanese_place
+  meaning: Kiryat Shmona
+
+- term: "عسقلان"
+  category: non_lebanese_place
+  meaning: Ashkelon
+
+- term: "أسدود"
+  category: non_lebanese_place
+  meaning: Ashdod
+
+- term: "بئر السبع"
+  category: non_lebanese_place
+  meaning: Beersheba
+
+- term: "دمشق"
+  category: non_lebanese_place
+  meaning: Damascus
+
+- term: "حمص"
+  category: non_lebanese_place
+  meaning: Homs
+
+- term: "حلب"
+  category: non_lebanese_place
+  meaning: Aleppo
+
+- term: "درعا"
+  category: non_lebanese_place
+  meaning: Daraa
+
+- term: "عمان"
+  category: non_lebanese_place
+  meaning: Amman
+
+- term: "بغداد"
+  category: non_lebanese_place
+  meaning: Baghdad
+
+- term: "صنعاء"
+  category: non_lebanese_place
+  meaning: Sanaa
+
+- term: "طهران"
+  category: non_lebanese_place
+  meaning: Tehran
