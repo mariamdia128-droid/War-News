@@ -95,7 +95,7 @@ No human ground truth exists for "the correct village". The classes below are my
 The sample for this table is all 354 incidents, not 40, so no extrapolation is needed.
 
 Findings that go beyond the score:
-- Normalization (`text_normalization.py:15-31`) folds hamza, ى->ي, diacritics, tatweel, and whitespace. It does **not** fold ة->ه or strip the `ال` prefix. The compact key only removes spaces.
+- Normalization (`text_normalization.py:15-31`) folds hamza, ة->ه, ى->ي, diacritics, tatweel, and whitespace. It does **not** strip the `ال` prefix. The compact key only removes spaces. (Correction, Phase 2: an earlier version of this line said ة was not folded; it is, via `ARABIC_ALEF_VARIANTS`.)
 - The extraction model returns Latin or garbled names (`Benton Jbeil`, `Hardinga`, `Harir`) that no Arabic reference can match. This is a rule-file fix (Phase 3).
 - Two sibling villages (زوطر الشرقية / الغربية, عدشيت الشقيف / القصير, five `النبطية` villages) are real ties. Without a qualifier or geo anchor they should stay flagged.
 
