@@ -547,17 +547,15 @@ def test_short_latin_alias_matches_only_as_a_whole_word(monkeypatch: pytest.Monk
     assert inside == []
 
 
-def test_red_zone_ocr_falls_back_to_single_exact_alias_in_full_text() -> None:
+def test_red_zone_ocr_ignores_alias_outside_the_red_zone_crop() -> None:
+    # Map labels outside the red zone are nearby places, not affected villages,
+    # so an unreadable crop must not fall back to aliases in the full OCR text.
     shamali = _village(23, "برج الشمالي", caza_en="Sour")
     shamali.acs_code = 62128
+    text = f"redalert.com.lb Burj Al Shar مسيرة {RED_ZONE_OCR_MARKER} unreadable crop 59"
 
-    matched = match_village(
-        f"redalert.com.lb Burj Al Shar مسيرة {RED_ZONE_OCR_MARKER} unreadable crop 59",
-        [shamali],
-    )
-
-    assert matched is not None
-    assert matched[0].id == 23
+    assert match_village(text, [shamali]) is None
+    assert match_villages(text, [shamali]) == []
 
 
 def _post(message_id: int, when: datetime) -> RedAlertPost:
