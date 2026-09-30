@@ -63,7 +63,10 @@ from app.news.services.dedup.fast_path_dedup import (
     FastPathDedupService,
 )
 from app.news.services.dedup.story_continuation_router import StoryContinuationRouter
-from app.news.services.dedup.segment_review_dedup import SegmentReviewDedupService
+from app.news.services.dedup.segment_review_dedup import (
+    SegmentReviewDedupService,
+    distinct_target_village_count,
+)
 from app.news.services.pipeline.pipeline_advisory_lock import (
     acquire_fast_path_village_lock,
 )
@@ -1744,14 +1747,7 @@ class IncidentMaterializationService:
         cls,
         target_matches: list[dict[str, Any]],
     ) -> int:
-        return len(
-            {
-                village_id
-                for item in target_matches
-                if (village_id := cls._optional_int(item.get("matched_village_id")))
-                is not None
-            }
-        )
+        return distinct_target_village_count(target_matches)
 
     @classmethod
     def _dedupe_village_matches_by_village(

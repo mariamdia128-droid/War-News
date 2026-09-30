@@ -133,6 +133,8 @@ class SegmentReviewSource:
     incident: Incident
     extraction_result: dict[str, Any]
     match_result: dict[str, Any]
+    raw_text: str | None = None
+    message_datetime: datetime | None = None
 
 
 class IncidentRepository(IncidentRepositoryInterface):
@@ -1233,6 +1235,26 @@ class IncidentRepository(IncidentRepositoryInterface):
                 raise StaleDataError(
                     "The suggested main incident is no longer available."
                 )
+            if incident.duplicate_level == "segment":
+                incident_datetime = datetime.combine(
+                    incident.event_date, incident.event_time or time(0, 0)
+                )
+                canonical_datetime = datetime.combine(
+                    canonical.event_date, canonical.event_time or time(0, 0)
+                )
+                canonical_is_earlier = canonical_datetime < incident_datetime
+                if canonical_datetime == incident_datetime:
+                    canonical_is_earlier = bool(
+                        canonical.raw_message_id is not None
+                        and incident.raw_message_id is not None
+                        and canonical.raw_message_id < incident.raw_message_id
+                    )
+                if not canonical_is_earlier:
+                    self.db.rollback()
+                    raise ValueError(
+                        "A segment-review duplicate can only be confirmed against "
+                        "an earlier main incident."
+                    )
             if incident.village_id != canonical.village_id:
                 self.db.rollback()
                 raise ValueError(
@@ -2071,19 +2093,25 @@ class IncidentRepository(IncidentRepositoryInterface):
         source_id: int,
         source_name: str | None,
         source_platform: str | None,
-        event_date: date,
+        event_datetime: datetime,
         window_days: int,
+        max_event_gap_hours: int,
         exclude_raw_message_id: int,
         max_results: int,
     ) -> list[SegmentReviewSource]:
         """Return active, materialized, different-source segment containers."""
+        current_datetime = event_datetime
+        event_date = current_datetime.date()
         start_date = event_date - timedelta(days=window_days)
         end_date = event_date + timedelta(days=window_days)
+        candidate_datetime = RawMessage.message_datetime
         rows = self.db.execute(
             select(
                 Incident,
                 RawMessage.extraction_result,
                 RawMessage.match_result,
+                RawMessage.raw_text,
+                RawMessage.message_datetime,
             )
             .join(RawMessage, RawMessage.id == Incident.raw_message_id)
             .where(
@@ -2100,13 +2128,23 @@ class IncidentRepository(IncidentRepositoryInterface):
                 Incident.is_deleted.is_(False),
                 Incident.event_date >= start_date,
                 Incident.event_date <= end_date,
+                candidate_datetime
+                >= current_datetime - timedelta(hours=max_event_gap_hours),
+                or_(
+                    candidate_datetime < current_datetime,
+                    and_(
+                        candidate_datetime == current_datetime,
+                        Incident.raw_message_id < exclude_raw_message_id,
+                    ),
+                ),
                 RawMessage.status.in_(
                     [MessageStatus.materialized, MessageStatus.duplicate]
                 ),
                 RawMessage.extraction_result.is_not(None),
                 RawMessage.match_result.is_not(None),
+                RawMessage.message_datetime.is_not(None),
             )
-            .order_by(Incident.event_date.desc(), Incident.created_at.desc())
+            .order_by(candidate_datetime.desc(), Incident.raw_message_id.desc())
             .limit(max_results)
         ).all()
         return [
@@ -2114,6 +2152,8 @@ class IncidentRepository(IncidentRepositoryInterface):
                 incident=row[0],
                 extraction_result=row[1] if isinstance(row[1], dict) else {},
                 match_result=row[2] if isinstance(row[2], dict) else {},
+                raw_text=row[3] if isinstance(row[3], str) else None,
+                message_datetime=row[4],
             )
             for row in rows
         ]
@@ -2121,7 +2161,10 @@ class IncidentRepository(IncidentRepositoryInterface):
     def segment_text_similarity(self, left: str, right: str) -> float:
         score = self.db.scalar(
             select(
-                func.greatest(
+                # A one-way containment score can be 1.0 for a bare location
+                # inside a full report. Requiring the weaker direction keeps
+                # both texts responsible for the match.
+                func.least(
                     func.word_similarity(
                         normalize_arabic_sql(literal(left)),
                         normalize_arabic_sql(literal(right)),

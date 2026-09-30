@@ -138,7 +138,11 @@ class Settings(BaseSettings):
     # catches both recon fixtures after Arabic normalization; review outcomes
     # should be used to calibrate this before any auto-handling is considered.
     segment_dedup_review_similarity_threshold: float = 0.60
+    # Balanced (bidirectional) trigram score required for segment review.
+    segment_dedup_review_balanced_score_threshold: float = 0.60
     segment_dedup_review_window_days: int = 7
+    segment_dedup_review_max_event_gap_hours: int = 24
+    segment_dedup_review_min_informative_tokens: int = 4
     segment_dedup_review_max_candidates: int = 20
     bulletin_reconciliation_window_hours: int = 60
     bulletin_reconciliation_sweep_interval_seconds: int = 1800

@@ -15,6 +15,8 @@ Load when the message appears to name multiple target locations.
 
 ## Extraction rules
 
+- Every sub-event `evidence_span` must be a complete grounded clause or phrase connecting the action to the target. Never emit a generic action token such as `قصف` or a bare location such as `وادي الحجير`; those fragments are not standalone event evidence.
+
 1. Each target village gets its own `village_roles` entry.
 2. Route endpoints (`طريق X - Y`, `طريق عام X - Y`, or `طريق بين X و Y`): emit both `X` and `Y` as separate target locations (and inside the same `sub_event.locations` if a single route action occurred). Plain `بين X و Y`, `بين بلدتي X و Y`, and `في المنطقة الواقعة بين X و Y` without a road/route are one fuzzy target attributed to the first village with the other village kept as review context.
 3. For every non-route dash phrase, emit only the left side as the target and preserve the entire right side as `qualifier_text`, including any `و`-joined parts.

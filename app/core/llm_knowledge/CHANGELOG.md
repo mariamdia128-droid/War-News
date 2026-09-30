@@ -1,5 +1,22 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-30 — Require event-bearing Tier 1 sub-event evidence
+
+**Bug / accuracy gap:** Real daily-summary extractions for duplicate matches #8099
+and #7933 emitted bare sub-event evidence (`وادي الحجير` and `قصف`). The
+deterministic segment-review scorer then treated those fragments as standalone
+event descriptions and assigned 1.00 containment similarity to unrelated
+reports.
+
+**Rule files changed:** `rules/tier1_general_prompt.md`,
+`rules/combined_tier1_prompt.md`, and `rules/tier1_multi_village.md` now require
+each sub-event `evidence_span` to be a complete phrase connecting action and
+location, never a generic action token or bare place name.
+
+**Regression tests:** `tests/test_segment_review_dedup.py` covers the real
+#7763, #8099, and #7933 shapes plus a genuine cross-source positive control;
+`tests/test_llm_knowledge_rule_integrity.py` continues to validate rule text.
+
 ## Policy
 
 Any fix to an extraction, classification, or matching **accuracy bug**

@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 import app.accounts.models  # noqa: F401
 import app.logs.models  # noqa: F401
 import app.sources.models  # noqa: F401
@@ -300,3 +302,36 @@ def test_confirmed_duplicate_resolution_keeps_note_clean_and_records_merged_from
         "channel": None,
         "khabar": "duplicate khabar text",
     }
+
+
+def test_segment_confirmation_rejects_newer_suggested_main() -> None:
+    from datetime import date, time
+    from app.news.models import MatchStatus
+
+    user_id = uuid4()
+    duplicate_id = uuid4()
+    canonical_id = uuid4()
+    duplicate = Incident(
+        id=duplicate_id, version=1, locked_by_user_id=user_id,
+        raw_message_id=100, village_id=976, condition_id=5,
+        event_date=date(2026, 9, 25), event_time=time(7, 35),
+        duplicate_flag=True, duplicate_level="segment",
+    )
+    newer_candidate = Incident(
+        id=canonical_id, raw_message_id=200, village_id=976, condition_id=5,
+        event_date=date(2026, 9, 28), event_time=time(9, 8),
+    )
+    match = SimpleNamespace(
+        id=10, matched_incident_id=canonical_id,
+        status=MatchStatus.pending, resolved_by=None,
+    )
+    db = _ResolveDuplicateSessionStub(
+        duplicate=duplicate, canonical=newer_candidate, match=match,
+    )
+
+    with pytest.raises(ValueError, match="earlier main incident"):
+        IncidentRepository(db).resolve_duplicate(  # type: ignore[arg-type]
+            incident_id=duplicate_id, match_id=10,
+            decision=MatchStatus.confirmed_duplicate.value,
+            version=1, user_id=user_id,
+        )
