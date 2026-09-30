@@ -39,7 +39,9 @@ from app.llm.services.ollama_presence_gate_service import (
 )
 from app.llm.services.ollama_relevance_classifier_service import is_valid_reason_text
 from app.llm.services.split_phase_extraction import (
+    SegmentCasualties,
     SegmentEvent,
+    extract_segment_casualties,
     extract_segment_event,
 )
 from app.llm.services.tier1_segmenter import TextSegment
@@ -1016,6 +1018,20 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         return extract_segment_event(
             self.client,
             segment,
+            raw_message_id=raw_message_id,
+        )
+
+    def _extract_segment_casualties(
+        self,
+        segment: TextSegment,
+        villages: list[str],
+        raw_message_id: int | None,
+    ) -> SegmentCasualties:
+        """Split-phase casualty call for one item; every count needs a span."""
+        return extract_segment_casualties(
+            self.client,
+            segment,
+            villages=villages,
             raw_message_id=raw_message_id,
         )
 

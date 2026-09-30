@@ -25,6 +25,19 @@ tier1_event:
   terminology:
     - terminology/role_terms.yaml
 
+# Split-phase Tier 1: casualty numbers for one segment, only when
+# casualty_demographics is present in it. Every count needs a literal span.
+tier1_casualty:
+  rules:
+    core:
+      - rules/tier1_casualty_prompt.md
+    situational:
+      - trigger: has_casualty_transition_language
+        load: rules/tier1_casualty_transitions.md
+  terminology:
+    - terminology/revision_language_markers.yaml
+    - terminology/casualty_gender.yaml
+
 combined_tier1:
   rules:
     core:
