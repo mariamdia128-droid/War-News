@@ -327,6 +327,44 @@ def normalize_latin_location_token(value: str) -> str:
     return value.replace("ch", "sh")
 
 
+def latin_location_words(value: str) -> list[str]:
+    """Split Latin text into normalized words before any spaces are stripped."""
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return [
+        word
+        for word in (normalize_latin_location_token(part) for part in re.split(r"[^A-Za-z]+", value))
+        if word
+    ]
+
+
+def _latin_alias_in_words(alias_words: list[str], candidate_words: list[str]) -> bool:
+    """Match an alias only on whole-word boundaries of the candidate.
+
+    A run of consecutive candidate words matches when it spells the alias,
+    ignoring spacing ("Kfarkila" vs "kfar kila"), but an alias never matches
+    inside a longer word. Aliases shorter than 5 letters must match word for
+    word, since a short compact form is too easy to assemble by accident.
+    """
+    compact_alias = "".join(alias_words)
+    if not compact_alias:
+        return False
+    if len(compact_alias) < 5:
+        size = len(alias_words)
+        return any(
+            candidate_words[start : start + size] == alias_words
+            for start in range(len(candidate_words) - size + 1)
+        )
+    for start in range(len(candidate_words)):
+        spelled = ""
+        for word in candidate_words[start:]:
+            spelled += word
+            if len(spelled) >= len(compact_alias):
+                break
+        if spelled == compact_alias:
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class RedAlertPost:
     message_id: int
@@ -432,23 +470,14 @@ def is_preview_boilerplate(text: str) -> bool:
 
 def _alias_matches_in(candidate_text: str, villages: list[Village]) -> list[tuple[Village, str]]:
     normalized_candidate = normalize_arabic(candidate_text)
-    normalized_latin_candidate = normalize_latin_location_token(candidate_text)
+    latin_candidate_words = latin_location_words(candidate_text)
     matches: dict[int, tuple[Village, str]] = {}
     for alias, acs_code in RED_ALERT_VILLAGE_ALIASES.items():
         normalized_alias = normalize_arabic(alias)
         if re.search(r"[\u0600-\u06ff]", alias):
             alias_found = normalized_alias in normalized_candidate
         else:
-            normalized_latin_alias = normalize_latin_location_token(alias)
-            if len(normalized_latin_alias) < 5 and " " not in normalized_latin_alias:
-                alias_found = False
-            else:
-                alias_found = bool(
-                    re.search(
-                        rf"(?<![a-z0-9]){re.escape(normalized_latin_alias)}(?![a-z0-9])",
-                        normalized_latin_candidate,
-                    )
-                )
+            alias_found = _latin_alias_in_words(latin_location_words(alias), latin_candidate_words)
         if alias_found:
             village = next(
                 (item for item in villages if getattr(item, "acs_code", None) == acs_code),

@@ -1,5 +1,26 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-30 — Fix Red Alert Latin alias matching on multi-village crops
+
+**Bug:** Since `29426c2` (2026-09-29), Latin OCR aliases were matched with a
+word-boundary regex against `normalize_latin_location_token`, which strips all
+spaces. A red-zone crop such as `Qaraoun Machghara Sohmor Ain El Tineh Libbaya`
+became one run-on string, so no alias matched. Since `c3d39ac` red-zone
+matching is alias-only, so such alerts were rejected with "Location could not
+be identified reliably from the alert image". The short-alias guard also
+tested for a space that could no longer exist.
+
+**Fix:** `app/sources/services/red_alert_collector.py` now splits Latin text
+into normalized words before stripping, and an alias matches only a run of
+whole candidate words (spacing differences such as `Kfarkila`/`kfar kila` still
+match; an alias never matches inside a longer word). Aliases under 5 letters
+must match word for word. Arabic matching and the alias-only red-zone rule are
+unchanged.
+
+**Regression tests:** `tests/test_red_alert_collector.py` covers the
+multi-village crop, substring rejection, and whole-word short aliases.
+Alerts rejected between 2026-09-29 and this fix are not reprocessed here.
+
 ## 2026-09-30 — Remove CodeCraft relevance backend
 
 Relevance classification is local-only (`local_llm` or `cnrs_provided`). The

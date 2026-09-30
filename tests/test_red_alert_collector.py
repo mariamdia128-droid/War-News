@@ -503,6 +503,50 @@ def test_telegram_text_location_wins_over_conflicting_ocr_location() -> None:
     assert [match.matched_village_id for match in routed_result.village_matches] == [26]
 
 
+def _alias_village(village_id: int, acs_code: int) -> SimpleNamespace:
+    village = _village(village_id, "", caza_en="West Bekaa")
+    village.acs_code = acs_code
+    return village
+
+
+def test_red_zone_latin_crop_matches_every_alias_word_sequence() -> None:
+    villages = [
+        _alias_village(1, 52237),  # Qaraoun
+        _alias_village(2, 52111),  # Machghara
+        _alias_village(3, 52267),  # Sohmor
+        _alias_village(4, 52116),  # Ain El Tineh
+        _alias_village(5, 52274),  # Libbaya
+    ]
+
+    matched = match_villages(
+        f"noise {RED_ZONE_OCR_MARKER} Qaraoun Machghara Sohmor Ain El Tineh Libbaya",
+        villages,
+    )
+
+    assert {village.id for village, _alias in matched} == {1, 2, 3, 4, 5}
+
+
+def test_red_zone_latin_alias_does_not_match_inside_a_longer_word() -> None:
+    villages = [_alias_village(3, 52267), _alias_village(5, 52274)]
+
+    matched = match_villages(f"noise {RED_ZONE_OCR_MARKER} Xsohmor Libbayaki", villages)
+
+    assert matched == []
+
+
+def test_short_latin_alias_matches_only_as_a_whole_word(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.sources.services import red_alert_collector
+
+    monkeypatch.setitem(red_alert_collector.RED_ALERT_VILLAGE_ALIASES, "tyr", 99001)
+    village = _alias_village(9, 99001)
+
+    whole = match_villages(f"noise {RED_ZONE_OCR_MARKER} Tyr", [village])
+    inside = match_villages(f"noise {RED_ZONE_OCR_MARKER} Tyrsana Katyr", [village])
+
+    assert [item.id for item, _alias in whole] == [9]
+    assert inside == []
+
+
 def test_red_zone_ocr_falls_back_to_single_exact_alias_in_full_text() -> None:
     shamali = _village(23, "برج الشمالي", caza_en="Sour")
     shamali.acs_code = 62128
