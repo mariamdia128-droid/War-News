@@ -1426,3 +1426,23 @@ def test_location_ambiguity_without_a_locatable_village_downgrades_all() -> None
         vm.village_match_status == MatchResultStatus.matched_low_confidence
         for vm in result.village_matches
     )
+
+
+def test_geo_context_resolution_records_the_geo_context_method() -> None:
+    harouf = _geo_village(652, "حروف", 727118.662568, 3695226.05415)
+    zibdine_jbayl = _geo_village(1530, "زبدين", 749917.749312, 3776011.05529)
+    zibdine_nabatiyeh = _geo_village(
+        1529, "زبدين النبطية", 729089.964486, 3695394.05526
+    )
+    villages = _GeoVillageRepositoryStub(
+        {"زبدين": [(zibdine_jbayl, 1.0), (zibdine_nabatiyeh, 0.42857143)]},
+        aliases={"حاروف": harouf},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["حاروف", "زبدين"], action=None)
+    )
+
+    assert result.village_matches[0].village_match_method == "alias"
+    assert result.village_matches[1].resolved_by_geo_context is True
+    assert result.village_matches[1].village_match_method == "geo_context"
