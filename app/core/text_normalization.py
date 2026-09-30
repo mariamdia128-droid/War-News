@@ -31,6 +31,39 @@ def normalize_arabic_text(text: str, *, compact: bool = False) -> str:
     return normalized
 
 
+# Definite article "ال" at the start of a word, only when 3+ letters follow so a
+# short stem is never reduced to nothing. Applied to every word because village
+# names carry it mid-name too ("عرب الصاليم" vs the reference "عرب صاليم").
+_DEFINITE_ARTICLE_RE = re.compile(r"(^| )ال(?=\S{3,})")
+_DEFINITE_ARTICLE_SQL = r"(^| )ال(?=[^ ]{3,})"
+
+
+def village_match_key(text: str, *, compact: bool = False) -> str:
+    """Return the village-name comparison key.
+
+    The existing Arabic folds plus removal of the definite article, so
+    ``الرمادية`` and ``رمادية`` produce the same key. It must be applied to BOTH
+    the incoming mention and every reference name (ACS, reference, alias) so the
+    two sides go through identical steps. Reference names that collide after
+    this fold are reported by ``scripts/report_village_key_collisions.py``
+    rather than merged.
+    """
+    key = _DEFINITE_ARTICLE_RE.sub(r"\1", normalize_arabic_text(text or ""))
+    return key.replace(" ", "") if compact else key
+
+
+def village_match_key_sql(
+    column: ColumnElement[str],
+    *,
+    compact: bool = False,
+) -> ColumnElement[str]:
+    """PostgreSQL equivalent of :func:`village_match_key`."""
+    key = func.regexp_replace(
+        normalize_arabic_sql(column), _DEFINITE_ARTICLE_SQL, r"\1", "g"
+    )
+    return func.replace(key, " ", "") if compact else key
+
+
 def normalize_english_text(text: str) -> str:
     normalized = text.lower().strip().strip(ENGLISH_EDGE_PUNCTUATION)
     return MULTIPLE_SPACES_RE.sub(" ", normalized).strip()

@@ -1,7 +1,12 @@
 from sqlalchemy import desc, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.text_normalization import normalize_arabic_sql, normalize_arabic_text
+from app.core.text_normalization import (
+    normalize_arabic_sql,
+    normalize_arabic_text,
+    village_match_key,
+    village_match_key_sql,
+)
 from app.news.interfaces import VillageRepositoryInterface
 from app.news.models import Village
 from app.news.models.village_location_alias import VillageLocationAlias
@@ -11,11 +16,15 @@ def _alias_key_matches(normalized: str):
     """Match the stored key, or the alias text normalized at read time.
 
     Migration 0061 stored ``alias_normalized`` verbatim (e.g. ``الدبشة`` with
-    ta marbuta), so those rows never equalled the normalized mention.
+    ta marbuta), so those rows never equalled the normalized mention. The
+    shared village match key (definite article removed) is compared on both
+    sides too, so a mention and an alias differing only by ``ال`` still hit.
     """
     return or_(
         VillageLocationAlias.alias_normalized == normalized,
         normalize_arabic_sql(VillageLocationAlias.alias_text) == normalized,
+        village_match_key_sql(VillageLocationAlias.alias_text)
+        == village_match_key(normalized),
     )
 
 
@@ -139,10 +148,12 @@ class VillageRepository(VillageRepositoryInterface):
         # mentions still match while retaining the requested ACS-name lookup.
         normalized_text = normalize_arabic_sql(literal(text))
         compact_text = normalize_arabic_sql(literal(text), compact=True)
+        key_text = village_match_key(text)
+        key_compact_text = village_match_key(text, compact=True)
         # Retain the original token-aware score and add a compact-key score.
         # This fixes spacing variants without penalizing a correct partial name
         # whose reference value carries a meaningful suffix.
-        score = func.greatest(
+        plain_score = func.greatest(
             func.similarity(normalize_arabic_sql(Village.acs_name), normalized_text),
             func.similarity(normalize_arabic_sql(Village.ref_name_ar), normalized_text),
             func.similarity(
@@ -151,6 +162,20 @@ class VillageRepository(VillageRepositoryInterface):
             func.similarity(
                 normalize_arabic_sql(Village.ref_name_ar, compact=True), compact_text
             ),
+        )
+        score = func.greatest(
+            plain_score,
+            # Shared match key (definite article removed) on both sides.
+            func.similarity(village_match_key_sql(Village.acs_name), key_text),
+            func.similarity(village_match_key_sql(Village.ref_name_ar), key_text),
+            func.similarity(
+                village_match_key_sql(Village.acs_name, compact=True),
+                key_compact_text,
+            ),
+            func.similarity(
+                village_match_key_sql(Village.ref_name_ar, compact=True),
+                key_compact_text,
+            ),
         ).label("score")
         rows = self.db.execute(
             select(Village, score)
@@ -158,7 +183,9 @@ class VillageRepository(VillageRepositoryInterface):
                 Village.is_active.is_(True),
                 (Village.acs_name.is_not(None) | Village.ref_name_ar.is_not(None)),
             )
-            .order_by(desc(score), Village.id.asc())
+            # Ties on the folded score prefer the candidate that also matches
+            # before the definite-article fold ("القنطرة" -> القنطرة, not قنطرة).
+            .order_by(desc(score), desc(plain_score), Village.id.asc())
             .limit(limit)
         ).all()
         return [(village, float(value or 0.0)) for village, value in rows]
