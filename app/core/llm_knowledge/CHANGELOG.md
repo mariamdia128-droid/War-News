@@ -1,5 +1,12 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-30 — Remove CodeCraft relevance backend
+
+Relevance classification is local-only (`local_llm` or `cnrs_provided`). The
+external CodeCraft classifier, its `CODECRAFT_*` settings and the
+local-vs-codecraft comparison script were removed. `RELEVANCE_CLASSIFIER_BACKEND=codecraft`
+now fails at startup with a clear error.
+
 ## 2026-09-30 — Require event-bearing Tier 1 sub-event evidence
 
 **Bug / accuracy gap:** Real daily-summary extractions for duplicate matches #8099

@@ -69,9 +69,6 @@ class Settings(BaseSettings):
     relevance_classifier_backend: str = "local_llm"
     relevance_classifier_max_retries: int = 3
     relevance_classifier_retry_backoff_seconds: float = 1.0
-    codecraft_api_key: str | None = None
-    codecraft_base_url: str = "https://codecraftapi.com/v1"
-    codecraft_model: str | None = None
     ingestion_poll_interval_seconds: int = 120
     poll_interval_minutes: int = 5
     login_max_failed_attempts: int = 3

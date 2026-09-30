@@ -37,10 +37,6 @@ def _build_local_llm_relevance_classifier() -> RelevanceClassifierInterface:
 
 def build_relevance_classifier() -> RelevanceClassifierInterface:
     from app.core.config import settings
-    from app.llm.services.codecraft_relevance_classifier import (
-        CODECRAFT_RELEVANCE_BACKEND,
-        CodeCraftRelevanceClassifier,
-    )
     from app.llm.services.cnrs_relevance_classifier import (
         CNRS_PROVIDED_BACKEND,
         CnrsProvidedRelevanceClassifier,
@@ -56,30 +52,15 @@ def build_relevance_classifier() -> RelevanceClassifierInterface:
             fallback=_build_local_llm_relevance_classifier(),
         )
 
-    if backend == CODECRAFT_RELEVANCE_BACKEND:
-        if not settings.codecraft_api_key:
-            raise RuntimeError("CODECRAFT_API_KEY is required for backend 'codecraft'.")
-        if not settings.codecraft_model:
-            raise RuntimeError("CODECRAFT_MODEL is required for backend 'codecraft'.")
-        return CodeCraftRelevanceClassifier(
-            api_key=settings.codecraft_api_key,
-            base_url=settings.codecraft_base_url,
-            model=settings.codecraft_model,
-            timeout_seconds=settings.relevance_llm_timeout_seconds,
-            max_retries=settings.relevance_classifier_max_retries,
-            retry_backoff_seconds=settings.relevance_classifier_retry_backoff_seconds,
-        )
-
-    if backend == "gemini":
+    if backend == "codecraft":
         raise RuntimeError(
-            "RELEVANCE_CLASSIFIER_BACKEND=gemini was requested, but no Gemini "
-            "classifier implementation is present in this checkout."
+            "codecraft backend was removed; use local_llm or cnrs_provided"
         )
 
     raise RuntimeError(
         "Unsupported RELEVANCE_CLASSIFIER_BACKEND="
         f"{settings.relevance_classifier_backend!r}. "
-        "Expected 'local_llm', 'cnrs_provided', 'codecraft', or 'gemini'."
+        "Expected 'local_llm' or 'cnrs_provided'."
     )
 
 
