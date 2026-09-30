@@ -1382,3 +1382,47 @@ def test_alias_match_records_alias_method() -> None:
     )
 
     assert result.village_matches[0].village_match_method == "alias"
+
+
+def _ambiguity_extraction(evidence, alternatives):
+    from app.llm.dtos import VillageRoleEntry
+
+    return _extraction(
+        village=["مجدل زون", "الخيام"],
+        action=None,
+        village_roles=[
+            VillageRoleEntry(village="مجدل زون"),
+            VillageRoleEntry(village="الخيام"),
+        ],
+    ).model_copy(
+        update={
+            "location_ambiguity": True,
+            "location_alternatives": alternatives,
+            "location_ambiguity_evidence": evidence,
+        }
+    )
+
+
+def test_location_ambiguity_downgrades_only_the_named_village() -> None:
+    result = MatchingService(
+        _SimilarRepositoryStub(7, 0.9), _SimilarRepositoryStub(None, None)
+    ).match(_ambiguity_extraction("محيط مجدل زون وبيوت السياد", ["بيوت السياد"]))
+
+    by_name = {vm.raw_village_text: vm for vm in result.village_matches}
+    assert (
+        by_name["مجدل زون"].village_match_status
+        == MatchResultStatus.matched_low_confidence
+    )
+    assert by_name["الخيام"].village_match_status == MatchResultStatus.matched
+    assert result.any_village_low_confidence is True
+
+
+def test_location_ambiguity_without_a_locatable_village_downgrades_all() -> None:
+    result = MatchingService(
+        _SimilarRepositoryStub(7, 0.9), _SimilarRepositoryStub(None, None)
+    ).match(_ambiguity_extraction(None, []))
+
+    assert all(
+        vm.village_match_status == MatchResultStatus.matched_low_confidence
+        for vm in result.village_matches
+    )

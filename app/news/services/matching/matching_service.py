@@ -419,6 +419,11 @@ class MatchingService(MatchingServiceInterface):
         )
         location_ambiguity = bool(extraction_result.location_ambiguity)
         if location_ambiguity:
+            # Only the villages the extraction marked ambiguous are downgraded, so
+            # a confidently matched sibling in the same bulletin keeps its status.
+            ambiguous = self._ambiguous_village_indexes(
+                extraction_result, village_matches
+            )
             village_matches = [
                 vm.model_copy(
                     update={
@@ -426,9 +431,18 @@ class MatchingService(MatchingServiceInterface):
                         "village_review_required": True,
                     }
                 )
-                for vm in village_matches
+                if index in ambiguous
+                else vm
+                for index, vm in enumerate(village_matches)
             ]
-            any_village_low_confidence = True
+            any_village_low_confidence = (
+                any(
+                    vm.village_match_status
+                    == MatchResultStatus.matched_low_confidence
+                    for vm in village_matches
+                )
+                or not village_matches
+            )
 
         return MatchResultDTO(
             village_matches=village_matches,
@@ -446,6 +460,37 @@ class MatchingService(MatchingServiceInterface):
             source_condition_text=root_condition.source_condition_text,
             sub_event_matches=sub_event_matches,
         )
+
+    @staticmethod
+    def _ambiguous_village_indexes(
+        extraction_result: ExtractionResult,
+        village_matches: list[VillageMatchResult],
+    ) -> set[int]:
+        """Indexes of the villages named by the extraction's ambiguity evidence.
+
+        A village is ambiguous when its name appears in the ambiguity evidence
+        or equals one of the listed alternatives. When the extraction reports
+        ambiguity without saying where, every village is treated as ambiguous
+        (the previous behaviour), so nothing is silently cleared.
+        """
+        evidence_tokens = normalize_arabic_text(
+            extraction_result.location_ambiguity_evidence or ""
+        ).split()
+        alternatives = [
+            normalize_arabic_text(alternative)
+            for alternative in (extraction_result.location_alternatives or [])
+            if alternative
+        ]
+        marked: set[int] = set()
+        for index, village_match in enumerate(village_matches):
+            name = normalize_arabic_text(village_match.raw_village_text or "")
+            if not name:
+                continue
+            if _contains_token_sequence(evidence_tokens, name.split()) or any(
+                name == alternative for alternative in alternatives
+            ):
+                marked.add(index)
+        return marked or set(range(len(village_matches)))
 
     def _match_sub_event(
         self,
