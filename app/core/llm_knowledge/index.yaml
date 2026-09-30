@@ -16,6 +16,15 @@ tier1_extraction:
     - terminology/revision_language_markers.yaml
     - terminology/casualty_gender.yaml
 
+# Split-phase Tier 1 (TIER1_SPLIT_PHASES_ENABLED): one call per segment for
+# relevance, villages/roles and action only. No numbers, no categories.
+tier1_event:
+  rules:
+    core:
+      - rules/tier1_event_prompt.md
+  terminology:
+    - terminology/role_terms.yaml
+
 combined_tier1:
   rules:
     core:

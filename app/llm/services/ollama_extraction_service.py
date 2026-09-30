@@ -38,6 +38,11 @@ from app.llm.services.ollama_presence_gate_service import (
     OllamaPresenceGateService,
 )
 from app.llm.services.ollama_relevance_classifier_service import is_valid_reason_text
+from app.llm.services.split_phase_extraction import (
+    SegmentEvent,
+    extract_segment_event,
+)
+from app.llm.services.tier1_segmenter import TextSegment
 from app.news.services.incident_details.casualty_count_backstop import (
     apply_casualty_count_backstop,
 )
@@ -1001,6 +1006,18 @@ class OllamaExtractionService(ExtractionClassifierInterface):
             temperature=LOW_TEMPERATURE,
         )
         return self._parse_general_response(content, raw_message_id=raw_message_id)
+
+    def _extract_segment_event(
+        self,
+        segment: TextSegment,
+        raw_message_id: int | None,
+    ) -> SegmentEvent:
+        """Split-phase event call: relevance, villages/roles, action for one item."""
+        return extract_segment_event(
+            self.client,
+            segment,
+            raw_message_id=raw_message_id,
+        )
 
     def _parse_general_response(
         self,
