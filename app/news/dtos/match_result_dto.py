@@ -35,6 +35,12 @@ class VillageMatchResult(BaseModel):
     event_location_count: int | None = None
     qualifier_text: str | None = None
     alias_matched: bool = False
+    # How the village was matched: exact, alias, normalized, compact, trigram or
+    # geo_context. Stored so a later audit can see which path produced a match.
+    village_match_method: str | None = None
+    # Soft warning for an accepted match weaker than MATCH_THRESHOLD. It never
+    # sets needs_verification; the incident view may surface it.
+    village_match_note: str | None = None
     resolved_by_geo_context: bool = False
     geo_context_anchor_village_id: int | None = None
     original_top_candidate_id: int | None = None

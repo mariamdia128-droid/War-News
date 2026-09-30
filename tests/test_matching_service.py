@@ -1281,3 +1281,104 @@ def test_mention_that_is_only_a_descriptor_is_not_emptied() -> None:
     )
 
     assert result.village_matches[0].matched_village_id is None
+
+
+def _match_one(mention: str, candidates: dict):
+    villages = _GeoVillageRepositoryStub(candidates)
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=[mention], action=None)
+    )
+    return result.village_matches[0]
+
+
+def test_tie_between_distinct_villages_is_flagged_even_below_old_threshold() -> None:
+    east = _named_village(1519, "زوطر الشرقية")
+    west = _named_village(1520, "زوطر الغربية")
+
+    vm = _match_one("زوطر", {"زوطر": [(east, 0.53), (west, 0.53)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
+def test_clear_best_match_below_old_threshold_is_accepted_with_a_note() -> None:
+    village = _named_village(5, "كفر شوبا")
+    other = _named_village(6, "كفر")
+
+    vm = _match_one("كفرشوبا", {"كفرشوبا": [(village, 0.55), (other, 0.40)]})
+
+    assert vm.matched_village_id == 5
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.village_review_required is False
+    assert vm.village_match_note is not None
+    assert vm.village_match_method in {"compact", "normalized", "trigram"}
+
+
+def test_best_score_under_the_floor_is_flagged() -> None:
+    village = _named_village(5, "حلتا")
+
+    vm = _match_one("حالتا", {"حالتا": [(village, 0.45)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+
+
+def test_exact_name_wins_over_longer_names_that_contain_it() -> None:
+    sour = _named_village(1407, "صور")
+    neiha = _named_village(1176, "نيحا صور")
+    bayad = _named_village(310, "البياض صور")
+
+    vm = _match_one("صور", {"صور": [(sour, 1.0), (neiha, 0.44), (bayad, 0.44)]})
+
+    assert vm.matched_village_id == 1407
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.village_match_method == "exact"
+    assert vm.village_match_note is None
+
+
+def test_two_villages_with_the_same_exact_name_stay_flagged() -> None:
+    first = _named_village(100, "الطيبة")
+    second = _named_village(200, "الطيبة")
+
+    vm = _match_one("الطيبة", {"الطيبه": [(first, 1.0), (second, 1.0)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
+def test_parent_and_child_names_are_not_a_tie() -> None:
+    parent = _named_village(1, "الخيام")
+    child = _named_village(2, "مدينة الخيام")
+
+    vm = _match_one("خيام", {"خيام": [(parent, 0.55), (child, 0.53)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.matched_village_id == 1
+
+
+def test_definite_article_variant_is_a_normalized_match() -> None:
+    ramadiyeh = _named_village(1324, "رمادية")
+
+    vm = _match_one("الرمادية", {"الراديه": [], "الماديه": [], "الرماديه": [(ramadiyeh, 1.0)]})
+
+    assert vm.matched_village_id == 1324
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.village_match_method == "normalized"
+
+
+def test_no_candidate_stays_unmatched_and_flagged() -> None:
+    vm = _match_one("قرية غير موجودة", {})
+
+    assert vm.matched_village_id is None
+    assert vm.village_match_status == MatchResultStatus.unmatched
+    assert vm.village_review_required is True
+
+
+def test_alias_match_records_alias_method() -> None:
+    touline = _named_village(1464, "تولين")
+    villages = _GeoVillageRepositoryStub({}, aliases={"وادي السلوقي": touline})
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["وادي السلوقي"], action=None)
+    )
+
+    assert result.village_matches[0].village_match_method == "alias"

@@ -17,7 +17,7 @@ import re
 
 from app.core.config import settings
 from app.core.llm_knowledge.loader import load_terminology
-from app.core.text_normalization import normalize_arabic_text
+from app.core.text_normalization import normalize_arabic_text, village_match_key
 from app.llm.dtos import ExtractionResult
 from app.llm.dtos import VillageRole, VillageRoleEntry
 from app.news.dtos import (
@@ -45,6 +45,16 @@ LOW_CONFIDENCE_THRESHOLD = 0.35
 # margin 0.0 (lowest id won). Unambiguous hits like النبطية الفوقا had
 # ~0.29 margin. 0.05 catches exact/near ties without demoting clear winners.
 MATCH_TIE_MARGIN = 0.05
+# Village decision rule (see _classify_village_candidates). A village match is a
+# confident match when the best candidate scores at least
+# VILLAGE_CONFIDENT_FLOOR and is not within MATCH_TIE_MARGIN of a second,
+# distinct place. Recon (Docs/recon/village-verification.md): 354 village flags
+# in one six-week range, many of them clear best matches in [0.5, 0.6) flagged
+# only for missing the old 0.6 cut-off. The floor is 0.5 because the recon's
+# wrong best matches sat below it (الطيبة -> الخريبة 0.36, الناصرة -> الناقورة
+# 0.42). The margin now applies at every score level, so a 0.53 vs 0.53 tie
+# (وادي الحجير) is flagged as a tie rather than merely for being under 0.6.
+VILLAGE_CONFIDENT_FLOOR = 0.5
 DEFAULT_CANDIDATE_LIMIT = 5
 
 
@@ -143,6 +153,63 @@ def _village_match_exceptions() -> tuple[str, ...]:
     )
 
 
+def _village_name_forms(candidate: object) -> list[str]:
+    """Normalized, non-empty reference names of a village candidate."""
+    forms = []
+    for attribute in ("ref_name_ar", "acs_name", "cad_name"):
+        value = getattr(candidate, attribute, None)
+        if isinstance(value, str) and value.strip():
+            forms.append(normalize_arabic_text(value))
+    return forms
+
+
+def _has_exact_name(candidate: object, normalized_mention: str) -> bool:
+    return bool(normalized_mention) and normalized_mention in _village_name_forms(
+        candidate
+    )
+
+
+def _are_related_places(first: object, second: object) -> bool:
+    """True when two candidates are the same place or a parent/child pair.
+
+    Same place: identical id or identical match key. Parent/child: one name is a
+    whole-word part of the other ("عرمون" / "عرمون كسروان"). Sibling villages that
+    only share a word ("زوطر الشرقية" / "زوطر الغربية") are distinct places.
+    """
+    if getattr(first, "id", None) == getattr(second, "id", None):
+        return True
+    for first_name in _village_name_forms(first):
+        first_tokens = village_match_key(first_name).split()
+        for second_name in _village_name_forms(second):
+            second_tokens = village_match_key(second_name).split()
+            if first_tokens == second_tokens:
+                return True
+            if _contains_token_sequence(
+                first_tokens, second_tokens
+            ) or _contains_token_sequence(second_tokens, first_tokens):
+                return True
+    return False
+
+
+def _village_match_method(normalized_mention: str, candidate: object) -> str:
+    """Name how a scored candidate relates to the mention (for later audits)."""
+    forms = _village_name_forms(candidate)
+    if not forms:
+        return "trigram"
+    if normalized_mention in forms:
+        return "exact"
+    compact = normalized_mention.replace(" ", "")
+    if compact in {form.replace(" ", "") for form in forms}:
+        return "compact"
+    key = village_match_key(normalized_mention)
+    key_compact = village_match_key(normalized_mention, compact=True)
+    if key in {village_match_key(form) for form in forms} or key_compact in {
+        village_match_key(form, compact=True) for form in forms
+    }:
+        return "normalized"
+    return "trigram"
+
+
 VILLAGE_DESCRIPTOR_CATEGORY = "village_generic_descriptor"
 
 
@@ -198,6 +265,9 @@ class _VillageCandidateResolution:
     alias_hit: bool = False
     collision_like: bool = False
     conditional_candidate_ids: frozenset[int] = frozenset()
+    method: str | None = None
+    note: str | None = None
+    geo_resolvable: bool = False
 
 
 @dataclass(frozen=True)
@@ -322,6 +392,16 @@ class MatchingService(MatchingServiceInterface):
                     event_location_count=event_size,
                     qualifier_text=village_mention.qualifier_text,
                     alias_matched=resolution.alias_hit,
+                    village_match_method=(
+                        "geo_context"
+                        if geo_resolution.resolved_by_geo_context
+                        else resolution.method
+                    ),
+                    village_match_note=(
+                        None
+                        if geo_resolution.resolved_by_geo_context
+                        else resolution.note
+                    ),
                     resolved_by_geo_context=(geo_resolution.resolved_by_geo_context),
                     geo_context_anchor_village_id=(geo_resolution.anchor_village_id),
                     original_top_candidate_id=(
@@ -548,6 +628,7 @@ class MatchingService(MatchingServiceInterface):
                         MatchResultStatus.matched,
                     ),
                     alias_hit=True,
+                    method="alias",
                 )
 
         lexical_candidates = tuple(
@@ -581,7 +662,43 @@ class MatchingService(MatchingServiceInterface):
                 )
                 lexical_candidates = candidates
                 district_resolved = True
-        classified = self._classify_candidates(lexical_candidates, search_text)
+        # Exact-name rule: a mention equal to exactly one reference name wins even
+        # when longer names contain it ("صور" vs "نيحا صور"). Two or more villages
+        # sharing that exact name is a real collision and stays flagged.
+        exact_candidates = (
+            ()
+            if district_resolved or conditional_aliases
+            else tuple(
+                candidate
+                for candidate, _score in lexical_candidates
+                if _has_exact_name(candidate, search_text)
+            )
+        )
+        exact_winner = exact_candidates[0] if len(exact_candidates) == 1 else None
+        if exact_winner is not None and self._has_region_suffixed_rival(
+            search_text, exact_winner, lexical_candidates
+        ):
+            # "زبدين" next to "زبدين النبطية": the same name in another region is
+            # a real ambiguity, so the exact-name rule does not apply.
+            exact_candidates = ()
+            exact_winner = None
+        if exact_winner is not None:
+            winner_score = next(
+                score
+                for candidate, score in lexical_candidates
+                if candidate.id == exact_winner.id
+            )
+            classified = _ClassifiedMatch(
+                exact_winner.id, winner_score, MatchResultStatus.matched
+            )
+        elif len(exact_candidates) > 1:
+            classified = _ClassifiedMatch(
+                exact_candidates[0].id,
+                lexical_candidates[0][1],
+                MatchResultStatus.matched_low_confidence,
+            )
+        else:
+            classified = self._classify_village_candidates(lexical_candidates)
         no_reference_overlap = (
             not district_resolved
             and classified.status == MatchResultStatus.matched
@@ -594,20 +711,57 @@ class MatchingService(MatchingServiceInterface):
                 classified.confidence,
                 MatchResultStatus.matched_low_confidence,
             )
-        collision_like = (
-            False
-            if district_resolved
-            else (
-                bool(conditional_aliases)
-                or self._has_collision_like_alternative(search_text, candidates)
+        if exact_winner is not None:
+            collision_like = False
+        elif len(exact_candidates) > 1:
+            collision_like = True
+        else:
+            collision_like = (
+                False
+                if district_resolved
+                else (
+                    bool(conditional_aliases)
+                    or self._has_collision_like_alternative(search_text, candidates)
+                )
             )
-        )
         if collision_like and classified.status == MatchResultStatus.matched:
             classified = _ClassifiedMatch(
                 classified.matched_id,
                 classified.confidence,
                 MatchResultStatus.matched_low_confidence,
             )
+        method = None
+        note = None
+        if classified.matched_id is not None and lexical_candidates:
+            top_candidate = next(
+                (
+                    candidate
+                    for candidate, _score in lexical_candidates
+                    if candidate.id == classified.matched_id
+                ),
+                lexical_candidates[0][0],
+            )
+            method = _village_match_method(search_text, top_candidate)
+            if (
+                classified.status == MatchResultStatus.matched
+                and method != "exact"
+                and float(classified.confidence or 0.0) < MATCH_THRESHOLD
+            ):
+                runner_up = next(
+                    (
+                        score
+                        for candidate, score in lexical_candidates
+                        if candidate.id != classified.matched_id
+                    ),
+                    None,
+                )
+                note = (
+                    f"Accepted below the {MATCH_THRESHOLD} threshold "
+                    f"(score {float(classified.confidence or 0.0):.2f}, "
+                    f"method {method}"
+                    + (f", next candidate {runner_up:.2f}" if runner_up is not None else "")
+                    + ")."
+                )
         return _VillageCandidateResolution(
             candidates,
             classified,
@@ -615,6 +769,64 @@ class MatchingService(MatchingServiceInterface):
             conditional_candidate_ids=frozenset(
                 candidate.id for candidate, _score in conditional_candidates
             ),
+            method=method,
+            note=note,
+            # A confident exact-name winner that longer names also contain
+            # ("القصير" / "عدشيت القصير") may still be overridden by a nearby
+            # anchor (raw 10395), so it must not act as an anchor itself.
+            geo_resolvable=exact_winner is not None
+            and self._has_collision_like_alternative(search_text, candidates),
+        )
+
+    @staticmethod
+    def _has_region_suffixed_rival(
+        search_text: str,
+        winner: Village,
+        candidates: tuple[tuple[Village, float], ...],
+    ) -> bool:
+        for candidate, score in candidates:
+            if candidate.id == winner.id or score < LOW_CONFIDENCE_THRESHOLD:
+                continue
+            # Region-qualified twins are named "<name> <region>" (suffix); names
+            # that merely contain the mention ("نيحا صور") are different places.
+            if any(
+                name.startswith(f"{search_text} ")
+                for name in _village_name_forms(candidate)
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _classify_village_candidates(
+        candidates: tuple[tuple[Village, float], ...],
+    ) -> _ClassifiedMatch:
+        """Decide whether the best village candidate is a confident match.
+
+        Low confidence only when there is no usable candidate, the best score is
+        under VILLAGE_CONFIDENT_FLOOR, or it is within MATCH_TIE_MARGIN of a
+        second candidate that is a distinct place.
+        """
+        if not candidates:
+            return _ClassifiedMatch(None, None, MatchResultStatus.unmatched)
+        top_candidate, top_score = candidates[0]
+        if top_score < LOW_CONFIDENCE_THRESHOLD:
+            return _ClassifiedMatch(None, top_score, MatchResultStatus.unmatched)
+        if top_score < VILLAGE_CONFIDENT_FLOOR:
+            return _ClassifiedMatch(
+                top_candidate.id, top_score, MatchResultStatus.matched_low_confidence
+            )
+        if len(candidates) > 1:
+            second_candidate, second_score = candidates[1]
+            if (top_score - second_score) < MATCH_TIE_MARGIN and not (
+                _are_related_places(top_candidate, second_candidate)
+            ):
+                return _ClassifiedMatch(
+                    top_candidate.id,
+                    top_score,
+                    MatchResultStatus.matched_low_confidence,
+                )
+        return _ClassifiedMatch(
+            top_candidate.id, top_score, MatchResultStatus.matched
         )
 
     def _geo_conditional_alias_candidates(
@@ -757,6 +969,7 @@ class MatchingService(MatchingServiceInterface):
             or (
                 resolution.classified.status == MatchResultStatus.matched
                 and not resolution.collision_like
+                and not resolution.geo_resolvable
             )
         ) and bool(resolution.candidates)
 
