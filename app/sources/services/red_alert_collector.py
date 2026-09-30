@@ -4,7 +4,6 @@ import asyncio
 import io
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -20,6 +19,11 @@ from sqlalchemy.orm import Session
 from app.core.llm_knowledge.loader import load_terminology
 from app.news.models import Condition, MessageStatus, RawMessage, Village
 from app.news.repositories.air_violation_repository import AirViolationRepository
+from app.news.services.air_violations.latin_location_words import (
+    latin_location_words,
+    latin_name_in_words,
+    normalize_latin_location_token,
+)
 from app.news.services.air_violations.red_alert_air_violation_service import RedAlertAirViolationService
 from app.sources.actions.ingest_source_action import IngestSourceAction
 from app.sources.models import Source, SourceType
@@ -321,50 +325,6 @@ def normalize_arabic(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def normalize_latin_location_token(value: str) -> str:
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
-    value = re.sub(r"[^a-z]", "", value.casefold())
-    return value.replace("ch", "sh")
-
-
-def latin_location_words(value: str) -> list[str]:
-    """Split Latin text into normalized words before any spaces are stripped."""
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
-    return [
-        word
-        for word in (normalize_latin_location_token(part) for part in re.split(r"[^A-Za-z]+", value))
-        if word
-    ]
-
-
-def _latin_alias_in_words(alias_words: list[str], candidate_words: list[str]) -> bool:
-    """Match an alias only on whole-word boundaries of the candidate.
-
-    A run of consecutive candidate words matches when it spells the alias,
-    ignoring spacing ("Kfarkila" vs "kfar kila"), but an alias never matches
-    inside a longer word. Aliases shorter than 5 letters must match word for
-    word, since a short compact form is too easy to assemble by accident.
-    """
-    compact_alias = "".join(alias_words)
-    if not compact_alias:
-        return False
-    if len(compact_alias) < 5:
-        size = len(alias_words)
-        return any(
-            candidate_words[start : start + size] == alias_words
-            for start in range(len(candidate_words) - size + 1)
-        )
-    for start in range(len(candidate_words)):
-        spelled = ""
-        for word in candidate_words[start:]:
-            spelled += word
-            if len(spelled) >= len(compact_alias):
-                break
-        if spelled == compact_alias:
-            return True
-    return False
-
-
 @dataclass(frozen=True)
 class RedAlertPost:
     message_id: int
@@ -477,7 +437,7 @@ def _alias_matches_in(candidate_text: str, villages: list[Village]) -> list[tupl
         if re.search(r"[\u0600-\u06ff]", alias):
             alias_found = normalized_alias in normalized_candidate
         else:
-            alias_found = _latin_alias_in_words(latin_location_words(alias), latin_candidate_words)
+            alias_found = latin_name_in_words(latin_location_words(alias), latin_candidate_words)
         if alias_found:
             village = next(
                 (item for item in villages if getattr(item, "acs_code", None) == acs_code),

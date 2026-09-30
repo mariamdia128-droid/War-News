@@ -8,6 +8,7 @@ from app.news.dtos.match_result_dto import VillageMatchResult
 from app.news.interfaces import AirViolationRepositoryInterface
 from app.news.models import MessageStatus, RawMessage, Village
 from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
+from app.news.services.air_violations.latin_location_words import latin_location_words, latin_name_in_words
 
 ConditionClassifier = Callable[[str], int | None]
 VillageMatcher = Callable[[str, list[Village]], tuple[Village, str] | None]
@@ -143,7 +144,12 @@ class RedAlertAirViolationService:
     def _combined_village_matches(self, text: str, villages: list[Village]) -> list[tuple[Village, str]]:
         safe_matches = self.match_villages(text, villages) if self.match_villages else []
         if RED_ZONE_OCR_MARKER in text:
-            matches = safe_matches
+            # Alias and exact-name matches are unioned: one crop can name some
+            # villages by alias and others by their canonical name.
+            matches = [
+                *safe_matches,
+                *self._red_zone_canonical_matches(text, villages),
+            ]
         else:
             matches = [
                 *safe_matches,
@@ -155,6 +161,44 @@ class RedAlertAirViolationService:
             if current is None or len(raw_location or "") > len(current[1] or ""):
                 unique[village.id] = (village, raw_location)
         return list(unique.values())
+
+    @staticmethod
+    def _red_zone_canonical_matches(text: str, villages: list[Village]) -> list[tuple[Village, str]]:
+        """Match canonical Latin village names inside the red-zone crop only.
+
+        Map labels outside the red circle are nearby places, so the full OCR
+        text is never searched. Caza names and names shared by more than one
+        village are skipped; such alerts stay unmatched and go to review.
+        """
+        crop_words = latin_location_words(text.rsplit(RED_ZONE_OCR_MARKER, 1)[-1])
+        if not crop_words:
+            return []
+        caza_names = {
+            "".join(latin_location_words(village.caza_en))
+            for village in villages
+            if getattr(village, "caza_en", None)
+        } | {"".join(latin_location_words(alias)) for alias in CAZA_ONLY_ALIASES}
+        names: dict[str, tuple[list[str], str, set[int]]] = {}
+        village_by_id: dict[int, Village] = {}
+        for village in villages:
+            for name in (
+                getattr(village, "ref_name_en", None),
+                getattr(village, "acs_name", None),
+                getattr(village, "cad_name", None),
+            ):
+                if not name or re.search(r"[؀-ۿ]", name):
+                    continue
+                words = latin_location_words(name)
+                compact = "".join(words)
+                if len(compact) < 4 or compact in caza_names:
+                    continue
+                names.setdefault(compact, (words, name, set()))[2].add(village.id)
+                village_by_id[village.id] = village
+        return [
+            (village_by_id[next(iter(village_ids))], name)
+            for words, name, village_ids in names.values()
+            if len(village_ids) == 1 and latin_name_in_words(words, crop_words)
+        ]
 
     @staticmethod
     def _normalize_arabic(value: str) -> str:

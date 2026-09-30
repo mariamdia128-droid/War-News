@@ -547,6 +547,57 @@ def test_short_latin_alias_matches_only_as_a_whole_word(monkeypatch: pytest.Monk
     assert inside == []
 
 
+def _red_zone_message(message_id: int, outside: str, crop: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=message_id,
+        raw_text=f"redalert.com.lb {outside} حيطة وحذر {RED_ZONE_OCR_MARKER} {crop}",
+        raw_payload={"ocr_text": crop},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+
+def test_red_zone_canonical_name_outside_the_crop_does_not_match() -> None:
+    repository = MagicMock()
+    service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
+    ghobeiry = _village(401, "الغبيري", caza_en="Baabda")
+    ghobeiry.ref_name_en = "Ghobeiry"
+
+    assert service.process(_red_zone_message(107, "Ghobeiry", "unreadable crop 59"), [ghobeiry]) is False
+    repository.route_from_match.assert_not_called()
+
+
+def test_red_zone_canonical_name_shared_by_two_villages_is_left_unmatched() -> None:
+    repository = MagicMock()
+    service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
+    zebdine_nabatiye = _village(402, "زبدين", caza_en="Nabatiye")
+    zebdine_nabatiye.ref_name_en = "Zebdine"
+    zebdine_marjaayoun = _village(403, "زبدين", caza_en="Marjaayoun")
+    zebdine_marjaayoun.ref_name_en = "Zebdine"
+    message = _red_zone_message(108, "", "Zebdine")
+
+    assert service.process(message, [zebdine_nabatiye, zebdine_marjaayoun]) is False
+    repository.route_from_match.assert_not_called()
+    assert message.status == MessageStatus.rejected
+
+
+def test_red_zone_unions_alias_and_canonical_name_matches() -> None:
+    repository = MagicMock()
+    repository.route_from_match.return_value = True
+    service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
+    sohmor = _village(404, "سحمر", caza_en="West Bekaa")
+    sohmor.acs_code = 52267  # listed by alias only
+    chiyah = _village(405, "شياح", caza_en="Baabda")
+    chiyah.ref_name_en = "Chiyah"  # no alias; canonical name only
+
+    assert service.process(_red_zone_message(109, "", "Sohmor Chiyah"), [sohmor, chiyah]) is True
+    routed_result = repository.route_from_match.call_args.args[1]
+
+    assert {match.matched_village_id for match in routed_result.village_matches} == {404, 405}
+
+
 def test_red_zone_ocr_ignores_alias_outside_the_red_zone_crop() -> None:
     # Map labels outside the red zone are nearby places, not affected villages,
     # so an unreadable crop must not fall back to aliases in the full OCR text.
