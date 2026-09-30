@@ -1492,3 +1492,37 @@ def test_shared_whole_word_still_counts_as_lexical_overlap() -> None:
     vm = _match_one("رمانة", {"رمانه": [(village, 0.70)]})
 
     assert vm.village_match_status == MatchResultStatus.matched
+
+
+@pytest.mark.parametrize(
+    ("mention", "exact_id", "rivals"),
+    [
+        ("بعلبك", 186, ["راس بعلبك", "طيبة بعلبك"]),
+        ("جنين", 732, ["جب جنين", "دير جنين"]),
+    ],
+)
+def test_exact_name_wins_for_baalbek_and_jenin(
+    mention: str, exact_id: int, rivals: list[str]
+) -> None:
+    exact = _named_village(exact_id, mention)
+    others = [
+        (_named_village(1000 + index, name), 0.55)
+        for index, name in enumerate(rivals)
+    ]
+
+    vm = _match_one(mention, {mention: [(exact, 1.0), *others]})
+
+    assert vm.matched_village_id == exact_id
+    assert vm.village_match_status == MatchResultStatus.matched
+
+
+def test_bare_name_next_to_a_region_suffixed_twin_stays_reviewable() -> None:
+    """عرمون / عرمون كسروان are the same name in two regions; without an anchor
+    this is a real ambiguity, so it is not resolved by the exact-name rule."""
+    aramoun = _named_village(121, "عرمون")
+    keserwan = _named_village(122, "عرمون كسروان")
+
+    vm = _match_one("عرمون", {"عرمون": [(aramoun, 1.0), (keserwan, 0.46)]})
+
+    assert vm.matched_village_id == 121
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence

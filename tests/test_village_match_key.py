@@ -37,3 +37,18 @@ def test_key_is_idempotent() -> None:
 def test_distinct_villages_keep_distinct_keys() -> None:
     assert village_match_key("الخيام") != village_match_key("الخيارة")
     assert village_match_key("زوطر الشرقية") != village_match_key("زوطر الغربية")
+
+
+@pytest.mark.parametrize(
+    ("written", "reference"),
+    [
+        ("كفررمان", "كفر رمان"),
+        ("كفرشوبا", "كفر شوبا"),
+        ("كفرتبنيت", "كفر تبنيت"),
+        ("ديرسريان", "دير سريان"),
+    ],
+)
+def test_spelling_variants_share_a_compact_key(written: str, reference: str) -> None:
+    assert village_match_key(written, compact=True) == village_match_key(
+        reference, compact=True
+    )
