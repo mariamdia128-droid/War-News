@@ -1206,3 +1206,78 @@ def test_geo_context_requires_meaningful_distance_advantage() -> None:
         village_match.village_match_status == MatchResultStatus.matched_low_confidence
     )
     assert village_match.resolved_by_geo_context is False
+
+
+def _named_village(village_id: int, ref_name_ar: str):
+    return SimpleNamespace(
+        id=village_id,
+        ref_name_ar=ref_name_ar,
+        acs_name=None,
+        cad_name=None,
+        caza_ar=None,
+        caza_en=None,
+        coord_x=None,
+        coord_y=None,
+    )
+
+
+def test_leading_descriptor_is_stripped_and_raw_mention_is_kept() -> None:
+    mayfadoun = _named_village(1003, "ميفدون")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "اطراف ميفدون": [(mayfadoun, 0.30)],
+            "ميفدون": [(mayfadoun, 0.90)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["أطراف ميفدون"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == 1003
+    assert vm.village_match_status == MatchResultStatus.matched
+    assert vm.raw_village_text == "أطراف ميفدون"
+
+
+def test_descriptor_before_an_ambiguous_name_stays_flagged() -> None:
+    first = _named_village(1, "نبطية الفوقا")
+    second = _named_village(2, "نبطية التحتا")
+    villages = _GeoVillageRepositoryStub(
+        {"حي النبطيه": [], "النبطيه": [(first, 0.50), (second, 0.50)]}
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["حي النبطية"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.village_review_required is True
+
+
+def test_real_name_that_starts_with_a_descriptor_still_matches_as_written() -> None:
+    industrial = _named_village(9, "مدينة الصناعية")
+    other = _named_village(10, "الصناعية")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "مدينه الصناعيه": [(industrial, 1.0)],
+            "الصناعيه": [(other, 0.60)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["مدينة الصناعية"], action=None)
+    )
+
+    assert result.village_matches[0].matched_village_id == 9
+
+
+def test_mention_that_is_only_a_descriptor_is_not_emptied() -> None:
+    villages = _GeoVillageRepositoryStub({"اطراف": []})
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["أطراف"], action=None)
+    )
+
+    assert result.village_matches[0].matched_village_id is None

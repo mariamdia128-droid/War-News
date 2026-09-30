@@ -143,6 +143,31 @@ def _village_match_exceptions() -> tuple[str, ...]:
     )
 
 
+VILLAGE_DESCRIPTOR_CATEGORY = "village_generic_descriptor"
+
+
+def _village_generic_descriptors() -> frozenset[str]:
+    return frozenset(
+        normalize_arabic_text(entry.term)
+        for entry in load_terminology("terminology/village_descriptors.yaml")
+        if entry.category == VILLAGE_DESCRIPTOR_CATEGORY and entry.term
+    )
+
+
+def _strip_generic_descriptors(text: str) -> str:
+    """Drop leading generic descriptor words ("أطراف بلدة X" -> "X").
+
+    Returns the input unchanged when nothing would be left, so a mention that is
+    only a descriptor is never reduced to an empty search text.
+    """
+    descriptors = _village_generic_descriptors()
+    tokens = text.split()
+    start = 0
+    while start < len(tokens) - 1 and tokens[start] in descriptors:
+        start += 1
+    return " ".join(tokens[start:]) if start else text
+
+
 def _condition_match_exceptions() -> tuple[str, ...]:
     return _exception_terms(
         "terminology/condition_match_exceptions.yaml",
@@ -486,6 +511,29 @@ class MatchingService(MatchingServiceInterface):
                 ),
             )
 
+        resolution = self._resolve_search_text(search_text, district_hint)
+        stripped = _strip_generic_descriptors(search_text)
+        if stripped == search_text:
+            return resolution
+        # A leading descriptor ("أطراف X") is dropped only when the remaining
+        # name resolves better, so real names that begin with one still match
+        # as written. The stored raw mention is never changed.
+        alternative = self._resolve_search_text(stripped, district_hint)
+        if self._resolution_rank(alternative) > self._resolution_rank(resolution):
+            return alternative
+        return resolution
+
+    @staticmethod
+    def _resolution_rank(resolution: _VillageCandidateResolution) -> float:
+        if resolution.alias_hit:
+            return 2.0
+        return float(resolution.classified.confidence or 0.0)
+
+    def _resolve_search_text(
+        self,
+        search_text: str,
+        district_hint: str | None,
+    ) -> _VillageCandidateResolution:
         resolve_alias = getattr(self.villages, "resolve_alias", None)
         if resolve_alias is not None and district_hint is None:
             alias_hit = resolve_alias(search_text)

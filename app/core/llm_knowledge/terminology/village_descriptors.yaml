@@ -1,0 +1,76 @@
+# Generic location descriptors that precede a village name in bulletins
+# ("أطراف ميفدون" = the outskirts of Mayfadoun). The matcher strips a leading
+# descriptor and matches the remaining name; the raw mention is stored unchanged.
+# A descriptor is only used when the stripped text scores better than the full
+# text, so real names that start with one of these words (مدينة الصناعية) still
+# match as written. Terms are compared after Arabic normalization.
+# Shape follows the other terminology YAML catalogs: term/category/meaning/notes.
+# Do NOT add وادي / عين / دير / جبل / كفر: those are parts of real village names.
+
+- term: "أطراف"
+  category: village_generic_descriptor
+  meaning: outskirts
+
+- term: "اطراف"
+  category: village_generic_descriptor
+  meaning: outskirts
+
+- term: "مشارف"
+  category: village_generic_descriptor
+  meaning: outskirts
+
+- term: "ضواحي"
+  category: village_generic_descriptor
+  meaning: suburbs
+
+- term: "محيط"
+  category: village_generic_descriptor
+  meaning: surroundings
+
+- term: "مرتفعات"
+  category: village_generic_descriptor
+  meaning: heights
+
+- term: "تلال"
+  category: village_generic_descriptor
+  meaning: hills
+
+- term: "جرود"
+  category: village_generic_descriptor
+  meaning: highlands
+
+- term: "خراج"
+  category: village_generic_descriptor
+  meaning: lands_of
+
+- term: "أراضي"
+  category: village_generic_descriptor
+  meaning: lands_of
+
+- term: "بلدة"
+  category: village_generic_descriptor
+  meaning: town
+
+- term: "بلدات"
+  category: village_generic_descriptor
+  meaning: towns
+
+- term: "قرية"
+  category: village_generic_descriptor
+  meaning: village
+
+- term: "مدينة"
+  category: village_generic_descriptor
+  meaning: city
+
+- term: "حي"
+  category: village_generic_descriptor
+  meaning: neighbourhood
+
+- term: "ساحة"
+  category: village_generic_descriptor
+  meaning: square
+
+- term: "منطقة"
+  category: village_generic_descriptor
+  meaning: area
