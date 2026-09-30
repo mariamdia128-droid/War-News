@@ -120,6 +120,8 @@ class CnrsExtractionFallback(ExtractionClassifierInterface):
         presence_category_keys: list[ExtractionCategoryKey],
         root_casualties: ExtractionCasualties,
         raw_message_id: int | None = None,
+        villages: list[str] | None = None,
+        casualty_scope: str | None = None,
     ) -> dict[ExtractionCategoryKey, ExtractionCategory]:
         """Tier 2 is always delegated to the full extraction classifier."""
         method = getattr(self.fallback, "extract_tier2_details")
@@ -128,6 +130,8 @@ class CnrsExtractionFallback(ExtractionClassifierInterface):
             presence_category_keys=presence_category_keys,
             root_casualties=root_casualties,
             raw_message_id=raw_message_id,
+            villages=villages,
+            casualty_scope=casualty_scope,
         )
 
     @staticmethod
