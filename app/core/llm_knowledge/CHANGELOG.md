@@ -1,5 +1,79 @@
 # llm_knowledge CHANGELOG
 
+## 2026-09-30 — Village verification flags: general matching rules (Phase 2)
+
+Recon: `Docs/recon/village-verification.md`. 354 live incidents carried the
+"Low-confidence village match" flag in 2026-08-20..09-30; 170 were already
+resolved by the current matcher (flags never recomputed) and the rest came from
+the causes below. Each fix is a general rule, not a per-village alias.
+
+**1. Definite-article fold (`village_match_key`).**
+Example: `الرمادية` scored 0.45 against `رمادية` (14 incidents); `الحنية` scored
+0.40 against `حنية` (5); `عرب الصاليم` vs `عرب صاليم` (3). The key drops a
+leading `ال` on every word of both the mention and the reference names; scoring
+takes the max over the plain, compact and key forms. Seven reference pairs
+collide under the key (`القنطرة`/`قنطرة`, `الرمانة`/`رمانة`, `الخريبة`/`خريبة`,
+...); they are not merged, and a plain-exact match wins the ordering.
+Tests: `tests/test_village_match_key.py`,
+`test_definite_article_variant_is_a_normalized_match`.
+
+**2. Generic location descriptors** (`terminology/village_descriptors.yaml`).
+Example: `أطراف ميفدون`, `مرتفعات حلتا`, `أطراف طلوسة`. A leading descriptor is
+stripped only when the remaining name resolves better; `مدينة الصناعية` keeps
+matching as written. Tests: `test_leading_descriptor_is_stripped_and_raw_mention_is_kept`,
+`test_descriptor_before_an_ambiguous_name_stays_flagged`,
+`test_real_name_that_starts_with_a_descriptor_still_matches_as_written`.
+
+**3. Flag decision rule.** A village is low confidence only when there is no
+candidate, the best score is under 0.5 (`VILLAGE_CONFIDENT_FLOOR`), or it is
+within 0.05 (`MATCH_TIE_MARGIN`) of a second distinct place, at every score
+level. A mention equal to exactly one reference name wins over longer names that
+contain it (`صور`, `بعلبك`, `جنين`); a region-suffixed twin (`عرمون` next to
+`عرمون كسروان`, `زبدين` next to `زبدين النبطية`) and two villages with the same
+name (`الطيبة`) stay reviewable, and an exact winner can still be overridden by a
+nearby geo anchor (`القصير`, raw 10395). Each match now stores
+`village_match_method` and, for accepted matches under 0.6, a soft
+`village_match_note`. Tests: `test_tie_between_distinct_villages_is_flagged_even_below_old_threshold`,
+`test_clear_best_match_below_old_threshold_is_accepted_with_a_note`,
+`test_exact_name_wins_over_longer_names_that_contain_it`,
+`test_two_villages_with_the_same_exact_name_stay_flagged`,
+`test_parent_and_child_names_are_not_a_tie`.
+
+**4. Multi-village bulletins.** `location_ambiguity` downgrades only the
+villages named in the ambiguity evidence or alternatives (all of them when the
+extraction does not say which). Example: «محيط مجدل زون وبيوت السياد» marks
+`مجدل زون` and leaves a sibling village confident. Tests:
+`test_location_ambiguity_downgrades_only_the_named_village`,
+`test_location_ambiguity_without_a_locatable_village_downgrades_all`. The
+per-incident review signal is scoped to the incident's own village in
+`verification_signals.py` (covered by `tests/test_village_verification_scoping.py`).
+
+**5. Tie resolution from bulletin context.** No new rule: the existing distance
+based geo-context path works (15 mentions in the flagged bulletins) and now
+records `village_match_method = "geo_context"`. Ties without an anchor, or where
+no candidate is clearly closer (`الفوقا`: two candidates in the same district),
+stay flagged. Test: `test_geo_context_resolution_records_the_geo_context_method`.
+
+**6. Foreign places and lexical overlap** (`terminology/non_lebanese_places.yaml`).
+Example: `الناصرة` scored 0.42 against `الناقورة` and `خان يونس` 0.38 against
+`بيت يونس`. A mention equal to a listed foreign place, with no exact Lebanese
+homonym, is now "no candidate". The overlap guard needs a shared whole word on
+the match key, not shared letters (`مرج` is not `مرجعيون`). Tests:
+`test_known_foreign_place_is_not_matched_to_a_lebanese_village`,
+`test_foreign_place_name_with_an_exact_lebanese_homonym_still_matches`,
+`test_shared_letters_do_not_count_as_lexical_overlap`.
+
+**7. Extraction rule: verbatim village names.** `rules/tier1_general_prompt.md`,
+`rules/tier1_event_prompt.md` and `rules/combined_tier1_prompt.md` now require the
+model to copy village names exactly as written in the source, in the source's
+script, and never translate, transliterate, correct or guess. Real failure: raw
+messages 37597 and 37706, «استهدفت أطراف بلدتي حداثا وحاريص», returned
+`village=["Harir"]` (37591: `["Harires"]`). Expected `["حداثا","حاريص"]`. Names the
+matcher cannot resolve are flagged by matching, not by the extraction. The
+extraction prompt has no unit test; the matching-side regression tests above
+cover the behaviour that depends on it, and the re-extraction effect must be
+checked on the next live sample.
+
 ## 2026-09-30 — Fix Red Alert Latin alias matching on multi-village crops
 
 **Bug:** Since `29426c2` (2026-09-29), Latin OCR aliases were matched with a
