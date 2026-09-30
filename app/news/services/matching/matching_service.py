@@ -222,8 +222,9 @@ VILLAGE_DESCRIPTOR_CATEGORY = "village_generic_descriptor"
 
 
 def _village_generic_descriptors() -> frozenset[str]:
+    # Compared on the village match key so "المدينة" and "مدينة" are one word.
     return frozenset(
-        normalize_arabic_text(entry.term)
+        village_match_key(entry.term)
         for entry in load_terminology("terminology/village_descriptors.yaml")
         if entry.category == VILLAGE_DESCRIPTOR_CATEGORY and entry.term
     )
@@ -238,7 +239,7 @@ def _strip_generic_descriptors(text: str) -> str:
     descriptors = _village_generic_descriptors()
     tokens = text.split()
     start = 0
-    while start < len(tokens) - 1 and tokens[start] in descriptors:
+    while start < len(tokens) - 1 and village_match_key(tokens[start]) in descriptors:
         start += 1
     return " ".join(tokens[start:]) if start else text
 
@@ -276,6 +277,7 @@ class _VillageCandidateResolution:
     method: str | None = None
     note: str | None = None
     geo_resolvable: bool = False
+    search_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -773,6 +775,23 @@ class MatchingService(MatchingServiceInterface):
                 classified.confidence,
                 MatchResultStatus.matched_low_confidence,
             )
+        # Between the floor and the old threshold a non-exact match must cover
+        # every word of the mention: "قلعة الشقيف" is not "القلعة" just because
+        # they share one word. Scores >= MATCH_THRESHOLD keep the old behaviour.
+        partial_cover = (
+            not district_resolved
+            and exact_winner is None
+            and classified.status == MatchResultStatus.matched
+            and float(classified.confidence or 0.0) < MATCH_THRESHOLD
+            and bool(lexical_candidates)
+            and not self._covers_every_word(search_text, lexical_candidates[0][0])
+        )
+        if partial_cover:
+            classified = _ClassifiedMatch(
+                classified.matched_id,
+                classified.confidence,
+                MatchResultStatus.matched_low_confidence,
+            )
         if exact_winner is not None:
             collision_like = False
         elif len(exact_candidates) > 1:
@@ -833,12 +852,37 @@ class MatchingService(MatchingServiceInterface):
             ),
             method=method,
             note=note,
+            search_text=search_text,
             # A confident exact-name winner that longer names also contain
             # ("القصير" / "عدشيت القصير") may still be overridden by a nearby
             # anchor (raw 10395), so it must not act as an anchor itself.
             geo_resolvable=exact_winner is not None
             and self._has_collision_like_alternative(search_text, candidates),
         )
+
+    @staticmethod
+    def _covers_every_word(normalized_mention: str, candidate: Village) -> bool:
+        """True when one name of the candidate contains every word of the mention.
+
+        Compared on the village match key; a compact-key equality covers spacing
+        variants. Candidates with no name data (test stubs) are left unaffected.
+        """
+        mention_tokens = [
+            token
+            for token in village_match_key(normalized_mention).split()
+            if len(token) >= 3
+        ]
+        names = _village_name_forms(candidate)
+        if not mention_tokens or not names:
+            return True
+        mention_compact = village_match_key(normalized_mention, compact=True)
+        for name in names:
+            name_tokens = village_match_key(name).split()
+            if all(token in name_tokens for token in mention_tokens):
+                return True
+            if mention_compact == village_match_key(name, compact=True):
+                return True
+        return False
 
     @staticmethod
     def _has_region_suffixed_rival(
@@ -1057,6 +1101,15 @@ class MatchingService(MatchingServiceInterface):
                 not resolution.conditional_candidate_ids
                 or candidate.id == resolution.candidates[0][0].id
                 or candidate.id in resolution.conditional_candidate_ids
+            )
+            # Geo context breaks ties between same-name villages; it must not
+            # promote a nearer candidate that does not cover the mention
+            # ("مزرعة بسطرة" is not "مزرعة طمره" because it is closer).
+            and (
+                not resolution.search_text
+                or candidate.id == resolution.candidates[0][0].id
+                or candidate.id in resolution.conditional_candidate_ids
+                or self._covers_every_word(resolution.search_text, candidate)
             )
         ]
         if len(eligible) < 2:

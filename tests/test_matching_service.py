@@ -1526,3 +1526,45 @@ def test_bare_name_next_to_a_region_suffixed_twin_stays_reviewable() -> None:
 
     assert vm.matched_village_id == 121
     assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+
+
+def test_geo_context_does_not_promote_a_nearer_candidate_that_misses_the_mention() -> None:
+    anchor = _geo_village(10, "مرساة", 0, 0)
+    far_top = _geo_village(20, "مزرعة", 100000, 0)
+    near_unrelated = _geo_village(30, "مزرعة طمره", 1000, 0)
+    villages = _GeoVillageRepositoryStub(
+        {"مزرعه بسطره": [(far_top, 0.50), (near_unrelated, 0.44)]},
+        aliases={"مرساة": anchor},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["مرساة", "مزرعة بسطرة"], action=None)
+    )
+
+    village_match = result.village_matches[1]
+    assert village_match.resolved_by_geo_context is False
+    assert village_match.matched_village_id != near_unrelated.id
+    assert village_match.village_match_status == MatchResultStatus.matched_low_confidence
+
+
+def test_partial_word_cover_below_old_threshold_stays_flagged() -> None:
+    castle = _named_village(1222, "القلعة")
+    other = _named_village(17, "عدشيت الشقيف")
+
+    vm = _match_one("قلعة الشقيف", {"قلعه الشقيف": [(castle, 0.55), (other, 0.39)]})
+
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+
+
+def test_descriptor_with_definite_article_is_stripped() -> None:
+    khiam = _named_village(901, "الخيام")
+    villages = _GeoVillageRepositoryStub(
+        {"المدينه الخيام": [(khiam, 0.53)], "الخيام": [(khiam, 1.0)]}
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["المدينة الخيام"], action=None)
+    )
+
+    assert result.village_matches[0].village_match_status == MatchResultStatus.matched
+    assert result.village_matches[0].raw_village_text == "المدينة الخيام"
