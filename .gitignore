@@ -20,3 +20,5 @@ war_news_dev.dump
 Data/pgadmin4-*.db
 scripts/output/historical_incident_reconcile/
 backups/
+backup.sql
+war_news_dev_backup_*.sql
