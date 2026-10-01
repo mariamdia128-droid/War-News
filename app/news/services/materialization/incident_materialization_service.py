@@ -37,6 +37,9 @@ from app.news.models import (
     UpdateAction,
 )
 from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
+from app.news.services.air_violations.air_violation_routing import (
+    record_air_violation_outcome,
+)
 from app.news.services.air_violations.air_violation_eligibility import (
     evaluate_air_violation_text,
 )
@@ -975,6 +978,16 @@ class IncidentMaterializationService:
         air_ids = [value for value in ids if value in AIR_VIOLATION_CONDITION_IDS]
         eligibility = evaluate_air_violation_text(representative.raw_text)
         if not air_ids or eligibility.eligible:
+            return match_result
+
+        if eligibility.rejected_without_incident or eligibility.held_for_review:
+            # Rules A, B, D and E. These are not air violations and not
+            # incidents either, so there is nothing to reroute: record the
+            # outcome and leave the match result alone. The status written
+            # here keeps the row out of every downstream stage.
+            record_air_violation_outcome(
+                representative, eligibility, stage="incident_materialization"
+            )
             return match_result
 
         # Only a kinetic report carries enough evidence to infer an incident

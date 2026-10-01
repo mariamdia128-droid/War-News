@@ -2,10 +2,11 @@ from app.news.services.air_violations.air_violation_exclusions import air_violat
 
 
 def test_excludes_unifil_aircraft() -> None:
+    """UNIFIL is now one party under the general non-Israeli rule (rule A)."""
     result = air_violation_exclusion("تحليق طائرة تابعة لليونيفيل فوق الناقورة")
 
     assert result is not None
-    assert result.reason == "excluded_unifil_aircraft"
+    assert result.reason == "rejected_non_israeli_aircraft"
 
 
 def test_does_not_exclude_ocr_un_fragments() -> None:

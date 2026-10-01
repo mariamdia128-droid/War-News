@@ -44,7 +44,11 @@ from app.news.services.air_violations.window_grouping_service import (
 )
 from app.news.services.air_violations.caza_alias_resolver import canonicalize_caza
 from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_location,
     evaluate_air_violation_text,
+)
+from app.news.services.air_violations.air_violation_routing import (
+    record_air_violation_outcome,
 )
 from app.news.services.air_violations.war_month import war_month
 from app.sources.models import Source, SourceType
@@ -759,12 +763,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             return False
         eligibility = evaluate_air_violation_text(message.raw_text)
         if not eligibility.eligible:
-            audit = dict(message.filter_result or {})
-            audit["air_violation_rerouted"] = {
-                "reason": eligibility.reason,
-                "matched_terms": eligibility.matched_terms,
-            }
-            message.filter_result = audit
+            # The last post-LLM boundary. Whatever the model chose, a rejected
+            # text never becomes an air violation here, and a reject_no_incident
+            # result is never handed back to the incident pipeline.
+            record_air_violation_outcome(message, eligibility, stage="air_violation_repository")
             return False
         matched_village_id: int | None = next(
             (
@@ -812,6 +814,25 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             caza_en, caza_ar = "Multiple regions", "مناطق متعددة"
         elif len(matched_cazas) == 1:
             caza_en, caza_ar = next(iter(matched_cazas))
+        # Rules C/D/E. An air violation needs a place: a resolved village, or
+        # failing that a recognised region. "Multiple regions" earned from
+        # several matched cazas is a real designation and still passes; the
+        # same label earned from a bare "لبنان" is rule D and does not.
+        location = evaluate_air_violation_location(
+            message.raw_text,
+            has_resolved_village=matched_village_id is not None,
+            caza_label=caza_en or caza_ar,
+            unmatched_names=tuple(
+                vm.raw_village_text
+                for vm in result.village_matches
+                if vm.matched_village_id is None and vm.raw_village_text
+            ),
+        )
+        if not location.eligible:
+            record_air_violation_outcome(
+                message, location, stage="air_violation_repository"
+            )
+            return False
         values = {
             "condition_id": result.matched_condition_id,
             "source_id": message.source_id,

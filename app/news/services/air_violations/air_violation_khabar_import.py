@@ -13,7 +13,10 @@ from app.news.dtos import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
 from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
 from app.news.models import AirViolation, Condition, MessageStatus, RawMessage, Village
 from app.news.models.air_violation import AirViolationLocation
-from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
+from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_location,
+    evaluate_air_violation_text,
+)
 from app.news.services.air_violations.red_alert_air_violation_service import RedAlertAirViolationService
 from app.news.services.air_violations.air_violation_workbook_service import AirViolationWorkbookService
 from app.news.services.air_violations.war_month import war_month
@@ -21,6 +24,20 @@ from app.sources.models import Source, SourceType
 from app.sources.services.red_alert_collector import classify_condition
 from app.news.services.air_violations.import_source_enrichment import ImportSourceLookup, import_location_text, match_import_village, source_local_datetime, researched_import_location
 from app.news.repositories.air_violation_repository import air_violation_caza_labels
+
+
+def _raise_if_ineligible(text: str) -> None:
+    """Refuse the row with the deterministic reason, whatever the outcome.
+
+    An import row has no raw message to re-queue, so every ineligible
+    outcome -- reroute, reject or hold -- is reported to the uploader as a
+    row error rather than being routed anywhere.
+    """
+    result = evaluate_air_violation_text(text)
+    if result.eligible:
+        return
+    evidence = ", ".join(result.matched_terms) or text[:80].strip()
+    raise ValueError(f"{result.reason}: {evidence}")
 
 
 def _duplicate_key(value: object) -> str | None:
@@ -108,17 +125,13 @@ class AirViolationKhabarImportService:
                 if not isinstance(text, str) or not text.strip():
                     raise ValueError('Khabar must contain news text.')
                 text = text.strip()
-                exclusion = air_violation_exclusion(text)
-                if exclusion is not None:
-                    raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
+                _raise_if_ineligible(text)
                 enrichment = source_lookup.lookup(AirViolationWorkbookService._optional(row.get('link'))).copy()
                 source_text = enrichment.get('text') or ''
                 # Only screen enrichment text when there is some; an absent
                 # link is not an ineligible row.
                 if source_text.strip():
-                    exclusion = air_violation_exclusion(source_text)
-                    if exclusion is not None:
-                        raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
+                    _raise_if_ineligible(source_text)
                 condition_id = classify_condition(text) or classify_condition(source_text)
                 if condition_id not in AIR_VIOLATION_CONDITION_IDS:
                     raise ValueError('No supported aircraft action found in Khabar.')
@@ -143,6 +156,19 @@ class AirViolationKhabarImportService:
                     caza_en, caza_ar = air_violation_caza_labels(
                         text, None, None, list({(item.caza_en, item.caza_ar) for item in villages}),
                     )
+                # Rules C/D/E. An imported row needs a place too: a matched
+                # village, or a recognised region to stand in for one.
+                location_check = evaluate_air_violation_location(
+                    text,
+                    has_resolved_village=village is not None,
+                    caza_label=caza_en or caza_ar,
+                    unmatched_names=(supplied_village,) if supplied_village else (),
+                )
+                if not location_check.eligible:
+                    evidence = location_check.unmatched_location or ", ".join(
+                        location_check.matched_terms
+                    ) or text[:80].strip()
+                    raise ValueError(f"{location_check.reason}: {evidence}")
                 published = source_local_datetime(enrichment)
                 event_date = parse_event_date(row.get('date'), published.date() if published else default_date)
                 event_time = AirViolationWorkbookService._time(row.get('time'))

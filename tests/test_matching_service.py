@@ -17,6 +17,7 @@ from app.news.dtos import (
     MatchResultStatus,
 )
 from app.news.dtos.match_result_dto import VillageMatchResult
+from app.news.models import MessageStatus
 from app.news.services.matching.matching_service import MatchingService
 
 
@@ -725,6 +726,12 @@ def test_action_does_not_persist_match_when_air_violation_routing_fails() -> Non
     )
     message = SimpleNamespace(
         id=42,
+        # Real presence-only text: the eligibility rules must pass it through
+        # so routing is actually reached and the retry guard is exercised.
+        raw_text="تحليق طيران استطلاعي فوق بلدة عيترون",
+        filter_result=None,
+        status=MessageStatus.parsed,
+        error_message=None,
         extraction_result=_extraction(
             village=None,
             action="surveillance aircraft",
@@ -780,6 +787,8 @@ def test_post_llm_air_result_is_rematched_to_incident(raw_text: str) -> None:
         raw_text=raw_text,
         raw_payload={},
         filter_result=None,
+        status=MessageStatus.parsed,
+        error_message=None,
         cnrs_classification=None,
         extraction_result=_extraction(action="Helicopter Hovering").model_dump(mode="json"),
     )

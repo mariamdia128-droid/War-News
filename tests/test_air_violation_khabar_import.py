@@ -109,7 +109,9 @@ def test_classifies_news_and_reports_unmatched_rows():
     result = AirViolationKhabarImportService(db).import_file(
         BytesIO(json.dumps(rows).encode()), 'news.json', date(2026, 9, 7),
     )
-    assert (result.processed, result.succeeded, result.failed) == (4, 3, 1)
+    # Row 4 names no place that resolves and no caza, so the location
+    # requirement refuses it; row 5 is not air activity at all.
+    assert (result.processed, result.succeeded, result.failed) == (4, 2, 2)
     records = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], AirViolation)]
     assert records[0].condition_id == 36
     assert records[0].caza_en == 'Nabatiye'
@@ -118,13 +120,11 @@ def test_classifies_news_and_reports_unmatched_rows():
     assert records[1].event_date == date(2026, 8, 1)
     messages = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RawMessage)]
     assert messages[0].match_result['village_matches'][0]['matched_village_id'] == 7
-    assert records[2].caza_en is None
-    assert records[2].caza_ar is None
-    assert messages[2].match_result['village_matches'] == []
-    assert [error.row for error in result.row_errors] == [5]
+    assert [error.row for error in result.row_errors] == [4, 5]
+    assert result.row_errors[0].error.startswith('unmatched_location')
 
 
-@pytest.mark.parametrize('caza, english, arabic', [('Custom district', 'Custom district', None), ('بيروت', None, 'بيروت'), (None, None, None)])
+@pytest.mark.parametrize('caza, english, arabic', [('Custom district', 'Custom district', None), ('بيروت', None, 'بيروت')])
 def test_import_without_village_preserves_supplied_caza(caza, english, arabic):
     db = MagicMock()
     db.scalars.return_value.all.return_value = []
@@ -138,6 +138,29 @@ def test_import_without_village_preserves_supplied_caza(caza, english, arabic):
     assert (record.caza_en, record.caza_ar) == (english, arabic)
     assert record.condition_id == 36
     assert record.khabar == rows[0]['Khabar']
+
+
+def test_import_without_a_village_or_a_caza_is_refused():
+    """Rules C/E: an air violation needs a place, and none may be invented.
+
+    This replaces the earlier decision that air violations were exempt from
+    the village requirement.
+    """
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    db.scalar.return_value = SimpleNamespace(id=1)
+    db.execute.return_value.scalar_one_or_none.return_value = None
+    rows = [{'Khabar': 'طيران استطلاعي فوق بلدة كفرشلالا'}]
+
+    result = AirViolationKhabarImportService(db).import_file(
+        BytesIO(json.dumps(rows).encode()), 'news.json', date(2026, 9, 7))
+
+    assert (result.succeeded, result.failed) == (0, 1)
+    assert result.row_errors[0].error == 'unmatched_location: كفرشلالا'
+    assert not [
+        call.args[0] for call in db.add.call_args_list
+        if isinstance(call.args[0], AirViolation)
+    ]
 
 
 def test_khabar_text_itself_is_still_screened_without_a_link():
@@ -158,7 +181,9 @@ def test_retry_skips_previously_imported_record():
     db.scalars.return_value.all.return_value = []
     db.scalar.return_value = SimpleNamespace(id=1)
     db.execute.return_value.scalar_one_or_none.return_value = 123
-    rows = [{'Khabar': 'طيران استطلاعي في المنطقة'}]
+    # A caza is supplied: with no village and no region the row would now be
+    # refused by the location requirement before the retry check is reached.
+    rows = [{'Khabar': 'طيران استطلاعي في المنطقة', 'Caza': 'Nabatiye'}]
     result = AirViolationKhabarImportService(db).import_file(
         BytesIO(json.dumps(rows).encode()), 'news.json', date(2026, 9, 7))
     assert (result.processed, result.succeeded, result.skipped, result.failed) == (1, 0, 1, 0)
@@ -186,7 +211,7 @@ def test_source_enrichment_fills_only_missing_dates_and_times(monkeypatch, file_
     db.scalars.return_value.all.return_value = []
     db.scalar.return_value = SimpleNamespace(id=1)
     db.execute.return_value.scalar_one_or_none.return_value = None
-    row = {'Khabar': 'مسير المنزلة', 'Date': file_date, 'Time': file_time, 'Link': 'https://t.me/channel/42'}
+    row = {'Khabar': 'مسير المنزلة', 'Caza': 'Sour', 'Date': file_date, 'Time': file_time, 'Link': 'https://t.me/channel/42'}
     result = AirViolationKhabarImportService(db).import_file(BytesIO(json.dumps([row]).encode()), 'news.json', date(2026, 9, 9))
     assert result.succeeded == 1
     record = next(call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], AirViolation))

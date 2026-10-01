@@ -7,6 +7,9 @@ from app.news.interfaces import MatchingServiceInterface
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.interfaces import AirViolationRepositoryInterface
 from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
+from app.news.services.air_violations.air_violation_routing import (
+    record_air_violation_outcome,
+)
 from app.news.services.air_violations.air_violation_eligibility import (
     evaluate_air_violation_text,
 )
@@ -98,24 +101,25 @@ class MatchIncidentAction:
                 getattr(message, "raw_text", None)
             )
             if not eligibility.eligible:
-                filter_result = dict(
-                    getattr(message, "filter_result", None) or {}
+                record_air_violation_outcome(
+                    message, eligibility, stage="match_incident_action"
                 )
-                filter_result["air_violation_rerouted"] = {
-                    "reason": eligibility.reason,
-                    "matched_terms": eligibility.matched_terms,
-                }
-                message.filter_result = filter_result
+                if eligibility.rejected_without_incident or eligibility.held_for_review:
+                    # A decided non-event (rules A, B, D) or a row a human must
+                    # look at (rule E). Re-running the matcher here would hand
+                    # it an invented incident action and push it onward, which
+                    # is exactly what the status this just wrote forbids. Save
+                    # the match result as-is and stop.
+                    self.raw_messages.save_match_result(message, result)
+                    return result
                 # Only a kinetic report carries enough evidence to infer an
-                # incident action. A bare tag or a channel notice does not, so
-                # it goes to the review sink instead of being read as one.
+                # incident action.
                 incident_action = (
                     condition_fallback_from_text(
                         getattr(message, "raw_text", None)
                     )
-                    if eligibility.belongs_in_incidents
-                    else None
-                ) or "Unclassified / Needs Review"
+                    or "Unclassified / Needs Review"
+                )
                 extraction_result = extraction_result.model_copy(
                     update={"action_description": incident_action}
                 )

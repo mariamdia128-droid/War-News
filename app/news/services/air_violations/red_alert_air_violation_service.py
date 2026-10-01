@@ -7,7 +7,12 @@ from app.news.dtos import MatchResultDTO, MatchResultStatus
 from app.news.dtos.match_result_dto import VillageMatchResult
 from app.news.interfaces import AirViolationRepositoryInterface
 from app.news.models import MessageStatus, RawMessage, Village
-from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
+from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_text,
+)
+from app.news.services.air_violations.air_violation_routing import (
+    record_air_violation_outcome,
+)
 from app.news.constants.air_violation_conditions import AIR_VIOLATION_DRONE_CONDITION_ID
 from app.news.services.air_violations.latin_location_words import latin_location_words, latin_name_in_words
 
@@ -54,10 +59,10 @@ class RedAlertAirViolationService:
     def process(self, message: RawMessage, villages: list[Village]) -> bool:
         text = message.raw_text or ""
         primary_text = self._primary_text(message) or text
-        exclusion = air_violation_exclusion(text)
-        if exclusion is not None:
+        eligibility = evaluate_air_violation_text(text)
+        if not eligibility.eligible:
             self.air_violations.discard_for_message(message)
-            self._route_to_incident_pipeline(message, exclusion.reason, exclusion.evidence_span)
+            record_air_violation_outcome(message, eligibility, stage="red_alert")
             return False
 
         condition_id = self.classify_condition(text)
@@ -82,6 +87,10 @@ class RedAlertAirViolationService:
             caza_en, caza_ar = self._match_caza(primary_text, villages)
             if not (caza_en or caza_ar):
                 caza_en, caza_ar = self._match_caza(text, villages)
+            # Rule C is satisfied here by the caza: a Red Alert row with no
+            # village keeps its region designation, and a row with neither is
+            # rejected just below. Rule D needs no check at this point -- a
+            # country-level direction never gets past the text rules above.
             if not (caza_en or caza_ar):
                 self.air_violations.discard_for_message(message)
                 self._reject(message, self._missing_village_reason(message))
@@ -354,25 +363,3 @@ class RedAlertAirViolationService:
         message.status = MessageStatus.rejected
         message.error_message = error
 
-    @staticmethod
-    def _route_to_incident_pipeline(
-        message: RawMessage,
-        reason: str,
-        evidence_span: str | None,
-    ) -> None:
-        audit = dict(message.filter_result or {})
-        audit["air_violation_rerouted"] = {
-            "reason": reason,
-            "matched_terms": [evidence_span] if evidence_span else [],
-        }
-        message.filter_result = audit
-        # A collector retry must never reopen a message whose incident already
-        # reached a terminal state.
-        if message.status not in {MessageStatus.materialized, MessageStatus.duplicate}:
-            # 'parsed', not 'pending': writing the audit fills filter_result,
-            # and the relevance stage only claims pending rows whose
-            # filter_result IS NULL, so a pending row here is claimed by no
-            # stage at all. 'parsed' feeds pre-dedup/extraction when there is
-            # no extraction yet, and matching when there is.
-            message.status = MessageStatus.parsed
-            message.error_message = None
