@@ -62,14 +62,122 @@ def test_village_labels_do_not_override_stored_multi_region_caza():
 
 def test_list_response_collapses_air_violation_window_rows():
     rows = [
-        {"id": 2, "condition_id": 35, "window_id": "35:South Lebanon:2026-09-28T10:17:59"},
-        {"id": 1, "condition_id": 35, "window_id": "35:South Lebanon:2026-09-28T10:17:59"},
-        {"id": 3, "condition_id": 36, "window_id": None},
+        {"id": 2, "condition_id": 36, "window_id": "36:South Lebanon:2026-09-28T10:17:59"},
+        {"id": 1, "condition_id": 36, "window_id": "36:South Lebanon:2026-09-28T10:17:59"},
+        {"id": 3, "condition_id": 35, "window_id": None},
     ]
 
     result = AirViolationRepository._collapse_windowed_items(rows)
 
     assert [item["id"] for item in result] == [2, 3]
+
+
+def test_list_response_does_not_collapse_warplane_rows():
+    rows = [
+        {"id": 2, "condition_id": 35, "window_id": "35:Sour:2026-09-28T10:00:00"},
+        {"id": 1, "condition_id": 35, "window_id": "35:Sour:2026-09-28T10:00:00"},
+    ]
+
+    result = AirViolationRepository._collapse_windowed_items(rows)
+
+    assert [item["id"] for item in result] == [2, 1]
+
+
+def test_window_metadata_aggregates_villages_and_reports():
+    items = [
+        {
+            "id": 2, "condition_id": 36, "caza_en": "Sour", "caza_ar": None,
+            "event_date": date(2026, 9, 22), "event_time": time(10, 30),
+            "villages": [{"village_id": 2, "name": "Maarakeh"}], "khabar": "Second report",
+            "source_name": "Source B", "source_link": "https://example.test/b", "window_id": None,
+        },
+        {
+            "id": 1, "condition_id": 36, "caza_en": "Tyre", "caza_ar": None,
+            "event_date": date(2026, 9, 22), "event_time": time(10, 0),
+            "villages": [{"village_id": 1, "name": "Aadloun"}], "khabar": "First report",
+            "source_name": "Source A", "source_link": None, "window_id": None,
+        },
+    ]
+
+    result = AirViolationRepository._attach_window_metadata(items, items)
+
+    assert result[0]["villages"] == [
+        {"village_id": 1, "name": "Aadloun"},
+        {"village_id": 2, "name": "Maarakeh"},
+    ]
+    assert result[0]["window_violation_count"] == 2
+    assert result[0]["window_duration_minutes"] == 60
+    assert [report["id"] for report in result[0]["window_reports"]] == [1, 2]
+
+
+def test_window_metadata_includes_reports_outside_the_visible_filter():
+    visible = {
+        "id": 2, "condition_id": 36, "caza_en": "Koura", "caza_ar": None,
+        "event_date": date(2026, 9, 22), "event_time": time(13, 30),
+        "villages": [{"village_id": 2, "name": "Amioun"}], "khabar": "Visible report",
+        "source_name": "Source B", "source_link": None, "window_id": None,
+    }
+    earlier = {
+        "id": 1, "condition_id": 36, "caza_en": "Koura", "caza_ar": None,
+        "event_date": date(2026, 9, 22), "event_time": time(10, 0),
+        "villages": [{"village_id": 1, "name": "Kfar Hazir"}], "khabar": "Earlier report",
+        "source_name": "Source A", "source_link": None, "window_id": None,
+    }
+
+    result = AirViolationRepository._attach_window_metadata([visible], [visible, earlier])
+
+    assert result[0]["villages"] == [
+        {"village_id": 1, "name": "Kfar Hazir"},
+        {"village_id": 2, "name": "Amioun"},
+    ]
+    assert result[0]["window_violation_count"] == 2
+    assert result[0]["window_duration_minutes"] == 240
+
+
+def test_window_metadata_dedupes_village_by_id_not_spelling():
+    items = [
+        {
+            "id": 2, "condition_id": 36, "caza_en": "Sour", "caza_ar": None,
+            "event_date": date(2026, 9, 22), "event_time": time(10, 30),
+            "villages": [{"village_id": 44, "name": "صور"}],
+            "khabar": "Second", "source_name": "B", "source_link": None,
+            "window_id": None,
+        },
+        {
+            "id": 1, "condition_id": 36, "caza_en": "Sour", "caza_ar": None,
+            "event_date": date(2026, 9, 22), "event_time": time(10, 0),
+            "villages": [{"village_id": 44, "name": "Tyre"}],
+            "khabar": "First", "source_name": "A", "source_link": None,
+            "window_id": None,
+        },
+    ]
+
+    result = AirViolationRepository._attach_window_metadata(items, items)
+
+    assert result[0]["villages"] == [{"village_id": 44, "name": "Tyre"}]
+    assert result[0]["window_violation_count"] == 2
+
+
+def test_unconfirmed_surveillance_region_stays_as_individual_reports():
+    items = [
+        {
+            "id": 2, "condition_id": 36, "caza_en": "South Lebanon", "caza_ar": None,
+            "event_date": date(2026, 9, 22), "event_time": time(10, 30),
+            "villages": [], "khabar": "Second report", "source_name": "Source B",
+            "source_link": None, "window_id": None,
+        },
+        {
+            "id": 1, "condition_id": 36, "caza_en": "South Lebanon", "caza_ar": None,
+            "event_date": date(2026, 9, 22), "event_time": time(10, 0),
+            "villages": [], "khabar": "First report", "source_name": "Source A",
+            "source_link": None, "window_id": None,
+        },
+    ]
+
+    result = AirViolationRepository._attach_window_metadata(items, items)
+
+    assert all(item["window_id"] is None for item in result)
+    assert [item["id"] for item in AirViolationRepository._collapse_windowed_items(result)] == [2, 1]
 
 
 def test_condition_45_is_not_routed_to_air_violations():

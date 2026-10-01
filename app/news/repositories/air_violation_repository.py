@@ -8,6 +8,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from zoneinfo import ZoneInfo
 
 from app.core.text_sanitizer import strip_emoji_and_pictographs
+from app.core.text_normalization import normalize_arabic_text
 from app.core.cache import increment
 from app.news.constants.air_violation_conditions import (
     AIR_VIOLATION_CONDITION_ID_TUPLE,
@@ -36,6 +37,7 @@ from app.news.models import (
 )
 from app.news.services.air_violations.window_grouping_service import (
     AirViolationWindowInput,
+    AirViolationWindowVillage,
     assign_air_violation_window_ids,
     group_air_violation_windows,
     surveillance_window_minutes,
@@ -73,6 +75,10 @@ AIR_VIOLATION_DEFAULT_CAZA_HOURS = 1
 
 def _normalize_caza_token(value: str) -> str:
     return re.sub(r"[\W_]+", " ", value.casefold()).strip()
+
+
+def _normalized_village_name(value: object) -> str:
+    return " ".join(normalize_arabic_text(str(value or "")).casefold().split())
 
 
 def air_violation_caza_window_hours(caza_en: str | None, condition_id: int | None = None) -> int:
@@ -268,11 +274,30 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 else item.get("caza_en")
             )
             item["village_ar"] = village.ref_name_ar if village else item.get("caza_ar") or item.get("import_location_text")
-            item["villages"] = [
-                village.ref_name_en or village.ref_name_ar or village.acs_name or village.cad_name
-                for village in location_villages
-                if village.ref_name_en or village.ref_name_ar or village.acs_name or village.cad_name
-            ] or ([item["village_en"]] if item.get("village_en") else [])
+            village_objects = {
+                location_village.id: {
+                    "village_id": location_village.id,
+                    "name": location_village.ref_name_en
+                    or location_village.ref_name_ar
+                    or location_village.acs_name
+                    or location_village.cad_name,
+                }
+                for location_village in location_villages
+                if location_village.ref_name_en
+                or location_village.ref_name_ar
+                or location_village.acs_name
+                or location_village.cad_name
+            }
+            fallback_name = (
+                item.get("import_location_text")
+                or item.get("village_en")
+                or item.get("village_ar")
+            )
+            item["villages"] = list(village_objects.values()) or (
+                [{"village_id": None, "name": str(fallback_name).strip()}]
+                if _normalized_village_name(fallback_name)
+                else []
+            )
             item.pop("raw_match_village_ids", None)
             item.pop("import_location_text", None)
         return data
@@ -286,7 +311,14 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             caza_ar=item.get("caza_ar"),
             event_date=item["event_date"],
             event_time=item.get("event_time"),
-            villages=tuple(item.get("villages") or []),
+            villages=tuple(
+                AirViolationWindowVillage(
+                    village_id=village.get("village_id"),
+                    name=str(village.get("name") or ""),
+                )
+                for village in (item.get("villages") or [])
+                if isinstance(village, dict)
+            ),
         )
 
     @staticmethod
@@ -299,7 +331,14 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             for item in all_items
         )
         window_stats: dict[str, dict[str, object]] = {}
-        for item in all_items:
+        for item in sorted(
+            all_items,
+            key=lambda row: (
+                row["event_date"],
+                row.get("event_time") or time.min,
+                int(row["id"]),
+            ),
+        ):
             if int(item["condition_id"]) != 36:
                 continue
             item_id = int(item["id"])
@@ -314,10 +353,22 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             stats["start"] = min(stats["start"], item_dt)
             stats["end"] = max(stats["end"], item_dt)
             stats["count"] = int(stats["count"]) + 1
-            stats["villages"] = list(dict.fromkeys([
-                *stats["villages"],
-                *(item.get("villages") or []),
-            ]))
+            villages_by_key = {
+                (
+                    ("id", village.get("village_id"))
+                    if village.get("village_id") is not None
+                    else ("name", _normalized_village_name(village.get("name")))
+                ): village
+                for village in stats["villages"]
+            }
+            for village in item.get("villages") or []:
+                key = (
+                    ("id", village.get("village_id"))
+                    if village.get("village_id") is not None
+                    else ("name", _normalized_village_name(village.get("name")))
+                )
+                villages_by_key.setdefault(key, village)
+            stats["villages"] = list(villages_by_key.values())
             stats["reports"].append({
                 "id": item_id,
                 "event_date": item["event_date"],
@@ -942,15 +993,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         ).all()
         items = self._with_village_labels(rows)
         grouped = group_air_violation_windows(
-            AirViolationWindowInput(
-                id=int(item["id"]),
-                condition_id=int(item["condition_id"]),
-                caza_en=item.get("caza_en"),
-                caza_ar=item.get("caza_ar"),
-                event_date=item["event_date"],
-                event_time=item.get("event_time"),
-                villages=tuple(item.get("villages") or []),
-            )
+            self._air_violation_window_input(item)
             for item in items
         )
         total = len(grouped)

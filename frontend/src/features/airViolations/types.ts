@@ -8,7 +8,7 @@ export type AirViolation = {
   caza_ar: string | null;
   village_en: string | null;
   village_ar: string | null;
-  villages?: string[];
+  villages?: AirViolationVillage[];
   event_month: string | null;
   war_month: number | null;
   event_date: string;
@@ -43,7 +43,12 @@ export type AirViolationWindowReport = {
   khabar: string;
   source_name: string;
   source_link: string | null;
-  villages: string[];
+  villages: AirViolationVillage[];
+};
+
+export type AirViolationVillage = {
+  village_id: number | null;
+  name: string;
 };
 
 export type AirViolationListResponse = {
@@ -60,7 +65,7 @@ export type AirViolationWindow = {
   window_start: string;
   window_end: string;
   violation_count: number;
-  villages: string[];
+  villages: AirViolationVillage[];
 };
 
 export type AirViolationWindowListResponse = {

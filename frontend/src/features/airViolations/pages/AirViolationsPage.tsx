@@ -10,7 +10,7 @@ import { useAuthStore } from "../../../stores/authStore";
 import { useAirViolationSummaryQuery, useAirViolationsQuery } from "../hooks";
 import { useVillagesQuery } from "../../news/hooks";
 import { acquireAirViolationEditLock, createAirViolation, deleteAirViolation, exportAirViolations, releaseAirViolationEditLock, updateAirViolation } from "../api";
-import type { AirViolation } from "../types";
+import type { AirViolation, AirViolationVillage } from "../types";
 import { importAirViolationKhabar } from "../api";
 import type { WorkbookImportSummary } from "../../news/api";
 
@@ -29,21 +29,13 @@ const formatWindowId = (value: string | null) => {
   if (!value) {
     return emptyText;
   }
-  const separatorIndex = value.indexOf(":");
-  if (separatorIndex === -1) {
+  const parts = value.split(":");
+  if (parts.length < 5) {
     return value;
   }
-  const caza = value.slice(0, separatorIndex);
-  const timestamp = value.slice(separatorIndex + 1);
+  const caza = parts[1];
+  const timestamp = parts.slice(2, 5).join(":");
   return `${caza} - ${formatDateTime(timestamp)}`;
-};
-
-const recordWindowLabel = (row: AirViolation) => {
-  if (row.window_start && row.window_end) {
-    const count = row.window_violation_count ?? 1;
-    return count === 1 ? "1 report" : `${count} reports`;
-  }
-  return null;
 };
 
 const recordWindowRange = (row: AirViolation) => {
@@ -53,85 +45,40 @@ const recordWindowRange = (row: AirViolation) => {
   return formatWindowId(row.window_id);
 };
 
-const TextCell = ({ value }: { value: string | null }) => (
-  <span
-    className="block max-w-lg truncate whitespace-nowrap text-text-primary"
-    title={value || undefined}
-  >
-    {value || emptyText}
-  </span>
-);
-
 const villageList = (row: AirViolation | null) => {
   if (!row) return [];
   if (row.villages?.length) {
-    return Array.from(new Set(row.villages.filter((value) => value.trim() !== "")));
+    return row.villages.filter((value) => value.name.trim() !== "");
   }
-  const values: string[] = [
-    ...(row.village_en ? [row.village_en] : []),
-    ...(row.village_ar && row.village_ar !== row.village_en ? [row.village_ar] : []),
+  const values: AirViolationVillage[] = [
+    ...(row.village_en ? [{ village_id: row.village_id ?? null, name: row.village_en }] : []),
+    ...(row.village_ar && row.village_ar !== row.village_en ? [{ village_id: row.village_id ?? null, name: row.village_ar }] : []),
   ];
-  return Array.from(new Set(values.filter((value) => value.trim() !== "")));
+  return values;
 };
 
-const redAlertFallbackVillages = (row: AirViolation | null) => {
-  if (!row) return [];
-  return [];
-  const text = `${row.caza_en ?? ""} ${row.caza_ar ?? ""} ${row.village_en ?? ""} ${row.village_ar ?? ""} ${row.khabar ?? ""}`.toLowerCase();
-  const isWestBekaa = text.includes("west bekaa") || text.includes("البقاع");
-  const isLibbayaRedZone = text.includes("libbaya") || text.includes("lebbaya") || text.includes("لبايا");
-  if (isWestBekaa && isLibbayaRedZone) {
-    return ["Qaraaoun", "Machghara", "Sohmor", "Aain Et-Tine", "Libbaya BG"];
-  }
-  const isNabatiye = text.includes("nabatiye") || text.includes("نبط");
-  const isZibdine = text.includes("zibdine") || text.includes("zebdine") || text.includes("zibqine") || text.includes("زبدين");
-  if (isNabatiye && isZibdine) {
-    return ["Zibdine"];
-  }
-  return [];
+const displayVillages = villageList;
+
+const surveillanceRule = (row: AirViolation) => {
+  if (row.condition_id !== 36) return null;
+  if (!row.window_duration_minutes) return "Caza review required";
+  return row.window_duration_minutes === 60
+    ? "1-hour window"
+    : `${row.window_duration_minutes / 60}-hour window`;
 };
 
-const displayVillages = (row: AirViolation | null) => Array.from(new Set([
-  ...redAlertFallbackVillages(row),
-  ...villageList(row),
-]));
+const isSurveillanceWindow = (row: AirViolation) => (
+  row.condition_id === 36 && row.window_duration_minutes !== null
+);
 
-const displayNews = (row: AirViolation) => {
-  const villages = redAlertFallbackVillages(row);
-  if (villages.includes("Libbaya BG") && villages.length > 1) {
-    return "طيران استطلاعي فوق القرعون، مشغرة، سحمر، عين التينة، لبايا في قضاء البقاع الغربي";
+const compactWindowRange = (row: AirViolation) => {
+  if (!row.window_start || !row.window_end) return null;
+  const startDate = row.window_start.slice(0, 10);
+  const endDate = row.window_end.slice(0, 10);
+  if (startDate === endDate) {
+    return `${formatDate(startDate)} · ${formatTime(row.window_start.slice(11))}–${formatTime(row.window_end.slice(11))}`;
   }
-  if (villages.includes("Zibdine")) {
-    return "طيران استطلاعي فوق زبدين في قضاء النبطية";
-  }
-  return row.khabar;
-};
-
-const VillageListCell = ({ row }: { row: AirViolation }) => {
-  const villages = displayVillages(row);
-  if (!villages.length) {
-    return <TextCell value={null} />;
-  }
-  return (
-    <div className="flex max-w-[16rem] flex-wrap gap-1 whitespace-normal text-text-primary">
-      {villages.map((village) => (
-        <span key={village} className="inline-flex max-w-full items-center rounded border border-border bg-surface px-1.5 py-0.5 text-caption leading-5">
-          {village}
-        </span>
-      ))}
-    </div>
-  );
-};
-
-const WindowCell = ({ row }: { row: AirViolation }) => {
-  const label = recordWindowLabel(row);
-  const range = recordWindowRange(row);
-  return (
-    <div className="max-w-[26rem] space-y-1 whitespace-normal text-text-primary">
-      {label ? <p className="font-semibold">{label}</p> : null}
-      <p className="break-words leading-6">{range || emptyText}</p>
-    </div>
-  );
+  return recordWindowRange(row);
 };
 
 export const AirViolationsPage = () => {
@@ -142,6 +89,7 @@ export const AirViolationsPage = () => {
   const [importError, setImportError] = useState("");
   const [importResult, setImportResult] = useState<WorkbookImportSummary | null>(null);
   const [selectedViolation, setSelectedViolation] = useState<AirViolation | null>(null);
+  const [returnToWindow, setReturnToWindow] = useState<AirViolation | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingViolation, setEditingViolation] = useState<AirViolation | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -161,8 +109,7 @@ export const AirViolationsPage = () => {
   const eventDateTo = normalizeDateInputValue(params.get("event_date_to"));
   const cazaEn = params.get("caza_en") ?? "";
   const lastHours = params.get("last_hours") ?? "";
-  const defaultEventDateFrom = !eventDateFrom && !eventDateTo && !lastHours ? getBeirutDate(-1) : "";
-  const effectiveEventDateFrom = eventDateFrom || defaultEventDateFrom;
+  const effectiveEventDateFrom = eventDateFrom;
   const effectiveEventDateTo = eventDateTo;
   const hourPresets = ["1", "6", "12", "24", "48", "72", "168"];
   const [customHoursMode, setCustomHoursMode] = useState(
@@ -181,6 +128,10 @@ export const AirViolationsPage = () => {
     setIsCreateOpen(false);
     setEditingViolation(null);
     setIsFormDirty(false);
+    if (returnToWindow) {
+      setSelectedViolation(returnToWindow);
+      setReturnToWindow(null);
+    }
   };
 
   const filters = useMemo(
@@ -247,11 +198,30 @@ export const AirViolationsPage = () => {
       && new Date(selectedViolation.edit_lock_expires_at).getTime() > Date.now(),
   );
   const selectedWindowVillages = useMemo(
-    () => Array.from(new Set([
-      ...displayVillages(selectedViolation),
-    ])),
+    () => displayVillages(selectedViolation),
     [selectedViolation],
   );
+
+  const openReportEditor = async (airViolationId: number, parentWindow: AirViolation | null = null) => {
+    setActionError("");
+    try {
+      const locked = await acquireAirViolationEditLock(airViolationId);
+      setReturnToWindow(parentWindow);
+      setEditingViolation(locked);
+      setSelectedViolation(null);
+      setCreateError("");
+      setIsFormDirty(false);
+      setIsCreateOpen(true);
+      await refetch();
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        setActionError("This report is currently being edited by another administrator.");
+        await refetch();
+      } else {
+        setActionError("Could not open this report for editing. Please try again.");
+      }
+    }
+  };
 
   // Keep an open details dialog synchronized with the live-polled list. Without
   // this, corrected OCR/news text remains stale until the dialog is reopened.
@@ -313,79 +283,69 @@ export const AirViolationsPage = () => {
 
   const columns: Array<DataTableColumn<AirViolation>> = [
     {
-      key: "number",
-      header: "#",
-      className: "w-14 min-w-14 tabular-nums text-text-muted",
-      render: (row) => tableRows.indexOf(row) + 1,
-    },
-    {
-      key: "caza",
-      header: "Caza",
-      className: "w-40 min-w-40",
+      key: "activity",
+      header: "Activity",
+      className: "w-[15rem] min-w-[15rem]",
       render: (row) => (
-        <span className="font-semibold text-text-primary">{row.caza_en || row.caza_ar || emptyText}</span>
-      ),
-      sortValue: (row) => row.caza_en ?? row.caza_ar ?? "",
-    },
-    {
-      key: "action-en",
-      header: "Action",
-      className: "w-52 min-w-52",
-      render: (row) => (
-        <div>
-          <TextCell value={row.action_en} />
-          <span className="mt-1 block text-right text-text-muted" dir="rtl" lang="ar">{row.action_ar}</span>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex min-w-7 items-center justify-center rounded-full bg-accent px-2 py-0.5 text-caption font-semibold text-white">
+              {offset + tableRows.indexOf(row) + 1}
+            </span>
+            <span className="font-semibold text-text-primary">{row.action_en}</span>
+            {surveillanceRule(row) ? (
+              <span className="rounded-full bg-surface-muted px-2 py-0.5 text-caption font-semibold text-text-muted">
+                {surveillanceRule(row)}
+              </span>
+            ) : null}
+          </div>
+          <p className="text-small text-text-muted">{row.caza_en || row.caza_ar || emptyText}</p>
+          <Button type="button" variant="secondary" className="h-8 whitespace-nowrap" onClick={() => { setActionError(""); setSelectedViolation(row); }}>
+            View details
+          </Button>
         </div>
       ),
-      sortValue: (row) => row.action_en,
+      sortValue: (row) => `${row.action_en} ${row.caza_en ?? ""}`,
     },
     {
-      key: "news",
-      header: "News",
-      className: "w-[24rem] min-w-[24rem]",
+      key: "coverage",
+      header: "Coverage",
+      className: "w-[20rem] min-w-[20rem]",
       render: (row) => {
-        const news = displayNews(row).replace(/\s+/g, " ").trim();
-        return <span className="block max-w-[22rem] whitespace-normal leading-6 text-text-primary">{news.length > 110 ? `${news.slice(0, 110)}...` : news}</span>;
+        const villages = displayVillages(row);
+        const visibleVillages = villages.slice(0, 3);
+        const hiddenCount = Math.max(0, villages.length - visibleVillages.length);
+        const reportCount = row.window_violation_count ?? 1;
+        return (
+          <div className="space-y-2 whitespace-normal">
+            <p className="text-small font-semibold text-text-primary">
+              {reportCount} {reportCount === 1 ? "report" : "reports"} · {villages.length} {villages.length === 1 ? "village" : "villages"}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {visibleVillages.map((village) => (
+                <span key={village.village_id ?? `name:${village.name}`} className="rounded border border-border bg-surface px-2 py-0.5 text-caption text-text-primary">{village.name}</span>
+              ))}
+              {hiddenCount ? <span className="rounded bg-surface-muted px-2 py-0.5 text-caption font-semibold text-text-muted">+{hiddenCount} more</span> : null}
+              {!villages.length ? <span className="text-text-muted">{emptyText}</span> : null}
+            </div>
+          </div>
+        );
       },
-      sortValue: (row) => displayNews(row),
+      sortValue: (row) => displayVillages(row).map((village) => village.name).join(", "),
     },
     {
-      key: "village",
-      header: "Village",
-      className: "w-48 min-w-48",
-      render: (row) => <VillageListCell row={row} />,
-      sortValue: (row) => displayVillages(row).join(", "),
-    },
-    {
-      key: "date",
-      header: "Date / Time",
-      className: "w-36 min-w-36",
+      key: "updated",
+      header: "Latest update",
+      className: "w-[14rem] min-w-[14rem]",
       render: (row) => row.import_enrichment?.date_source === "fallback" ? (
         <span>Date unavailable</span>
       ) : (
-        <div className="space-y-1 whitespace-nowrap">
-          <p>{formatDate(row.event_date)}</p>
-          <p className="text-text-muted">{formatTime(row.event_time)}</p>
+        <div className="space-y-1 whitespace-normal">
+          <p className="font-medium text-text-primary">{formatDate(row.event_date)} · {formatTime(row.event_time)}</p>
+          {compactWindowRange(row) ? <p className="text-small text-text-muted">Activity: {compactWindowRange(row)}</p> : <p className="text-small text-text-muted">Individual report</p>}
         </div>
       ),
-      sortValue: (row) => new Date(row.event_date).getTime(),
-    },
-    {
-      key: "window",
-      header: "Window",
-      className: "w-[28rem] min-w-[28rem]",
-      render: (row) => <WindowCell row={row} />,
       sortValue: (row) => row.window_start ?? row.window_id ?? "",
-    },
-    {
-      key: "details",
-      header: "Details",
-      className: "w-32",
-      render: (row) => (
-        <Button type="button" variant="secondary" className="h-9 whitespace-nowrap" onClick={() => { setActionError(""); setSelectedViolation(row); }}>
-          View details
-        </Button>
-      ),
     },
   ];
 
@@ -566,7 +526,7 @@ export const AirViolationsPage = () => {
         getRowKey={(row) => `air-${row.id}`}
         loading={isLoading}
         error={isError}
-        minWidth="1480px"
+        minWidth="680px"
         clientSort={false}
         emptyState={
           <EmptyState
@@ -588,37 +548,73 @@ export const AirViolationsPage = () => {
 
       {selectedViolation ? (
         <Dialog
-          title="Air violation"
+          title={`${selectedViolation.action_en} · ${selectedViolation.caza_en || selectedViolation.caza_ar || "Unknown area"}`}
+          eyebrow={isSurveillanceWindow(selectedViolation) ? "Surveillance activity window" : "Air violation report"}
           onClose={() => { if (!confirmDelete) setSelectedViolation(null); }}
-          size="lg"
+          size="xl"
         >
-          <dl className="grid gap-5 sm:grid-cols-2">
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {selectedViolation.is_imported ? <>
               <div><dt className="text-caption font-semibold uppercase text-text-muted">Imported on</dt><dd className="mt-1">{new Date(selectedViolation.created_at).toLocaleString()}</dd></div>
               {selectedViolation.import_filename ? <div><dt className="text-caption font-semibold uppercase text-text-muted">File</dt><dd className="mt-1">{selectedViolation.import_filename}</dd></div> : null}
             </> : null}
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Caza</dt><dd className="mt-1">{selectedViolation.caza_en || selectedViolation.caza_ar || emptyText}</dd></div>
-            <div className="sm:col-span-2">
-              <dt className="text-caption font-semibold uppercase text-text-muted">Red zone villages</dt>
+            <div className="rounded-md border border-border bg-surface p-3"><dt className="text-caption font-semibold uppercase text-text-muted">Reports</dt><dd className="mt-1 text-h4 font-semibold">{selectedViolation.window_violation_count ?? 1}</dd></div>
+            <div className="rounded-md border border-border bg-surface p-3"><dt className="text-caption font-semibold uppercase text-text-muted">Villages</dt><dd className="mt-1 text-h4 font-semibold">{selectedWindowVillages.length}</dd></div>
+            <div className="rounded-md border border-border bg-surface p-3"><dt className="text-caption font-semibold uppercase text-text-muted">Rule</dt><dd className="mt-1 font-semibold">{surveillanceRule(selectedViolation) ?? "Individual event"}</dd></div>
+            <div className="rounded-md border border-border bg-surface p-3"><dt className="text-caption font-semibold uppercase text-text-muted">Activity time</dt><dd className="mt-1 text-small font-semibold">{compactWindowRange(selectedViolation) ?? `${formatDate(selectedViolation.event_date)} · ${formatTime(selectedViolation.event_time)}`}</dd></div>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <dt className="text-caption font-semibold uppercase text-text-muted">{isSurveillanceWindow(selectedViolation) ? "Villages in this window" : "Villages in this report"}</dt>
               <dd className="mt-2 flex flex-wrap gap-1.5">
                 {selectedWindowVillages.length ? selectedWindowVillages.map((village) => (
-                  <span key={village} className="rounded border border-border bg-surface px-2 py-0.5 text-caption leading-5 text-text-primary">
-                    {village}
+                  <span key={village.village_id ?? `name:${village.name}`} className="rounded border border-border bg-surface px-2 py-0.5 text-caption leading-5 text-text-primary">
+                    {village.name}
                   </span>
                 )) : emptyText}
               </dd>
             </div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Month</dt><dd className="mt-1">{selectedViolation.event_month || emptyText}</dd></div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (English)</dt><dd className="mt-1">{selectedViolation.action_en}</dd></div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Action (Arabic)</dt><dd className="mt-1 text-right" dir="rtl" lang="ar">{selectedViolation.action_ar}</dd></div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Original source</dt><dd className="mt-1">{selectedViolation.source_name}</dd></div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Date and time</dt><dd className="mt-1">{selectedViolation.import_enrichment?.date_source === "fallback" ? "Not available in the file or source" : `${formatDate(selectedViolation.event_date)} at ${formatTime(selectedViolation.event_time)}`}</dd></div>
-            <div><dt className="text-caption font-semibold uppercase text-text-muted">Window</dt><dd className="mt-1"><WindowCell row={selectedViolation} /></dd></div>
+            <div className="sm:col-span-2"><dt className="text-caption font-semibold uppercase text-text-muted">Action (Arabic)</dt><dd className="mt-1 text-right" dir="rtl" lang="ar">{selectedViolation.action_ar}</dd></div>
+            {selectedViolation.window_reports?.length <= 1 ? <div className="sm:col-span-2"><dt className="text-caption font-semibold uppercase text-text-muted">Original source</dt><dd className="mt-1">{selectedViolation.source_name}</dd></div> : null}
           </dl>
-          <div className="mt-5 rounded-md border border-border bg-surface p-4">
-            <p className="text-caption font-semibold uppercase text-text-muted">News</p>
-            <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{displayNews(selectedViolation)}</p>
-          </div>
+          {selectedViolation.window_reports?.length > 1 ? (
+            <section className="mt-5">
+              <h3 className="text-caption font-semibold uppercase text-text-muted">
+                Reports in this window ({selectedViolation.window_reports.length})
+              </h3>
+              <div className="mt-3 space-y-3">
+                {selectedViolation.window_reports.map((report) => (
+                  <article key={report.id} className="rounded-md border border-border bg-surface p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-small text-text-muted">
+                      <span>{formatDate(report.event_date)} at {formatTime(report.event_time)}</span>
+                      <span>{report.source_name}</span>
+                    </div>
+                    {report.villages.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {report.villages.map((village) => (
+                          <span key={village.village_id ?? `name:${village.name}`} className="rounded border border-border px-1.5 py-0.5 text-caption">{village.name}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <p className="mt-3 whitespace-pre-wrap text-body text-text-primary" dir="auto">{report.khabar}</p>
+                    {report.source_link ? (
+                      <a href={report.source_link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-small font-semibold text-accent hover:underline">
+                        Open source
+                      </a>
+                    ) : null}
+                    <div className="mt-3 flex justify-end border-t border-border pt-3">
+                      <Button type="button" variant="secondary" className="h-8" onClick={() => void openReportEditor(report.id, selectedViolation)}>
+                        Update this report
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <div className="mt-5 rounded-md border border-border bg-surface p-4">
+              <p className="text-caption font-semibold uppercase text-text-muted">News</p>
+              <p className="mt-2 whitespace-pre-wrap text-body text-text-primary" dir="auto">{selectedViolation.khabar}</p>
+            </div>
+          )}
           <dl className="mt-5 grid gap-5 sm:grid-cols-2">
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Note 1</dt><dd className="mt-1 whitespace-pre-wrap">{selectedViolation.note_1 || emptyText}</dd></div>
             <div><dt className="text-caption font-semibold uppercase text-text-muted">Note 2</dt><dd className="mt-1 whitespace-pre-wrap">{selectedViolation.note_2 || emptyText}</dd></div>
@@ -641,29 +637,13 @@ export const AirViolationsPage = () => {
             </a>
           ) : null}
           {actionError ? <p className="mt-5 text-small font-medium text-danger" role="alert">{actionError}</p> : null}
-          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
+          {(selectedViolation.window_reports?.length ?? 0) <= 1 ? <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
             <Button
               type="button"
               variant="secondary"
               disabled={isLockedByAnother}
               onClick={async () => {
-                setActionError("");
-                try {
-                  const locked = await acquireAirViolationEditLock(selectedViolation.id);
-                  setEditingViolation(locked);
-                  setSelectedViolation(null);
-                  setCreateError("");
-                  setIsFormDirty(false);
-                  setIsCreateOpen(true);
-                  await refetch();
-                } catch (error) {
-                  if (axios.isAxiosError(error) && error.response?.status === 409) {
-                    setActionError("This record is currently being edited by another administrator.");
-                    await refetch();
-                  } else {
-                    setActionError("Could not open this record for editing. Please try again.");
-                  }
-                }
+                await openReportEditor(selectedViolation.id);
               }}
             >
               {isLockedByAnother ? "Being edited" : "Update"}
@@ -693,7 +673,11 @@ export const AirViolationsPage = () => {
             >
               Delete
             </Button>
-          </div>
+          </div> : (
+            <p className="mt-6 border-t border-border pt-4 text-small text-text-muted">
+              This activity window contains multiple reports. Update the required report from the list above.
+            </p>
+          )}
         </Dialog>
       ) : null}
 
@@ -713,6 +697,10 @@ export const AirViolationsPage = () => {
             setIsCreateOpen(false);
             setEditingViolation(null);
             setIsFormDirty(false);
+            if (returnToWindow) {
+              setSelectedViolation(returnToWindow);
+              setReturnToWindow(null);
+            }
           }}
         />
       ) : null}
@@ -758,6 +746,7 @@ export const AirViolationsPage = () => {
           eyebrow={editingViolation ? "Edit record" : "Create record"}
           onClose={() => { if (!confirmDiscard) closeEditor(); }}
           size="lg"
+          closeLabel={returnToWindow ? "Back to reports" : "Close"}
         >
           <form
             className="space-y-5"
@@ -792,6 +781,10 @@ export const AirViolationsPage = () => {
                 setEditingViolation(null);
                 setIsFormDirty(false);
                 await refetch();
+                if (returnToWindow) {
+                  setSelectedViolation(returnToWindow);
+                  setReturnToWindow(null);
+                }
               } catch (error) {
                 if (axios.isAxiosError(error) && error.response?.status === 409) {
                   setCreateError("This record was updated by another administrator. Close this form, review the latest record, and apply your changes again.");
@@ -819,7 +812,7 @@ export const AirViolationsPage = () => {
             </div>
             <div><Label htmlFor="create-link">Source link (optional)</Label><Input id="create-link" name="source_link" type="url" placeholder="https://..." className="mt-2" defaultValue={editingViolation?.source_link ?? ""} /></div>
             {createError ? <p className="text-small font-medium text-danger" role="alert">{createError}</p> : null}
-            <div className="sticky bottom-0 -mx-6 flex justify-end gap-2 border-t border-border bg-surface-raised px-6 py-4"><Button type="button" variant="secondary" onClick={closeEditor}>Cancel</Button><Button type="submit" isLoading={isCreating} loadingText={editingViolation ? "Updating" : "Creating"}>{editingViolation ? "Update" : "Create"}</Button></div>
+            <div className="sticky bottom-0 -mx-6 flex justify-end gap-2 border-t border-border bg-surface-raised px-6 py-4"><Button type="button" variant="secondary" onClick={closeEditor}>{returnToWindow ? "Back to all reports" : "Cancel"}</Button><Button type="submit" isLoading={isCreating} loadingText={editingViolation ? "Updating" : "Creating"}>{editingViolation ? "Update" : "Create"}</Button></div>
           </form>
         </Dialog>
       ) : null}
