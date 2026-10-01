@@ -977,10 +977,13 @@ class IncidentMaterializationService:
         if not air_ids or eligibility.eligible:
             return match_result
 
+        # Only a kinetic report carries enough evidence to infer an incident
+        # action; a bare tag or a channel notice goes to the review sink.
         action = (
             condition_fallback_from_text(representative.raw_text)
-            or "Unclassified / Needs Review"
-        )
+            if eligibility.belongs_in_incidents
+            else None
+        ) or "Unclassified / Needs Review"
         condition_id = self.db.scalar(
             select(Condition.id).where(Condition.action_en == action).limit(1)
         )

@@ -50,6 +50,31 @@ unambiguous tokens (درون, drone, uav, مسير) match on whole words so the 
 `test_classifies_supported_air_violation_actions`,
 `test_source_enrichment_fills_only_missing_dates_and_times`.
 
+**8. Only a kinetic report is an incident.**
+Rejecting a row said nothing about where it should go, so end-of-day digests,
+channel housekeeping posts and bare hashtags were all headed for the incident
+pipeline. `EligibilityResult.belongs_in_incidents` now marks the one exclusion
+that means "a real event happened": strike, casualty or damage. Everything else
+goes to a human. Real regressions: «إحصاءات نهاية اليوم ... غارات جوية: ٧»
+(a digest) and «كل من ارسل بلاغا عن طائرة مسيرة، او حربي، او غارة» (the
+channel's thank-you post listing what people may report). Tests:
+`test_non_event_notices_are_not_incidents`,
+`test_a_real_strike_still_belongs_in_incidents`.
+
+**9. A bare hashtag is a label, not a casualty.**
+Keeping tags as content when stripping them would leave nothing meant a post of
+only «#الشهيد» read as a casualty report. Hashtag-only text that trips a kinetic
+term now returns `excluded_hashtag_only_ambiguous`, which never reaches
+incidents, and the reroute no longer infers an incident action from it. Tests:
+`test_bare_tags_are_never_read_as_an_incident`.
+
+**10. Place names that merely contain a strike word.**
+Terms match as substrings so Arabic inflections all count, which made
+«نهر المغارة» (a river) look like a «غارة». Real regression: air violation 1394,
+a Red Alert drone map, was being moved to incidents on that one word. Tests:
+`test_place_names_that_merely_contain_a_strike_word_are_not_strikes`,
+`test_a_real_strike_near_that_place_is_still_a_strike`.
+
 **7. Khabar import no longer rejects rows that have no source link.**
 The enrichment-text screen ran even when enrichment returned no text, so every
 row without a link failed as `empty_text`. The screen now runs only when there

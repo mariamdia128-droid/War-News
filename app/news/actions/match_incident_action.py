@@ -106,12 +106,16 @@ class MatchIncidentAction:
                     "matched_terms": eligibility.matched_terms,
                 }
                 message.filter_result = filter_result
+                # Only a kinetic report carries enough evidence to infer an
+                # incident action. A bare tag or a channel notice does not, so
+                # it goes to the review sink instead of being read as one.
                 incident_action = (
                     condition_fallback_from_text(
                         getattr(message, "raw_text", None)
                     )
-                    or "Unclassified / Needs Review"
-                )
+                    if eligibility.belongs_in_incidents
+                    else None
+                ) or "Unclassified / Needs Review"
                 extraction_result = extraction_result.model_copy(
                     update={"action_description": incident_action}
                 )

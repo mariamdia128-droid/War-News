@@ -140,6 +140,19 @@ def test_import_without_village_preserves_supplied_caza(caza, english, arabic):
     assert record.khabar == rows[0]['Khabar']
 
 
+def test_khabar_text_itself_is_still_screened_without_a_link():
+    """Skipping the absent enrichment must not skip the Khabar screen."""
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    db.scalar.return_value = SimpleNamespace(id=1)
+    db.execute.return_value.scalar_one_or_none.return_value = None
+    rows = [{'Khabar': 'غارة إسرائيلية استهدفت بلدة المنصوري'}]
+    result = AirViolationKhabarImportService(db).import_file(
+        BytesIO(json.dumps(rows).encode()), 'news.json', date(2026, 9, 7))
+    assert (result.succeeded, result.failed) == (0, 1)
+    assert 'excluded_kinetic_casualty_or_damage' in result.row_errors[0].error
+
+
 def test_retry_skips_previously_imported_record():
     db = MagicMock()
     db.scalars.return_value.all.return_value = []

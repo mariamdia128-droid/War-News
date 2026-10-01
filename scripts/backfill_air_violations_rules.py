@@ -81,8 +81,14 @@ class Plan:
 
     @property
     def moves_to_incidents(self) -> bool:
-        """Ineligible and unambiguous enough to propose for the incident move."""
-        return not self.eligibility.eligible and not self.review_only
+        """Ineligible, and a real event rather than a notice, tag or blank row.
+
+        Only kinetic/casualty/damage rows describe something that belongs in
+        the incident pipeline. Every other exclusion (end-of-day digests,
+        channel housekeeping, bare hashtags, UNIFIL flights, empty text) goes
+        to a human instead of being pushed through as an incident.
+        """
+        return self.eligibility.belongs_in_incidents and not self.review_only
 
 
 def _session() -> Session:
@@ -144,7 +150,7 @@ def build_plans(rows: list[Row]) -> list[Plan]:
             review_only = True
         elif not eligibility.eligible:
             review_reason = eligibility.reason
-            review_only = False
+            review_only = not eligibility.belongs_in_incidents
         plans.append(Plan(
             row, eligibility, proposed_condition, review_reason,
             war_month(row.event_date), review_only,
@@ -165,28 +171,50 @@ def write_review_files(plans: list[Plan]) -> None:
                 " | ".join(plan.eligibility.matched_terms), 1.0,
             ])
 
+    # A row with no raw_message_id (an Excel/Khabar import) has no message to
+    # re-queue, so deleting it would drop the record with nothing taking its
+    # place. Those are listed for a manual decision instead.
+    movable = [plan for plan in ineligible if plan.row.raw_message_id]
+    orphans = [plan for plan in ineligible if not plan.row.raw_message_id]
+
     lines = [
         "-- GENERATED REVIEW FILE. Inspect the CSV before running this file.",
         "-- Moves each approved row back to the incident pipeline exactly once.",
+        "--",
+        "-- RUN THIS ONLY AFTER the backfill has run with --apply: each DELETE is",
+        "-- guarded on the review_status/review_reason that --apply writes, so on an",
+        "-- un-applied database every DELETE matches zero rows.",
+        "--",
+        "-- Messages already 'materialized' or 'duplicate' are left untouched: they",
+        "-- are represented by a live incident or by their canonical message, and",
+        "-- reopening them is what would create a duplicate incident.",
+        f"-- {len(movable)} rows are moved here; {len(orphans)} import rows have no",
+        "-- source message and are listed, not deleted, at the end of this file.",
         "BEGIN;",
     ]
-    for plan in ineligible:
+    for plan in movable:
         sql_reason = plan.eligibility.reason.replace("'", "''")
         lines.extend([
             f"-- air_violation_id={plan.row.id} reason={plan.eligibility.reason}",
             "UPDATE raw_messages rm",
-            "SET status = CASE WHEN EXISTS (SELECT 1 FROM incidents i WHERE i.raw_message_id = rm.id AND i.is_deleted = false)",
-            "                  THEN 'materialized'::message_status ELSE 'pending'::message_status END,",
-            "    match_result = CASE WHEN EXISTS (SELECT 1 FROM incidents i WHERE i.raw_message_id = rm.id AND i.is_deleted = false)",
-            "                        THEN rm.match_result ELSE NULL END,",
+            "SET status = 'pending'::message_status,",
+            "    match_result = NULL,",
             "    error_message = NULL, processing_claim_stage = NULL,",
             "    processing_claimed_at = NULL, processing_claimed_by = NULL",
             f"WHERE rm.id = (SELECT raw_message_id FROM air_violations WHERE id = {plan.row.id})",
-            "  AND rm.status IS DISTINCT FROM 'materialized'::message_status;",
+            "  AND rm.status NOT IN ('materialized'::message_status, 'duplicate'::message_status)",
+            "  AND NOT EXISTS (SELECT 1 FROM incidents i",
+            "                  WHERE i.raw_message_id = rm.id AND i.is_deleted = false);",
             f"DELETE FROM air_violations WHERE id = {plan.row.id}",
             f"  AND review_status = 'flagged_for_review' AND review_reason = '{sql_reason}';",
         ])
     lines.extend(["-- COMMIT only after checking affected row counts.", "COMMIT;", ""])
+    if orphans:
+        lines.append("-- Imported rows with no source message. Decide each one by hand:")
+        for plan in orphans:
+            excerpt = " ".join(plan.row.source_text.split())[:110].replace("\n", " ")
+            lines.append(f"--   id={plan.row.id} condition={plan.row.condition} :: {excerpt}")
+        lines.append("")
     MOVE_SQL.write_text("\n".join(lines), encoding="utf-8")
 
 
