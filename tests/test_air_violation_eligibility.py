@@ -16,6 +16,9 @@ from app.news.services.air_violations.air_violation_eligibility import (
     "قذيفة سقطت في حولا",
     "قذائف مدفعية على كفركلا",
     "اغتيال شخص في غارة",
+    "أغار الطيران الحربي على البلدة",
+    "غارتان استهدفتا منزلا",
+    "airstrike attacked a building",
 ])
 def test_rejects_strike_language(text: str) -> None:
     assert evaluate_air_violation_text(text).eligible is False
