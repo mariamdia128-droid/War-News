@@ -1,5 +1,34 @@
 # llm_knowledge CHANGELOG
 
+## 2026-10-01 — Air violations: presence-only routing and deterministic regressions
+
+**1. Kinetic/casualty/damage exclusion and post-model reroute.**
+The rule now sends strikes, attacks, casualties, and damage to incidents even
+when the model selected an air condition. Real regression: «نجاة فريق إسعاف من
+غارة نفذتها مروحية أباتشي إسرائيلية ... ميفدون - شوكين». Tests:
+`test_air_violation_eligibility.py` and
+`test_post_llm_air_result_is_rematched_to_incident`.
+
+**2. Drone is never helicopter.**
+طيران مسير/مسيّر/مسيرة/درون is a drone; plain overflight is Surveillance
+Aircraft. Helicopter Hovering requires a helicopter noun plus a hover/flight
+verb. Real regression: «الطيران المسيّر الاسرائيلي استهدف مدينة النبطية» is a
+drone-strike incident. Tests: `test_every_drone_variant_is_surveillance`,
+`test_helicopter_requires_and_accepts_flight_language`, and
+`test_apache_strike_is_never_helicopter_hovering`.
+
+**3. April-based war month.**
+Air-violation API and workbook Month now use the shared numeric war-month
+formula. Tests cover all twelve calendar months, the December/January boundary,
+and numeric workbook export in `test_air_violation_war_month.py`.
+
+**4. Village identity in surveillance windows.**
+Window villages are unique by village ID, keep the earliest report spelling,
+and unresolved normalized names cannot collapse with resolved IDs. Tests:
+`test_same_village_id_with_different_spellings_appears_once`,
+`test_different_ids_with_same_display_name_remain_distinct`, and
+`test_window_metadata_dedupes_village_by_id_not_spelling`.
+
 ## 2026-09-30 — Village verification flags: general matching rules (Phase 2)
 
 Recon: `Docs/recon/village-verification.md`. 354 live incidents carried the

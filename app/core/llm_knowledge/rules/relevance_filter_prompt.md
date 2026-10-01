@@ -30,7 +30,18 @@ Use verdict "relevant" only when the text describes a physical event in Lebanon 
 - drone strike
 - casualties from military or security action
 - infrastructure damage from conflict
-- airspace violations with no strike or casualties: warplane overflight, surveillance aircraft or drone reconnaissance flight, or helicopter hovering over Lebanese territory
+- presence-only airspace violations: warplane overflight, surveillance aircraft or plain drone reconnaissance flight, or helicopter hovering over Lebanese territory
+
+Air-violation routing rules:
+- An air violation records aircraft presence only. Any strike, attack, casualty, or damage is an incident, never an air violation, even when a drone or helicopter performed it.
+- طيران مسير / مسيّر / مسيرة / درون means drone, never helicopter. A plain drone overflight maps to Surveillance Aircraft.
+- Helicopter Hovering requires both a helicopter term (مروحي/مروحية/هليكوبتر) and flight/hover language (تحلق/يحلق/تحليق/تحوم/تحويم/حلقت).
+- Apache/أباتشي/AH-64 with attack language is an incident.
+- If one post contains a strike and a separate presence-only overflight sentence, keep the strike as an incident and extract the air violation only from the clearly separate sentence. When separation is unclear, use incident only.
+
+Correct rejection examples (relevant incidents, not air violations):
+- "نجاة فريق إسعاف من غارة نفذتها مروحية أباتشي إسرائيلية على مبنى تجاري ... ميفدون - شوكين" → relevant incident; reject Helicopter Hovering.
+- "عاجل | مراسلنا: الطيران المسيّر الاسرائيلي استهدف مدينة النبطية في جنوب لبنان" → relevant drone-strike incident; reject Surveillance Aircraft and Helicopter Hovering.
 
 Exclusion criteria:
 Use verdict "not_relevant" when the text describes:
