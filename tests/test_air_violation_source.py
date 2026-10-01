@@ -155,7 +155,8 @@ def test_air_violation_caza_aliases_include_requested_kadaa(text, expected) -> N
         ("Akkar", 35, 4),
         (None, 35, 4),
         ("Nabatiye", 36, 1),
-        ("Akkar", 36, 1),
+        ("Akkar", 36, 4),
+        ("Koura", 36, 4),
         ("Nabatiye", 38, 1),
         ("Akkar", 38, 1),
     ],
@@ -220,7 +221,7 @@ def test_telegram_identity_bypasses_for_location_specific_air_alert() -> None:
     assert AirViolationRepository._should_bypass_recent_duplicate_check(message, result) is True
 
 
-def test_priority_caza_air_violations_are_limited_to_one_per_hour() -> None:
+def test_priority_caza_air_violations_are_preserved_and_collapsed_per_hour() -> None:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         pytest.skip("DATABASE_URL is required for repository integration coverage.")
@@ -303,7 +304,7 @@ def test_priority_caza_air_violations_are_limited_to_one_per_hour() -> None:
         assert repository.route_from_match(
             message("inside-window", first_at + timedelta(minutes=59)),
             result(),
-        ) is False
+        ) is True
         assert repository.route_from_match(
             message("after-window", first_at + timedelta(hours=1, minutes=1)),
             result(),
@@ -315,7 +316,21 @@ def test_priority_caza_air_violations_are_limited_to_one_per_hour() -> None:
                 AirViolation.source_id == source.id,
             )
         )
-        assert total == 2
+        assert total == 3
+
+        event_date = first_at.astimezone().date()
+        displayed = repository.list_all(AirViolationListParams(
+            caza_en="Nabatiye",
+            event_date_from=event_date,
+            event_date_to=event_date,
+        ))
+        own_windows = [
+            item for item in displayed.items
+            if item.source_id == source.id
+        ]
+        assert len(own_windows) == 2
+        assert sorted(item.window_violation_count for item in own_windows) == [1, 2]
+        assert sorted(len(item.window_reports) for item in own_windows) == [1, 2]
     except (OperationalError, ProgrammingError) as exc:
         pytest.skip(f"Air-violation schema is unavailable: {exc}")
     finally:

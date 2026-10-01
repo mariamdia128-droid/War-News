@@ -13,13 +13,16 @@ AIR_VIOLATION_CONDITION_IDS = frozenset({
 })
 AIR_VIOLATION_CONDITION_ID_TUPLE = tuple(sorted(AIR_VIOLATION_CONDITION_IDS))
 AIR_VIOLATION_SOUTH_CAZAS = frozenset({
+    "Baabda",
+    "Baalbek",
     "Bint Jubail",
     "Hasbaya",
+    "Hermel",
     "Jezzine",
     "Marjaayoun",
     "Nabatiye",
     "Saida",
     "Sour",
+    "West Bekaa",
     "Zahrani",
 })
-
