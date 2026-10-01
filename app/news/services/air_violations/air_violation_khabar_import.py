@@ -16,6 +16,7 @@ from app.news.models.air_violation import AirViolationLocation
 from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
 from app.news.services.air_violations.red_alert_air_violation_service import RedAlertAirViolationService
 from app.news.services.air_violations.air_violation_workbook_service import AirViolationWorkbookService
+from app.news.services.air_violations.war_month import war_month
 from app.sources.models import Source, SourceType
 from app.sources.services.red_alert_collector import classify_condition
 from app.news.services.air_violations.import_source_enrichment import ImportSourceLookup, import_location_text, match_import_village, source_local_datetime, researched_import_location
@@ -211,7 +212,9 @@ class AirViolationKhabarImportService:
                     raw_message_id=message.id, source_id=source.id, condition_id=condition_id,
                     village_id=village.id if village is not None else None,
                     caza_en=caza_en, caza_ar=caza_ar,
-                    event_date=event_date, event_month=event_date.strftime('%B'),
+                    event_date=event_date,
+                    event_month=event_date.strftime('%B'),
+                    war_month=war_month(event_date),
                     event_time=event_time, khabar=text,
                     note_1=AirViolationWorkbookService._optional(row.get('note 1')),
                     note_2=AirViolationWorkbookService._optional(row.get('note 2')),

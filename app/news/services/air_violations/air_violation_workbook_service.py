@@ -13,6 +13,7 @@ from app.news.dtos import WorkbookImportRowErrorDTO, WorkbookImportSummaryDTO
 from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
 from app.news.models import AirViolation, Condition
 from app.sources.models import Source, SourceType
+from app.news.services.air_violations.war_month import war_month
 
 HEADERS = ["Caza", "Month", "Action_E", "Action_A", "Khabar", "Source", "Time", "Date", "Note 1", "Note 2", "Link"]
 AIR_CONDITION_IDS = AIR_VIOLATION_CONDITION_IDS
@@ -60,6 +61,7 @@ class AirViolationWorkbookService:
                     source_id=source.id,
                     caza_en=caza,
                     event_month=str(row[indexes["Month"]] or event_date.strftime("%B")),
+                    war_month=war_month(event_date),
                     event_date=event_date,
                     event_time=event_time,
                     khabar=khabar,
@@ -102,7 +104,7 @@ class AirViolationWorkbookService:
         for violation, condition, source in rows:
             sheet.append([
                 violation.caza_en or violation.caza_ar,
-                violation.event_month,
+                war_month(violation.event_date),
                 condition.action_en,
                 condition.action_ar,
                 violation.khabar,

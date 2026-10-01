@@ -44,6 +44,7 @@ from app.news.services.air_violations.caza_alias_resolver import canonicalize_ca
 from app.news.services.air_violations.air_violation_eligibility import (
     evaluate_air_violation_text,
 )
+from app.news.services.air_violations.war_month import war_month
 from app.sources.models import Source, SourceType
 
 
@@ -430,6 +431,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             caza_en=payload.caza_en,
             caza_ar=payload.caza_ar,
             event_month=payload.event_date.strftime("%B"),
+            war_month=war_month(payload.event_date),
             event_date=payload.event_date,
             event_time=payload.event_time,
             khabar=payload.khabar,
@@ -463,6 +465,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 caza_en=payload.caza_en,
                 caza_ar=payload.caza_ar,
                 event_month=payload.event_date.strftime("%B"),
+                war_month=war_month(payload.event_date),
                 event_date=payload.event_date,
                 event_time=payload.event_time,
                 khabar=payload.khabar,
@@ -551,6 +554,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.caza_en,
                 AirViolation.caza_ar,
                 AirViolation.event_month,
+                AirViolation.war_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
                 AirViolation.window_id,
@@ -661,6 +665,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.caza_en,
                 AirViolation.caza_ar,
                 AirViolation.event_month,
+                AirViolation.war_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
                 AirViolation.window_id,
@@ -762,6 +767,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             "caza_en": caza_en,
             "caza_ar": caza_ar,
             "event_month": occurred_at.strftime("%B"),
+            "war_month": war_month(occurred_at.date()),
             "event_date": occurred_at.date(),
             "event_time": occurred_at.time().replace(tzinfo=None),
             "khabar": air_violation_news_text(message, village, condition, matched_villages),
@@ -910,6 +916,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 AirViolation.caza_en,
                 AirViolation.caza_ar,
                 AirViolation.event_month,
+                AirViolation.war_month,
                 AirViolation.event_date,
                 AirViolation.event_time,
                 AirViolation.window_id,

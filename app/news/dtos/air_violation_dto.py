@@ -4,6 +4,18 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class AirViolationWindowReportDTO(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    event_date: date
+    event_time: time | None = None
+    khabar: str
+    source_name: str
+    source_link: str | None = None
+    villages: list[str] = Field(default_factory=list)
+
+
 class AirViolationDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True, frozen=True)
 
@@ -18,12 +30,15 @@ class AirViolationDTO(BaseModel):
     village_ar: str | None = None
     villages: list[str] = Field(default_factory=list)
     event_month: str | None
+    war_month: int | None = None
     event_date: date
     event_time: time | None
     window_id: str | None = None
     window_start: datetime | None = None
     window_end: datetime | None = None
     window_violation_count: int | None = None
+    window_duration_minutes: int | None = None
+    window_reports: list[AirViolationWindowReportDTO] = Field(default_factory=list)
     khabar: str
     note_1: str | None
     note_2: str | None

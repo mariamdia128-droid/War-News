@@ -52,6 +52,7 @@ class AirViolation(Base):
     caza_en: Mapped[str | None] = mapped_column(String, nullable=True)
     caza_ar: Mapped[str | None] = mapped_column(String, nullable=True)
     event_month: Mapped[str | None] = mapped_column(String, nullable=True)
+    war_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     event_date: Mapped[date] = mapped_column(nullable=False, index=True)
     event_time: Mapped[time | None] = mapped_column(nullable=True)
     window_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

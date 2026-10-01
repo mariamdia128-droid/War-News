@@ -10,12 +10,15 @@ export type AirViolation = {
   village_ar: string | null;
   villages?: string[];
   event_month: string | null;
+  war_month: number | null;
   event_date: string;
   event_time: string | null;
   window_id: string | null;
   window_start: string | null;
   window_end: string | null;
   window_violation_count: number | null;
+  window_duration_minutes: number | null;
+  window_reports: AirViolationWindowReport[];
   khabar: string;
   note_1: string | null;
   note_2: string | null;
@@ -31,6 +34,16 @@ export type AirViolation = {
   import_filename?: string | null;
   import_row?: Record<string, unknown> | null;
   import_enrichment?: { status?: string; reason?: string; text?: string; date_source?: string; published_at?: string; location_basis?: string; location_reference?: string } | null;
+};
+
+export type AirViolationWindowReport = {
+  id: number;
+  event_date: string;
+  event_time: string | null;
+  khabar: string;
+  source_name: string;
+  source_link: string | null;
+  villages: string[];
 };
 
 export type AirViolationListResponse = {
