@@ -29,6 +29,32 @@ and unresolved normalized names cannot collapse with resolved IDs. Tests:
 `test_different_ids_with_same_display_name_remain_distinct`, and
 `test_window_metadata_dedupes_village_by_id_not_spelling`.
 
+**5. Hashtag-only alerts are not empty text.**
+Stripping hashtags protects against trailing tag lists («#الشهيد») being read as
+an event, but a Red Alert post is nothing but hashtags, so stripping left no
+text and every such alert was rerouted to incidents as `empty_text`. Real
+regression: «#مقاتلات_حربية #الجنوب». The tags are now unwrapped and kept as the
+content whenever removing them would leave nothing. Tests:
+`test_hashtag_only_alert_keeps_its_tags_as_content`,
+`test_hashtag_only_alert_still_rejects_kinetic_tags`, and the Red Alert routing
+tests for caza-only, south-region and Lebanon-region alerts.
+
+**6. Recon phrases still reach Surveillance Aircraft.**
+Routing drone words through their own context-gated branch accidentally skipped
+condition 36 in the keyword table, so the recon phrases «طيران استطلاعي» and
+«طائرة استطلاع» classified as nothing at all. Real regression: «طائرة استطلاع
+فوق صور» → 36. Only Helicopter (38) is now skipped in that table, since hover
+language decides it earlier; bare drone words stay context-gated, and the
+unambiguous tokens (درون, drone, uav, مسير) match on whole words so the feminine
+«مسيرة» (also "march") keeps needing context. Tests:
+`test_classifies_supported_air_violation_actions`,
+`test_source_enrichment_fills_only_missing_dates_and_times`.
+
+**7. Khabar import no longer rejects rows that have no source link.**
+The enrichment-text screen ran even when enrichment returned no text, so every
+row without a link failed as `empty_text`. The screen now runs only when there
+is enrichment text. Tests: `test_air_violation_khabar_import.py`.
+
 ## 2026-09-30 — Village verification flags: general matching rules (Phase 2)
 
 Recon: `Docs/recon/village-verification.md`. 354 live incidents carried the
