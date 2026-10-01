@@ -179,3 +179,24 @@ def test_resolve_alias_also_matches_alias_text_normalized_at_read_time() -> None
     assert "village_location_aliases.alias_normalized =" in sql
     assert "village_location_aliases.alias_text" in sql
     assert " OR " in sql
+
+
+def test_bazourieh_news_forms_are_seeded() -> None:
+    """The Air Violations audit found البازورية resolving to no village.
+
+    ACS holds بازورية / Bazouriye (acs_code 62246, Sour). The news form
+    carries the definite article, and the Red Alert direct-text matcher
+    normalizes without stripping ال, so it cannot reach the reference name.
+    """
+    rows = {row["alias_text"]: row for row in seed_module._load_alias_rows()}
+
+    for alias in ("البازورية", "Bazourieh", "Bazouriyeh"):
+        assert alias in rows, f"{alias} is missing from the alias seed"
+        assert rows[alias]["parent_acs_code"] == 62246
+
+
+def test_bazourieh_definite_article_shares_the_reference_key() -> None:
+    """Both sides of the match must fold to the same key."""
+    from app.core.text_normalization import village_match_key
+
+    assert village_match_key("البازورية") == village_match_key("بازورية")

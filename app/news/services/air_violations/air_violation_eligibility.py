@@ -283,7 +283,8 @@ _NON_LOCATION_TOKENS = frozenset(
         # flight and direction
         "تحليق", "يحلق", "تحلق", "تحوم", "تحويم", "حلقت", "اتجاه", "باتجاه",
         "نحو", "فوق", "عبر", "مرور", "خرق", "تركيز", "رصد", "رصدت", "تحرك",
-        "دخول", "مغادره", "عوده", "محلق", "محلقه",
+        "دخول", "مغادره", "عوده", "محلق", "محلقه", "اجواء", "الاجواء",
+        "اجوائنا", "سماء", "السماء",
         # alert furniture
         "تنبيه", "تنبيهات", "عاجل", "انذار", "حذر", "حيطه", "اقصي", "درجات",
         "الخريطه", "خريطه", "المباشره", "مباشره", "المباشر", "الموقع", "موقع",
@@ -501,11 +502,11 @@ def _residual_location_words(location_text: str) -> list[str]:
     stripped = location_text
     for phrase in (*_GENERIC_DIRECTION_PHRASES, *_LOCATION_BOILERPLATE):
         stripped = stripped.replace(normalize_arabic_text(phrase).casefold(), " ")
-    return [
+    return list(dict.fromkeys(
         word
         for word in _LETTER_TOKEN_RE.findall(stripped)
         if word not in _NON_LOCATION_TOKENS
-    ]
+    ))
 
 
 def generic_direction_only(location_text: str) -> list[str]:
