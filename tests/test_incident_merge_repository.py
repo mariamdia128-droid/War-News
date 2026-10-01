@@ -249,6 +249,38 @@ def test_false_positive_resolution_clears_duplicate_verification() -> None:
     assert match.status == MatchStatus.false_positive
 
 
+def test_false_positive_resolution_keeps_low_confidence_village_verification() -> None:
+    from app.news.models import MatchStatus
+    from app.news.services.materialization.verification_signals import (
+        LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+    )
+
+    user_id = uuid4()
+    duplicate_id = uuid4()
+    duplicate = Incident(
+        id=duplicate_id, version=1, locked_by_user_id=user_id,
+        duplicate_flag=True, verification_status="needs_verification",
+        verification_reason=LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
+    )
+    match = SimpleNamespace(
+        id=12, matched_incident_id=uuid4(),
+        status=MatchStatus.pending, resolved_by=None,
+    )
+    db = _ResolveDuplicateSessionStub(
+        duplicate=duplicate, canonical=Incident(id=uuid4()), match=match,
+    )
+
+    IncidentRepository(db).resolve_duplicate(  # type: ignore[arg-type]
+        incident_id=duplicate_id, match_id=12,
+        decision=MatchStatus.false_positive.value,
+        version=1, user_id=user_id,
+    )
+
+    assert duplicate.duplicate_flag is False
+    assert duplicate.verification_status == "needs_verification"
+    assert duplicate.verification_reason == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+
+
 def test_confirmed_duplicate_resolution_keeps_note_clean_and_records_merged_from() -> None:
     from app.news.models import MatchStatus
 
@@ -332,6 +364,39 @@ def test_segment_confirmation_rejects_newer_suggested_main() -> None:
     with pytest.raises(ValueError, match="earlier main incident"):
         IncidentRepository(db).resolve_duplicate(  # type: ignore[arg-type]
             incident_id=duplicate_id, match_id=10,
+            decision=MatchStatus.confirmed_duplicate.value,
+            version=1, user_id=user_id,
+        )
+
+
+def test_confirmation_rejects_different_condition() -> None:
+    from datetime import date, time
+    from app.news.models import MatchStatus
+
+    user_id = uuid4()
+    duplicate_id = uuid4()
+    canonical_id = uuid4()
+    duplicate = Incident(
+        id=duplicate_id, version=1, locked_by_user_id=user_id,
+        raw_message_id=200, village_id=976, condition_id=5,
+        event_date=date(2026, 9, 25), event_time=time(8, 35),
+        duplicate_flag=True, duplicate_level="segment",
+    )
+    canonical = Incident(
+        id=canonical_id, raw_message_id=100, village_id=976, condition_id=6,
+        event_date=date(2026, 9, 25), event_time=time(7, 35),
+    )
+    match = SimpleNamespace(
+        id=11, matched_incident_id=canonical_id,
+        status=MatchStatus.pending, resolved_by=None,
+    )
+    db = _ResolveDuplicateSessionStub(
+        duplicate=duplicate, canonical=canonical, match=match,
+    )
+
+    with pytest.raises(ValueError, match="different conditions"):
+        IncidentRepository(db).resolve_duplicate(  # type: ignore[arg-type]
+            incident_id=duplicate_id, match_id=11,
             decision=MatchStatus.confirmed_duplicate.value,
             version=1, user_id=user_id,
         )

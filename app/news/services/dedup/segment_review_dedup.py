@@ -37,10 +37,19 @@ _EVENT_BINDING_MARKERS = (
     "تستهدف",
     "إطلاق نار",
     "اطلاق نار",
+    "إطلاق قذائف",
+    "اطلاق قذائف",
+    "تعرضت",
+    "تعرض",
     "تحرك",
     "انفجار",
     "سقوط",
     "تجدد",
+)
+
+_NON_TARGET_CONJUNCTION_PREFIXES = (
+    "إطلاق", "اطلاق", "أجواء", "اجواء", "تمشيط", "قصف", "غارة", "غارات",
+    "تجدد", "تحرك", "كما", "عمد", "سقوط", "انفجار",
 )
 
 _MODIFIER_GROUPS: dict[str, tuple[str, ...]] = {
@@ -111,6 +120,7 @@ class SegmentReviewDedupService:
         source_id: int,
         event_datetime: datetime,
         segment_text: str | None,
+        raw_text: str | None = None,
         source_name: str | None = None,
         source_platform: str | None = None,
     ) -> int:
@@ -147,16 +157,22 @@ class SegmentReviewDedupService:
                 continue
             if self._is_roundup_source(source):
                 continue
+            current_segments = [segment_text]
+            if raw_text and raw_text.strip() and raw_text.strip() != segment_text.strip():
+                current_segments.append(raw_text.strip())
             target_segments = self._location_bound_segments(source)
+            if source.raw_text and source.raw_text.strip() not in target_segments:
+                target_segments.append(source.raw_text.strip())
             if not target_segments:
                 continue
             scores = [
-                self.incidents.segment_text_similarity(segment_text, target)
+                self.incidents.segment_text_similarity(current, target)
+                for current in current_segments
                 for target in target_segments
-                if self._is_informative_segment(segment_text)
+                if self._is_informative_segment(current)
                 and self._is_informative_segment(target)
-                and not self._has_modifier_conflict(segment_text, target)
-                and not self._has_named_target_conflict(segment_text, target)
+                and not self._has_modifier_conflict(current, target)
+                and not self._has_named_target_conflict(current, target)
             ]
             if not scores:
                 continue
@@ -181,11 +197,6 @@ class SegmentReviewDedupService:
             incident.duplicate_flag = True
             incident.duplicate_level = "segment"
             incident.duplicate_similarity_score = highest_score
-            incident.verification_status = "needs_verification"
-            incident.verification_reason = (
-                "Possible cross-source duplicate segment; human confirmation "
-                f"required (best similarity {highest_score:.2f})."
-            )
             self.incidents.db.commit()
         return queued
 
@@ -242,8 +253,8 @@ class SegmentReviewDedupService:
         has_action = any(
             marker in text
             for marker in (
-                "قصف", "غارة", "استهدف", "استهداف", "تمشيط", "قذائف",
-                "دبابة", "دبابات", "إطلاق نار", "اطلاق نار", "تحرك",
+                "قصف", "غارة", "غارات", "استهدف", "استهداف", "تمشيط", "قذائف",
+                "دبابة", "دبابات", "إطلاق نار", "اطلاق نار", "تحرك", "تعرض",
             )
         )
         binds_action_to_event = any(marker in text for marker in _EVENT_BINDING_MARKERS)
@@ -270,9 +281,22 @@ class SegmentReviewDedupService:
     def _has_named_target_conflict(left: str, right: str) -> bool:
         # Only explicit secondary targets are compared. Absence on either side
         # is deliberately not a conflict because terse reports omit detail.
-        target_pattern = re.compile(r"(?:و|،)\s*([\u0621-\u064a]+(?:\s+[\u0621-\u064a]+){0,2})")
+        target_pattern = re.compile(
+            r"(?:،\s*|(?:^|\s)و\s*)"
+            r"([\u0621-\u064a]+(?:\s+[\u0621-\u064a]+){0,2})"
+        )
         left_targets = {value.strip() for value in target_pattern.findall(left)}
         right_targets = {value.strip() for value in target_pattern.findall(right)}
+        left_targets = {
+            value
+            for value in left_targets
+            if not value.startswith(_NON_TARGET_CONJUNCTION_PREFIXES)
+        }
+        right_targets = {
+            value
+            for value in right_targets
+            if not value.startswith(_NON_TARGET_CONJUNCTION_PREFIXES)
+        }
         return bool(left_targets and right_targets and left_targets.isdisjoint(right_targets))
 
     @staticmethod

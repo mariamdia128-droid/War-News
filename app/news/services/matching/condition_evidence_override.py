@@ -68,6 +68,31 @@ def condition_from_explicit_evidence(text: str) -> str | None:
     return None
 
 
+_DUAL_AIRSTRIKE = re.compile(r"غارت(?:ين|ان)")
+_ARTILLERY = re.compile(r"قصف.{0,15}مدفعي|قذائف.{0,15}مدفعي")
+_ENGLISH_AIRSTRIKE = re.compile(r"\b(?:air\s*strikes?|air\s*raids?|raid(?:ed|s)?|bomb(?:ed|ing|s)?)\b", re.IGNORECASE)
+_ENGLISH_ARTILLERY = re.compile(r"\b(?:artillery|shell(?:ed|ing|s)?)\b", re.IGNORECASE)
+
+
+def condition_fallback_from_text(text: str | None) -> str | None:
+    """Last-resort condition for free-text actions the matcher could not map.
+
+    Only used right before the Unclassified fallback, so it never overrides a
+    condition the matcher already resolved.
+    """
+    if not text:
+        return None
+    explicit = condition_from_explicit_evidence(text)
+    if explicit and explicit != "Unclassified / Needs Review":
+        return explicit
+    normalized = " ".join(normalize_arabic_text(text).split())
+    if _DUAL_AIRSTRIKE.search(normalized) or _ENGLISH_AIRSTRIKE.search(text):
+        return "Bombs"
+    if _ARTILLERY.search(normalized) or _ENGLISH_ARTILLERY.search(text):
+        return "Artillery Shelling"
+    return None
+
+
 def apply_condition_evidence_override(text: str, action: str | None) -> str | None:
     return condition_from_explicit_evidence(text) or action
 

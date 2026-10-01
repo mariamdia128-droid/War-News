@@ -82,10 +82,10 @@ class _SessionStub:
 
 
 @pytest.mark.parametrize("signal", ["duplicate_flag", "insufficient_score"])
-def test_initial_verification_status_flags_duplicate_signals(signal: str) -> None:
+def test_initial_verification_status_ignores_duplicate_only_signals(signal: str) -> None:
     assert (
         _initial_verification_status(_match_result(), **{signal: True})
-        == "needs_verification"
+        == "auto_processed"
     )
 
 
@@ -959,10 +959,8 @@ def test_dedup_mid_score_creates_incident_with_duplicate_flag() -> None:
 
     assert len(result) == 1
     assert result[0].duplicate_flag is True
-    assert result[0].verification_status == "needs_verification"
-    assert result[0].verification_reason == (
-        "Possible duplicate of an existing incident (similarity medium, score 0.65)."
-    )
+    assert result[0].verification_status == "auto_processed"
+    assert result[0].verification_reason is None
     assert result[0].duplicate_level == "medium"
     assert result[0].duplicate_similarity_score == 0.65
     assert service.stats.inserted == 1

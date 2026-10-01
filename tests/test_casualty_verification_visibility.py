@@ -2,6 +2,7 @@ from app.news.repositories.incident_repository import IncidentRepository
 from app.news.services.materialization.verification_signals import (
     LOW_CONFIDENCE_VILLAGE_REVIEW_REASON,
 )
+from types import SimpleNamespace
 
 
 def test_casualty_review_reasons_remain_user_visible() -> None:
@@ -16,7 +17,24 @@ def test_casualty_review_reasons_remain_user_visible() -> None:
     )
 
 
-def test_low_confidence_village_review_reason_is_not_user_visible_verification() -> None:
-    assert not IncidentRepository._should_keep_needs_verification_after_duplicate_clear(
+def test_low_confidence_village_review_reason_survives_duplicate_clear() -> None:
+    repository = IncidentRepository(object())  # type: ignore[arg-type]
+    assert repository._should_keep_needs_verification_after_duplicate_clear(
         LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+    )
+
+
+def test_source_backed_condition_review_survives_overwritten_duplicate_reason() -> None:
+    raw_message = SimpleNamespace(
+        match_result={"condition_review_required": True},
+        extraction_result={},
+        tier2_retry_count=0,
+    )
+    repository = IncidentRepository(
+        SimpleNamespace(get=lambda model, raw_id: raw_message)
+    )
+    incident = SimpleNamespace(raw_message_id=44)
+
+    assert repository._should_keep_needs_verification_after_duplicate_clear(
+        "Possible cross-source duplicate segment", incident
     )

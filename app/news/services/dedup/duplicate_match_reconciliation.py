@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
 from app.news.models import (
@@ -10,12 +10,36 @@ from app.news.models import (
     DuplicateMatch,
     Incident,
     MatchStatus,
-    MessageStatus,
     RawMessage,
 )
 from app.news.repositories.incident_repository import IncidentRepository
+from app.news.services.dedup.segment_review_dedup import SegmentReviewDedupService
 
 logger = logging.getLogger(__name__)
+
+
+def _raw_text_similarity(db: Session, left: str, right: str) -> float:
+    """Recompute the raw-text score that established duplicate_of_id."""
+    return float(
+        db.scalar(select(func.word_similarity(literal(left), literal(right)))) or 0.0
+    )
+
+
+def _log_declined(
+    soft_deleted: Incident,
+    gate: str,
+    representative: Incident | None = None,
+    matched_raw_message_id: int | None = None,
+) -> None:
+    logger.info(
+        "duplicate_match_reconciliation_declined raw_message_id=%s "
+        "matched_raw_message_id=%s gate=%s",
+        soft_deleted.raw_message_id,
+        representative.raw_message_id
+        if representative is not None
+        else matched_raw_message_id,
+        gate,
+    )
 
 
 def _find_representative_incident(
@@ -33,27 +57,13 @@ def _find_representative_incident(
             raw_message.duplicate_of_id,
             soft_deleted.village_id,
         )
-        if representative is not None:
+        if (
+            representative is not None
+            and representative.condition_id == soft_deleted.condition_id
+        ):
             return representative
-
-    # Same bulletin cluster: active incident for the village/date from a non-duplicate
-    # raw_message (representative may differ in condition_id after re-materialization).
-    representative = db.scalar(
-        select(Incident)
-        .join(RawMessage, RawMessage.id == Incident.raw_message_id)
-        .where(
-            Incident.village_id == soft_deleted.village_id,
-            Incident.event_date == soft_deleted.event_date,
-            Incident.is_deleted.is_(False),
-            Incident.raw_message_id != soft_deleted.raw_message_id,
-            RawMessage.status != MessageStatus.duplicate,
-        )
-        .order_by(RawMessage.id.asc())
-        .limit(1)
-    )
-    if representative is not None:
-        return representative
-
+    # Do not guess from village/date alone. That fallback crossed conditions
+    # and manufactured a zero score without comparing the reports.
     return None
 
 
@@ -107,18 +117,44 @@ def reconcile_orphaned_soft_deleted_incidents(db: Session) -> int:
             canonical_incident=representative,
         )
     for incident in orphans:
+        linked_raw = db.get(RawMessage, incident.raw_message_id)
         representative = _find_representative_incident(
             db,
             incident_repo,
             soft_deleted=incident,
         )
         if representative is None:
+            _log_declined(
+                incident,
+                "representative",
+                matched_raw_message_id=(
+                    linked_raw.duplicate_of_id if linked_raw is not None else None
+                ),
+            )
             continue
+
+        duplicate_raw = db.get(RawMessage, incident.raw_message_id)
+        representative_raw = db.get(RawMessage, representative.raw_message_id)
+        if duplicate_raw is None or representative_raw is None:
+            _log_declined(incident, "raw_message", representative)
+            continue
+        left = duplicate_raw.raw_text or ""
+        right = representative_raw.raw_text or ""
+        if not left.strip() or not right.strip():
+            _log_declined(incident, "raw_text", representative)
+            continue
+        if SegmentReviewDedupService._has_modifier_conflict(left, right):
+            _log_declined(incident, "modifier", representative)
+            continue
+        if SegmentReviewDedupService._has_named_target_conflict(left, right):
+            _log_declined(incident, "target", representative)
+            continue
+        similarity_score = _raw_text_similarity(db, left, right)
 
         incident_repo.create_duplicate_match(
             incident=incident,
             matched_incident=representative,
-            similarity_score=0.0,
+            similarity_score=similarity_score,
         )
         backfilled += 1
         logger.info(

@@ -58,12 +58,14 @@ def _source(raw_id: int, event_dt: datetime, segment: str, *, raw_text: str | No
 
 
 def _queue(source: SegmentReviewSource, current_dt: datetime, current_text: str,
-           *, current_raw_id: int = 500, score: float = 0.90):
+           *, current_raw_id: int = 500, score: float = 0.90,
+           current_raw_text: str | None = None):
     repository = _RepositoryStub(source, score)
     current = _incident(current_raw_id, current_dt)
     queued = SegmentReviewDedupService(repository).queue_for_incident(  # type: ignore[arg-type]
         incident=current, raw_message_id=current_raw_id, source_id=3,
         event_datetime=current_dt, segment_text=current_text,
+        raw_text=current_raw_text or current_text,
     )
     return queued, repository, current
 
@@ -77,6 +79,93 @@ def test_positive_cross_source_full_clauses_are_queued() -> None:
     assert queued == 1
     assert repository.created[0]["status"] == MatchStatus.pending
     assert current.duplicate_flag and current.duplicate_level == "segment"
+
+
+@pytest.mark.parametrize(
+    ("gap", "expected"),
+    [(timedelta(hours=3), 1), (timedelta(hours=25), 0)],
+)
+def test_differently_worded_positive_control_respects_24_hour_gate(
+    gap: timedelta,
+    expected: int,
+) -> None:
+    now = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
+    source = _source(
+        400,
+        now - gap,
+        "استهدف قصف مدفعي إسرائيلي منازل في بلدة المنصوري صباح اليوم",
+    )
+    queued, _, _ = _queue(
+        source,
+        now,
+        "تعرضت منازل بلدة المنصوري صباح اليوم لقصف مدفعي معاد",
+        score=0.75,
+    )
+    assert queued == expected
+
+
+@pytest.mark.parametrize(
+    (
+        "current_raw_id",
+        "candidate_raw_id",
+        "village_id",
+        "current_text",
+        "candidate_text",
+        "score",
+    ),
+    [
+        (
+            10464,
+            11553,
+            1519,
+            "إطلاق قذائف هاون باتجاه بلدة زوطر الشرقية",
+            "أقدم العدو فجراً على إطلاق قذائف هاون باتجاه بلدة زوطر الشرقية",
+            1.0,
+        ),
+        (
+            11556,
+            11553,
+            813,
+            "قذيفة هاون إسرائيلية استهدفت أحد المنازل في حلتا",
+            "استهدفت قذيفة هاون محيط المنازل في بلدة حلتا",
+            0.60,
+        ),
+    ],
+)
+def test_existing_real_positive_pairs_still_queue_for_review(
+    current_raw_id: int,
+    candidate_raw_id: int,
+    village_id: int,
+    current_text: str,
+    candidate_text: str,
+    score: float,
+) -> None:
+    now = datetime(2026, 9, 16, 12, tzinfo=timezone.utc)
+    source = _source(
+        candidate_raw_id,
+        now - timedelta(minutes=30),
+        candidate_text,
+        village_ids=(village_id,),
+    )
+    source.incident.village_id = village_id
+    queued, repository, current = _queue(
+        source,
+        now,
+        current_text,
+        current_raw_id=current_raw_id,
+        score=score,
+    )
+    current.village_id = village_id
+
+    assert queued == 1
+    assert len(repository.created) == 1
+    assert repository.created[0]["status"] == MatchStatus.pending
+    assert repository.created[0]["similarity_score"] == score
+    assert current.duplicate_flag is True
+    assert current.duplicate_level == "segment"
+    assert current.verification_status == "auto_processed"
+    assert source.incident.duplicate_flag is False
+    assert repository.db.commit_calls == 1
 
 
 @pytest.mark.parametrize("gap, expected", [(timedelta(hours=24), 1), (timedelta(hours=24, minutes=1), 0)])
@@ -195,6 +284,23 @@ def test_explicit_secondary_target_conflict_blocks_but_missing_target_does_not()
         "قصف مدفعي استهدف عيتا الجبل مساء اليوم",
         "قصف مدفعي استهدف عيتا الجبل وبيت ياحون مساء اليوم",
     )
+    assert not service._has_named_target_conflict(
+        "تحرك للدبابات شرق الخيام يترافق مع إطلاق نار كثيف وأجواء متوترة",
+        "تحرك للدبابات شرق الخيام وإطلاق نار كثيف في المنطقة",
+    )
+
+
+def test_full_raw_text_rescues_uninformative_extracted_span() -> None:
+    now = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
+    source = _source(
+        400, now - timedelta(minutes=20), "النبطية الفوقا",
+        raw_text="غارات إسرائيلية تستهدف النبطية الفوقا",
+    )
+    queued, _, _ = _queue(
+        source, now, "النبطية الفوقا",
+        current_raw_text="غارة إسرائيلية معادية استهدفت بلدة النبطية الفوقا",
+    )
+    assert queued == 1
 
 
 def test_balanced_similarity_uses_weaker_direction() -> None:
@@ -210,6 +316,19 @@ def test_balanced_similarity_uses_weaker_direction() -> None:
     ).IncidentRepository(db).segment_text_similarity("قصف", "قصف مدفعي استهدف البلدة")
     assert score == 0.25
     assert "least" in str(db.statement).lower()
+
+
+def test_balanced_token_coverage_preserves_admin_confirmed_paraphrases() -> None:
+    from app.news.services.dedup.text_similarity import balanced_event_token_similarity
+
+    assert balanced_event_token_similarity(
+        "غارة إسرائيلية معادية استهدفت بلدة النبطية الفوقا",
+        "غارات إسرائيلية تستهدف النبطية الفوقا",
+    ) >= 0.60
+    assert balanced_event_token_similarity(
+        "تحرك للدبابات الإسرائيلية شرق الخيام يترافق مع إطلاق نار كثيف وأجواء متوترة",
+        "تحرك للدبابات الإسرائيلية شرق الخيام وإطلاق نار كثيف في المنطقة",
+    ) >= 0.60
 
 
 def test_query_receives_named_time_gate() -> None:

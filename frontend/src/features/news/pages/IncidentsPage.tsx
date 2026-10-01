@@ -18,6 +18,7 @@ import { formatDate } from "../../../lib/formatters";
 import { getBeirutDate, normalizeDateInputValue } from "../../../lib/localDate";
 import { roleBaseFromPath } from "../../../lib/rolePath";
 import { ConditionSelect } from "../components/ConditionSelect";
+import { DuplicateBadge } from "../components/DuplicateBadge";
 import { useConditionsQuery, useIncidentStream, useIncidentsQuery, useVillagesQuery } from "../hooks";
 import { createIncident, reviewIncident } from "../api";
 import { useContentSourcesQuery } from "../../sources/hooks";
@@ -283,7 +284,7 @@ export const IncidentsPage = () => {
             </span>
             <PreMaterializationStatusBadge row={row} />
             {row.duplicate_flag === "possible" ? (
-              <StatusBadge label="Possible duplicate" variant="warning" />
+              <DuplicateBadge isDuplicate />
             ) : null}
             {row.duplicate_level === "low" ? (
               <StatusBadge
@@ -660,14 +661,6 @@ export const IncidentsPage = () => {
                 {row.id && row.verification_status === "needs_verification" ? (
                   openVerificationFlags(row).length ? (
                     <Button type="button" className="h-9" onClick={() => setCasualtyReview({ row, index: 0 })}>Review</Button>
-                  ) : row.duplicate_flag === "possible" ? (
-                    <Button
-                      type="button"
-                      className="h-9 whitespace-nowrap"
-                      onClick={() => navigate(`${roleBase}/incidents/${row.id}${location.search}`)}
-                    >
-                      Resolve duplicate
-                    </Button>
                   ) : (
                     <Button
                       type="button"
@@ -677,6 +670,15 @@ export const IncidentsPage = () => {
                       Review
                     </Button>
                   )
+                ) : row.id && row.duplicate_flag === "possible" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-9 whitespace-nowrap"
+                    onClick={() => navigate(`${roleBase}/incidents/${row.id}${location.search}`)}
+                  >
+                    Check duplicate
+                  </Button>
                 ) : null}
                 <Button
                   type="button"

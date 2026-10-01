@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
+from app.core.config import settings
 from app.core.text_normalization import normalize_arabic_sql
 from app.core.text_sanitizer import strip_emoji_and_pictographs
 from app.llm.dtos import ExtractedCandidate
@@ -80,7 +81,13 @@ from app.news.services.incident_details.casualty_status import target_location_c
 from app.news.services.incident_details.incident_detail_merge import (
     merge_incident_detail_fields,
 )
-from app.news.services.dedup.text_similarity import event_token_similarity
+from app.news.services.dedup.text_similarity import (
+    balanced_event_token_similarity,
+    event_token_similarity,
+)
+from app.news.services.materialization.verification_signals import (
+    active_non_duplicate_verification_reasons,
+)
 from app.news.services.incidents.incident_change_log import (
     changed_fields,
     record_incident_change,
@@ -1215,7 +1222,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             if (
                 incident.verification_status == "needs_verification"
                 and not self._should_keep_needs_verification_after_duplicate_clear(
-                    incident.verification_reason
+                    incident.verification_reason, incident
                 )
             ):
                 incident.verification_status = "auto_processed"
@@ -1259,6 +1266,11 @@ class IncidentRepository(IncidentRepositoryInterface):
                 self.db.rollback()
                 raise ValueError(
                     "Incidents from different villages cannot be confirmed as duplicates."
+                )
+            if incident.condition_id != canonical.condition_id:
+                self.db.rollback()
+                raise ValueError(
+                    "Incidents with different conditions cannot be confirmed as duplicates."
                 )
 
             old_values = self._snapshot_merge_fields(canonical)
@@ -1636,7 +1648,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             if (
                 existing.verification_status == "needs_verification"
                 and not self._should_keep_needs_verification_after_duplicate_clear(
-                    existing.verification_reason
+                    existing.verification_reason, existing
                 )
             ):
                 existing.verification_status = "auto_processed"
@@ -2159,7 +2171,7 @@ class IncidentRepository(IncidentRepositoryInterface):
         ]
 
     def segment_text_similarity(self, left: str, right: str) -> float:
-        score = self.db.scalar(
+        trigram_score = self.db.scalar(
             select(
                 # A one-way containment score can be 1.0 for a bare location
                 # inside a full report. Requiring the weaker direction keeps
@@ -2176,7 +2188,8 @@ class IncidentRepository(IncidentRepositoryInterface):
                 )
             )
         )
-        return float(score or 0.0)
+        token_score = balanced_event_token_similarity(left, right)
+        return max(float(trigram_score or 0.0), float(token_score or 0.0))
 
     def has_pending_segment_review_match(
         self,
@@ -2595,7 +2608,7 @@ class IncidentRepository(IncidentRepositoryInterface):
     @classmethod
     def _needs_verification_column(cls) -> object:
         return or_(
-            and_(Incident.verification_status == "needs_verification", Incident.duplicate_flag.is_(True)),
+            Incident.verification_status == "needs_verification",
             cls._visible_flag_exists(),
         )
 
@@ -2638,11 +2651,6 @@ class IncidentRepository(IncidentRepositoryInterface):
         }
         if flags:
             payload.update(verification_status="needs_verification", verification_reason=cls._flag_summary(flags[0]))
-        elif duplicate:
-            payload.update(
-                verification_status="needs_verification",
-                verification_reason=duplicate_reason or "Possible duplicate of another incident",
-            )
         return payload
 
     @staticmethod
@@ -2657,15 +2665,29 @@ class IncidentRepository(IncidentRepositoryInterface):
         """True when stored NV should surface to list/detail clients."""
         return bool(
             incident.verification_status == "needs_verification"
-            and incident.duplicate_flag
         )
 
-    @classmethod
     def _should_keep_needs_verification_after_duplicate_clear(
-        cls, reason: str | None
+        self,
+        reason: str | None,
+        incident: Incident | None = None,
     ) -> bool:
-        """Duplicate verification disappears when the duplicate flag is cleared."""
-        return False
+        """Preserve stored or source-backed non-duplicate review signals."""
+        raw_message = (
+            self.db.get(RawMessage, incident.raw_message_id)
+            if incident is not None and incident.raw_message_id is not None
+            else None
+        )
+        return bool(
+            active_non_duplicate_verification_reasons(
+                match_result=raw_message.match_result if raw_message else None,
+                extraction_result=raw_message.extraction_result if raw_message else None,
+                tier2_retry_count=(raw_message.tier2_retry_count or 0) if raw_message else 0,
+                tier2_retry_limit=settings.extraction_max_retries,
+                verification_reason=reason,
+                village_id=getattr(incident, "village_id", None),
+            )
+        )
 
     @classmethod
     def _list_filters(
@@ -2681,6 +2703,20 @@ class IncidentRepository(IncidentRepositoryInterface):
                 RawMessage.id.is_not(None),
                 RawMessage.status != MessageStatus.routed_air_violation,
                 ~RawMessage.raw_payload.op("?")("ocr_text"),
+                or_(
+                    Incident.id.is_not(None),
+                    # Raw-level duplicates repeat news already ingested and
+                    # failed extractions are not usable news, and materialized
+                    # rows without an active incident were deleted or rerouted;
+                    # listing them inflates the incident count several times over.
+                    RawMessage.status.not_in(
+                        (
+                            MessageStatus.duplicate,
+                            MessageStatus.error,
+                            MessageStatus.materialized,
+                        )
+                    ),
+                ),
                 or_(
                     Incident.id.is_not(None),
                     RawMessage.filter_result["verdict"].as_string() == "relevant",
@@ -2754,7 +2790,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             if params.verification_status in ("auto_processed", "verified"):
                 filters.append(~cls._needs_verification_column())
         if params.verification_type == "duplicate":
-            filters.append(and_(Incident.verification_status == "needs_verification", Incident.duplicate_flag.is_(True)))
+            filters.append(Incident.duplicate_flag.is_(True))
         elif params.verification_type == "casualty_missing_number":
             filters.append(cls._visible_flag_exists("count_missing"))
         elif params.verification_type == "casualty_aggregate_toll":

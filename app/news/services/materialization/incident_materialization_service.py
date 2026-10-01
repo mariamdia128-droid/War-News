@@ -78,7 +78,10 @@ from app.news.services.dedup.fast_path_eligibility import (
     ERROR_UNMATERIALIZABLE,
     permanent_ineligibility_reason,
 )
-from app.news.services.materialization.verification_signals import _verification_reason
+from app.news.services.materialization.verification_signals import (
+    _verification_reason,
+    active_non_duplicate_verification_reasons,
+)
 
 
 def _initial_verification_status(
@@ -88,6 +91,7 @@ def _initial_verification_status(
     insufficient_score: bool = False,
     low_confidence_village_match: bool = False,
     condition_review_required: bool = False,
+    village_id: int | None = None,
 ) -> str:
     """Return the initial review state for materialized incidents.
 
@@ -96,16 +100,13 @@ def _initial_verification_status(
     low-confidence village match does, because the displayed village name is
     otherwise indistinguishable from a full-confidence match.
     """
-    return (
-        "needs_verification"
-        if (
-            duplicate_flag
-            or insufficient_score
-            or low_confidence_village_match
-            or condition_review_required
-        )
-        else "auto_processed"
+    reasons = active_non_duplicate_verification_reasons(
+        match_result=match_result,
+        low_confidence_village_match=low_confidence_village_match,
+        condition_review_required=condition_review_required,
+        village_id=village_id,
     )
+    return "needs_verification" if reasons else "auto_processed"
 
 
 def _relevance_review_details(
@@ -709,6 +710,7 @@ class IncidentMaterializationService:
                         ),
                         event_datetime=event_datetime,
                         segment_text=unit.route_text,
+                        raw_text=representative.raw_text,
                     )
                 if (
                     story_route is not None
@@ -1042,6 +1044,7 @@ class IncidentMaterializationService:
             insufficient_score=duplicate_flag,
             low_confidence_village_match=low_confidence_village_match,
             condition_review_required=condition_review_required,
+            village_id=village_id,
         )
         if scope_review_reason:
             verification_status = "needs_verification"
@@ -1393,6 +1396,7 @@ class IncidentMaterializationService:
                 condition_review_required=bool(
                     village_match.get("condition_review_required")
                 ),
+                village_id=village_id,
             )
             extraction_review_reason = _extraction_review_reason(extraction)
             if category_casualties_suppressed or extraction_review_reason:

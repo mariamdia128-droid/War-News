@@ -1,0 +1,355 @@
+﻿incident_id,category,detail,raw_village,old_village_id,old_village,new_village_id,new_village,method,old_flag,new_flag,top_candidates
+0ece4be9-b80a-4e7d-ac7d-41708443e72c,cleared_same_village,"Accepted below the 0.6 threshold (score 0.54, method trigram, next candidate 0.36).",الشقيف,17,عدشيت الشقيف,17,عدشيت الشقيف,trigram,needs_verification,auto_processed,
+36ae6929-29d1-459c-ae6c-c1234f80202e,cleared_same_village,,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,auto_processed,
+48b77ea0-576c-426f-b624-ab0f0d6c29c3,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+4cbf7c37-856d-4033-9db0-bb3c03ce212a,cleared_village_changed,,الطيبة,903,الخريبة,1440,طيبة مرجعيون,geo_context,needs_verification,auto_processed,
+5efdfd1b-0d2c-4b0b-8372-83aa27f5cd5a,cleared_same_village,,أطراف ميفدون,1003,ميفدون,1003,ميفدون,exact,needs_verification,auto_processed,
+615c40dd-d7a8-4ea3-a45c-cf7889ad8126,cleared_same_village,,أطراف شقرا,409,شقرا,409,شقرا,exact,needs_verification,auto_processed,
+6fcb0929-56ee-4541-84e2-f1dd3d8d879a,still_flagged,name_not_covered_by_candidate,أودية قبريخا,1219,قبريخا,1219,قبريخا,trigram,needs_verification,needs_verification,قبريخا#1219:0.54 ; الداودية#469:0.29
+a2b6755b-c17f-4d0e-8437-93376add1fae,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+a9b05203-265f-47bc-9231-e3fa240cfcd0,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+b72bf698-9b44-438e-9f57-4fa143f6938a,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+bd862756-2c2c-461b-b989-0cfcaf50ff35,cleared_same_village,,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,auto_processed,
+cdc5e534-ba2f-4eb2-9261-56d8c266ee37,cleared_same_village,,أطراف برعشيت,207,برعشيت,207,برعشيت,exact,needs_verification,auto_processed,
+d2f9b3d7-848c-410e-9afb-09d3ea5f1598,still_flagged,below_floor,ظوحة كفررمان,851,كفر رمان,851,كفر رمان,trigram,needs_verification,needs_verification,كفر رمان#851:0.43 ; كفر شليمان#859:0.26
+f7371e4e-93e0-4ae2-bfd8-51b943e4b8bd,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+27ad3d1b-4ec3-48ec-b83f-295d7b0d40fd,cleared_village_changed,,وادي سلوقي,1397,سلوقي,1464,تولين,alias,needs_verification,auto_processed,
+2c916a48-4169-46ea-b487-c59eff27d0f0,cleared_same_village,,اطراف ديرسريان,524,دير سريان,524,دير سريان,compact,needs_verification,auto_processed,
+529316a0-8abe-4a08-945e-5e643aac020b,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+8678dd6c-e947-43d1-9131-9bcbbaa13eca,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+c04c607f-943f-4201-b915-4516282b1195,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+cc974fce-5cc6-469f-8552-fa89388633f5,still_flagged,name_not_covered_by_candidate,التلال,1475,التل,1475,التل,trigram,needs_verification,needs_verification,التل#1475:0.50 ; التليل#1458:0.40
+e8964acb-814f-4058-afb9-29e07c4997ed,still_flagged,name_not_covered_by_candidate,بين برعشيت وبيت ياحون,273,بيت ياحون,273,بيت ياحون,trigram,needs_verification,needs_verification,بيت ياحون#273:0.50 ; برعشيت#207:0.35
+ec512e62-3eb2-466c-af3f-455fd5880ff9,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+fb9e435d-7036-4172-a095-12faccd31b73,still_flagged,below_floor,المياد,1108,المينا,1108,المينا,trigram,needs_verification,needs_verification,المينا#1108:0.40 ; مياسة#1001:0.38
+01d33270-6828-472d-a7d4-d2dc309c8b02,cleared_village_changed,,الطيبة,903,الخريبة,1440,طيبة مرجعيون,geo_context,needs_verification,auto_processed,
+42535896-c104-4d30-bec0-02d1d11a94d4,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+9b58d48d-cca2-4da6-9a06-4b6e99cda857,still_flagged,below_floor,الطيبة,903,الخريبة,1420,طيبة بعلبك,trigram,needs_verification,needs_verification,طيبة بعلبك#1420:0.45 ; طيبة مرجعيون#1440:0.38
+c23a22f4-04cf-4d6e-9a1e-895b6c30cacb,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+cd7faf98-9ed9-4983-9c52-38f61ba5f068,cleared_same_village,,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,auto_processed,
+e773b0da-26cf-47a4-8cc3-0dad71bcaf0f,still_flagged,name_not_covered_by_candidate,وادي صربين,1412,صربين,1412,صربين,trigram,needs_verification,needs_verification,صربين#1412:0.55 ; وادي قنوبين#1197:0.44
+eb80d119-4ea4-49ba-a82e-24c735c777a4,still_flagged,name_not_covered_by_candidate,ميوفدون,1003,ميفدون,1003,ميفدون,trigram,needs_verification,needs_verification,ميفدون#1003:0.50 ; ميدون#1002:0.40
+57660fdb-329e-40fa-98f1-d9ee8a2315f1,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+58359992-b221-4c2b-83ee-57c94331aaeb,cleared_village_changed,,الحنية,1109,المنيه,678,حنية,normalized,needs_verification,auto_processed,
+7312a497-5cd4-4bbe-b684-11f4358a43b5,other_reason_remains,condition_review,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,needs_verification,
+a12d90ff-7b3d-478a-a4e5-8419d8a2779e,other_reason_remains,condition_review,البياضة,310,البياض صور,724,إسكندرونة,alias,needs_verification,needs_verification,
+a95c048f-3893-4e27-8964-570908f6f227,still_flagged,same_name_collision,عدشيت,17,عدشيت الشقيف,17,عدشيت الشقيف,trigram,needs_verification,needs_verification,عدشيت الشقيف#17:0.55 ; عدشيت القصير#18:0.55
+c66e5366-1658-4013-8f68-2072d6b2dec9,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+d08a4c8e-f90d-4f9b-8245-aeffaa930e9a,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+f81c4b7d-da0b-4f8d-a3d1-934fe44e410e,still_flagged,name_not_covered_by_candidate, يحمر الشقيف,1492,يحمر,1492,يحمر,trigram,needs_verification,needs_verification,يحمر#1492:0.50 ; عدشيت الشقيف#17:0.39
+fbca5392-c710-4dfd-b052-70f79d6d057f,still_flagged,name_not_covered_by_candidate,النبطية الفوفا,543,الدوير النبطية,1153,نبطية الفوقا,trigram,needs_verification,needs_verification,نبطية الفوقا#1153:0.57 ; الدوير النبطية#543:0.44
+1704fc3d-a281-4c8d-bb88-b15496eb81d6,still_flagged,below_floor,دوبيه,535,دبية,535,دبية,trigram,needs_verification,needs_verification,دبية#535:0.38 ; لوبية#934:0.33
+35094ccb-e9d2-4aad-bcee-6848a0054bd3,cleared_same_village,,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,auto_processed,
+43338ec6-3d81-4780-b6f8-934c81fd17d2,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+53a15077-8e82-44b1-ac9d-a75350dd6028,cleared_same_village,,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,auto_processed,
+5ed2beff-c537-4f7a-b7da-7fc007ad93a1,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+8904d9d9-b4b9-43a9-abfd-bab6831a7ab6,cleared_village_changed,,عيناثا,142,عيناب,144,عيناتا بنت جبيل,alias,needs_verification,auto_processed,
+972adbb9-d26c-425f-bcdd-8a9a62eeb1e4,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+97c1a63c-6c6b-47b7-b8e2-fdb399bf4b22,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+9b8aa3fb-bf47-4f2f-b31a-e2445a1cbe48,cleared_same_village,,أطراف ديرميماس,518,دير ميماس,518,دير ميماس,compact,needs_verification,auto_processed,
+ae5aa973-ab28-4673-a4cc-5b0b592f34e0,still_flagged,below_floor, Hardinga (Hadatha),601,حداثا,601,حداثا,trigram,needs_verification,needs_verification,حداثا#601:0.41 ; حردين#638:0.35
+b8bbb7dd-9102-43f3-9098-272fb9c21852,cleared_same_village,,مرتفعات حلتا,675,حلتا,675,حلتا,exact,needs_verification,auto_processed,
+c1c3cbb7-510f-43ec-a361-2db33f53bbb1,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+dfe2b1bc-ed39-4f69-8fed-d0e28eaaa242,other_reason_remains,condition_review,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,needs_verification,
+0b327561-9237-4c6e-b2d9-4751d55f9418,still_flagged,below_floor,دوبيه,535,دبية,535,دبية,trigram,needs_verification,needs_verification,دبية#535:0.38 ; لوبية#934:0.33
+0f402bc6-2569-4c0d-ad84-49b6599a7f69,other_reason_remains,condition_review,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,needs_verification,
+1a55c2a3-73af-4859-803c-92f4de65d997,still_flagged,name_not_covered_by_candidate,ميوفدون,1003,ميفدون,1003,ميفدون,trigram,needs_verification,needs_verification,ميفدون#1003:0.50 ; ميدون#1002:0.40
+25f03784-4d6e-49c8-b9e1-a14dee3dcfa4,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+2b1f7532-b765-4695-81b9-a4228d3f7977,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+34457adb-8c84-4bbc-bf22-633ae0a607f2,cleared_village_changed,,الطيبه,903,الخريبة,1440,طيبة مرجعيون,geo_context,needs_verification,auto_processed,
+520f5f57-2295-41c9-832b-6f50c9afd74d,cleared_same_village,,ديرميماس,518,دير ميماس,518,دير ميماس,compact,needs_verification,auto_processed,
+60bdda67-5fd4-4f50-a790-3fc0cb494cc0,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+827843dd-4366-45d7-84af-384e6ef3824c,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+8bc9e9d7-d304-4f45-8852-ddd226df23de,other_reason_remains,condition_review,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,needs_verification,
+b0fe9b2f-48cf-4bbf-9aa5-1fe768225be1,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+befce550-c16e-446d-8f8c-68ea476dc7f3,still_flagged,same_name_collision,مشاع,1066,مشاع الجبه,1066,مشاع الجبه,trigram,needs_verification,needs_verification,مشاع الجبه#1066:0.56 ; مشاع الفتوح#1067:0.50
+cf171818-c901-470b-b600-da2b37472823,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+d732886a-1539-4e3f-b886-bbd9c78d2661,cleared_same_village,,المدينة الخيام,901,الخيام,901,الخيام,exact,needs_verification,auto_processed,
+e6a67bbf-7272-4221-8c8d-b551965b8e05,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+f8a5c92b-53a5-44b4-9dab-e0a4dac144b8,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+0b20bf99-a7f2-4ca3-b03d-80c4e2846fb0,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+3bc81b2c-f1a7-4164-bc91-e8356634c02e,other_reason_remains,condition_review,ديرسريان,524,دير سريان,524,دير سريان,compact,needs_verification,needs_verification,
+564dca60-1746-4a7c-a8bd-2320358db4e2,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+66d22f95-993e-48c0-9b55-8b3151807451,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+9b2d737d-e472-4fd4-82e6-f316e30e5ee8,no_replacement_village,no_candidate,الناصرة,335,الناقورة,,,,needs_verification,needs_verification,
+a60ceb93-af95-46b6-bcf6-a63df3dc3d18,still_flagged,name_not_covered_by_candidate,يحمر الشقيف,1492,يحمر,1492,يحمر,trigram,needs_verification,needs_verification,يحمر#1492:0.50 ; عدشيت الشقيف#17:0.39
+a7f82774-d843-429a-b3d0-f832bee6db49,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+d333ca3f-a2f9-449e-9537-e97348b9c430,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+03269d21-6f68-444d-abea-db58d5a0ca22,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+07642bd7-c774-4b7d-be12-e6b64ac4b96e,cleared_village_changed,,عيناثا,142,عيناب,144,عيناتا بنت جبيل,alias,needs_verification,auto_processed,
+15858218-6706-4eaa-b69f-06221865db95,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+1e4b74ba-144c-4229-ae9a-ce8ba94a189d,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+24e4e914-7af7-4308-9be7-d16c453e68d8,other_reason_remains,condition_review,الحنية,1109,المنيه,678,حنية,normalized,needs_verification,needs_verification,
+2d727fd2-4083-4ac1-8a35-d1d661e557c4,cleared_village_changed,,عيناثا,142,عيناب,144,عيناتا بنت جبيل,alias,needs_verification,auto_processed,
+48da4eb5-9533-4a30-bad4-32b3dffff833,cleared_village_changed,,بيوت السيّاد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+5cf35069-3250-4957-b904-7962f0d413c1,cleared_village_changed,,الحنية,1109,المنيه,678,حنية,normalized,needs_verification,auto_processed,
+5e6ce26e-48a6-45ca-8286-a51b1c8b4bcc,other_reason_remains,condition_review,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,needs_verification,
+5f83ab85-3fbf-4528-91aa-66430f662701,still_flagged,below_floor,عين السماحية,41,عين البنية,41,عين البنية,trigram,needs_verification,needs_verification,عين البنية#41:0.41 ; عين القش#46:0.38
+726717c4-3691-42e0-a720-e78310bcea30,cleared_village_changed,,عيناثا,142,عيناب,144,عيناتا بنت جبيل,alias,needs_verification,auto_processed,
+843918dc-e069-4f0d-a0fe-99231d98fc39,still_flagged,name_not_covered_by_candidate, Hardinga,638,حردين,638,حردين,trigram,needs_verification,needs_verification,حردين#638:0.55 ; حاريص#650:0.25
+8dba6790-d9d5-4d37-9049-7e3fb9bfc028,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+a9a82f8a-cb1a-42f5-931b-100bd445f6b5,still_flagged,name_not_covered_by_candidate,ميفردون,1003,ميفدون,1003,ميفدون,trigram,needs_verification,needs_verification,ميفدون#1003:0.50 ; ميدون#1002:0.40
+ac7cf011-fed6-47bd-9cb1-3a842b635b15,other_reason_remains,condition_review,عيناثا,142,عيناب,144,عيناتا بنت جبيل,alias,needs_verification,needs_verification,
+b9ff2e39-e38b-4880-9d7a-7c2d68828074,cleared_same_village,,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,auto_processed,
+c8e233df-4bf4-4d89-bb73-cbc198650c47,cleared_same_village,,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,auto_processed,
+cf5b2ddc-4c7a-4c1e-bcfe-caa0e8f5cf91,still_flagged,name_not_covered_by_candidate,يحمر الشقيف,1492,يحمر,1492,يحمر,trigram,needs_verification,needs_verification,يحمر#1492:0.50 ; عدشيت الشقيف#17:0.39
+cfa1dd58-6092-4a31-997d-0ba21cc36de0,cleared_village_changed,,عيناثا,142,عيناب,144,عيناتا بنت جبيل,alias,needs_verification,auto_processed,
+dc44d1a5-865e-4683-ace1-97413c7475be,other_reason_remains,condition_review,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,needs_verification,
+e1145f25-7213-4d86-a864-f8601b313a01,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+e5a87b0b-d55c-4a97-8463-6025b73401fe,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+eb7c3f3d-40b2-4159-9c8c-028f7528030a,still_flagged,tie_between_distinct_places,وادي العزية,1189,وادي العرايش,154,عزِّيه,trigram,needs_verification,needs_verification,عزِّيه#154:0.50 ; وادي العرايش#1189:0.47
+f0182f00-c309-429d-ac82-2d72a0f44eec,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+f1fb3f47-486a-4722-ae17-33dd979fcbe0,cleared_same_village,,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,auto_processed,
+f54014c6-fac6-4efc-a34a-0f47ba314da2,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+fc85e498-e8c2-4644-9433-f80036ba9e31,other_reason_remains,condition_review,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,needs_verification,
+0a294f47-3856-4d85-a09f-c278d7d8d254,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+0ed29f74-9e8b-476e-9036-d72eb42c3979,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+122783f8-229e-4137-9ead-1a034c7becb6,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+1eb2a30b-59a3-42b2-ac13-98fc273f8e9f,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+232bee00-9fb6-4a0f-af7e-ae0c78f5fa84,cleared_village_changed,,البياضة,310,البياض صور,724,إسكندرونة,alias,needs_verification,auto_processed,
+35f23dd3-dc5d-4284-a5c7-64916c100a66,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+59d25f2b-fbdc-48b1-90e2-e4896a6e4f22,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+8aac7463-471f-4ada-92bb-8b035ab1db55,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+9d1f4fce-a762-4298-ae13-8a209ed40870,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+a6100852-df61-4857-9021-db63971721b9,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+a7525ae6-5261-4723-ad68-506842dee5f6,cleared_village_changed,,البياضة,310,البياض صور,724,إسكندرونة,alias,needs_verification,auto_processed,
+b004280d-1336-43e9-a301-80b06518a5ca,still_flagged,same_name_collision,عدشيت,17,عدشيت الشقيف,17,عدشيت الشقيف,trigram,needs_verification,needs_verification,عدشيت الشقيف#17:0.55 ; عدشيت القصير#18:0.55
+07c09ae8-754a-4e8f-8d4a-4d513fd1aadf,cleared_same_village,,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,auto_processed,
+193543c6-a006-4046-93d4-11b399cd46c5,other_reason_remains,condition_review,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,needs_verification,
+24cbddf7-de30-453a-94d4-f2a73e3c2930,cleared_same_village,,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,auto_processed,
+919fecdd-8c42-4d74-9bed-3a1c31eb005c,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+944cc77f-5352-4992-832c-a5d2b3d4a2d2,still_flagged,name_not_covered_by_candidate,Harir,650,حاريص,650,حاريص,trigram,needs_verification,needs_verification,حاريص#650:0.50 ; حارتية#653:0.30
+9df5678f-701f-47c5-a133-3c3555f94884,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+b7f98d33-a5a2-4c40-ac6f-0998239b3aa9,cleared_village_changed,,الطيبة,903,الخريبة,1440,طيبة مرجعيون,geo_context,needs_verification,auto_processed,
+c8070491-8a73-4510-a0ec-c66c9e4fbf3f,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+d4905ea1-cb9b-4aac-959b-05053ed79663,still_flagged,tie_between_distinct_places,عين العروس,46,عين القش,31,العين,trigram,needs_verification,needs_verification,العين#31:0.50 ; عين عرب#27:0.50
+d97d38f3-f4f4-4661-afd1-7a644f08669c,other_reason_remains,condition_review,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,needs_verification,
+ddb9e7ac-2d03-4fb2-ae04-d09ee6c3dc14,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+e792bb3b-c73f-44eb-b2f3-6755dcf4fc0e,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+016589a5-5f09-4d9f-b325-b0b86b647d2d,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+02025748-f248-4d73-a1a4-4161b74bae6b,still_flagged,below_floor,شقرة,409,شقرا,409,شقرا,trigram,needs_verification,needs_verification,شقرا#409:0.43 ; الشقدوف#408:0.22
+0bff07ba-1445-4193-8c02-cd680ffb4e21,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+1108ed3b-b1bd-43d3-8277-70766ad37dfc,cleared_same_village,"Accepted below the 0.6 threshold (score 0.57, method trigram, next candidate 0.38).",العرقوب,1028,مزرعة العرقوب,1028,مزرعة العرقوب,trigram,needs_verification,auto_processed,
+1ed73142-eea6-4411-9cd0-c01cabf984ca,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+29244717-eb6e-4e29-af6f-df57b74b9e49,other_reason_remains,condition_review,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,needs_verification,
+44c6083a-7e27-43b8-9888-c4a424dcde85,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+566bc2c9-2665-4b8d-b9d3-8bf71014d8aa,other_reason_remains,condition_review,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,needs_verification,
+59d40f40-273a-41dc-8bd7-a3167115affe,cleared_same_village,,المدينة الخيام,901,الخيام,901,الخيام,exact,needs_verification,auto_processed,
+5feecd9f-3390-4e8a-8158-f3e185e4f896,still_flagged,tie_between_distinct_places,مزرعة بسطرة,1026,مزرعة,1026,مزرعة,trigram,needs_verification,needs_verification,مزرعة#1026:0.50 ; المزرعة#1009:0.50
+699f94d7-28ed-43f1-ac9e-e73615dd9994,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+736ec500-224b-4779-8eb4-5121d0c6f0da,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+74216baa-2996-4d51-b992-b768b6eb3b15,other_reason_remains,condition_review,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,needs_verification,
+75495254-3e2b-431e-a09f-e3e872fb8bbd,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+7bb29ca0-9b46-48f0-862b-7a86e669c794,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+7ee0ec4a-b139-4100-963b-1406caae55c7,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+8aafe6d8-42b4-4ab0-884b-141092960626,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+8b305c6e-fea2-4f5c-8c6b-3c6bd9d0d606,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+9a192a8a-c089-4c11-808b-67a39001d0c4,cleared_same_village,,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,auto_processed,
+9f0155ed-e1cc-4ba0-b0aa-a40631f874b4,cleared_village_changed,,وادي الجمل,1191,وادي الجاموس,1079,ميس الجبل,alias,needs_verification,auto_processed,
+a2c91f3a-eab0-4354-a9b1-cd9a1022e63d,other_reason_remains,condition_review,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,needs_verification,
+a4054031-5c9a-499a-a50d-62c99adc09da,cleared_village_changed,"Accepted below the 0.6 threshold (score 0.50, method trigram, next candidate 0.38).",عرقوب,132,عرقا,1028,مزرعة العرقوب,trigram,needs_verification,auto_processed,
+b0ac9c81-6446-4b31-83d7-87c9b5599f99,other_reason_remains,condition_review,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,needs_verification,
+b3b3251f-61fd-49d5-b437-9233f422f2d9,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+b8358cda-d603-4c73-b71e-23b68f64c25a,cleared_same_village,,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,auto_processed,
+cccde594-8e10-4a20-953e-652c66d52d67,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+ebf78cec-17b3-424c-9d94-7e5ba907c1fb,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+ee301362-7167-4354-bcb9-eb5be474d231,still_flagged,below_floor,شُمران,496,دير شمرا,496,دير شمرا,trigram,needs_verification,needs_verification,دير شمرا#496:0.36 ; قبة شمرا#1268:0.36
+ffb3d835-b0bb-40b8-b36b-59f9b4dce597,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+048f19df-da45-4255-aab2-714bb6eae26d,still_flagged,below_floor,حالتا,675,حلتا,675,حلتا,trigram,needs_verification,needs_verification,حلتا#675:0.38 ; حالات#606:0.33
+0f11208b-5fae-4083-bc7d-8a9e6dd5c482,cleared_same_village,,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,auto_processed,
+10bc1c43-6fd7-40d2-bbb1-efcae8f8aa26,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+1cb68d36-f8cb-4df5-a4d1-2eeeb1c582f3,other_reason_remains,condition_review,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,needs_verification,
+20b3f97b-c623-4478-973a-30a34a5c6cb0,other_reason_remains,condition_review,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,needs_verification,
+2b3dc38d-f0e4-4d21-816a-de7252322023,other_reason_remains,condition_review,البياضة,310,البياض صور,724,إسكندرونة,alias,needs_verification,needs_verification,
+3210cdda-3c94-4c0d-bc54-4c3c3adfeb6b,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+6e8d710c-f88f-4f83-a077-bcacdd6b7cbf,still_flagged,name_not_covered_by_candidate,قلعة الشقيف,17,عدشيت الشقيف,1222,القلعة,trigram,needs_verification,needs_verification,القلعة#1222:0.50 ; عدشيت الشقيف#17:0.39
+73363468-e3aa-4fae-99a9-7295298bcf52,cleared_same_village,,كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,compact,needs_verification,auto_processed,
+780528e2-e529-4a40-8605-acdca3ba0aad,cleared_same_village,,عربصاليم,118,عرب صاليم,118,عرب صاليم,compact,needs_verification,auto_processed,
+9987bda7-e01a-4ecc-9292-44904052e4ad,other_reason_remains,condition_review,كفرشوبا,813,كفر شوبا,813,كفر شوبا,compact,needs_verification,needs_verification,
+bede4b4f-b29c-4d14-ae33-585dc02f6b49,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+c71fae20-5bd1-4ab6-a14a-779121f1906e,still_flagged,below_floor,حي المسلخ- النبطية,543,الدوير النبطية,543,الدوير النبطية,trigram,needs_verification,needs_verification,الدوير النبطية#543:0.44 ; الحمرا النبطية#614:0.44
+c7b02785-e94b-498b-8d17-523495bc0d75,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+d372c0c5-e879-48f4-a51a-586bb9be420f,other_reason_remains,condition_review,البياضة,310,البياض صور,724,إسكندرونة,alias,needs_verification,needs_verification,
+e5cc6252-ce2c-499a-9c80-cb0e1303047e,cleared_same_village,,ديرسريان,524,دير سريان,524,دير سريان,compact,needs_verification,auto_processed,
+e8cbb770-b052-46ba-873b-62304bcebae4,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+08891944-b5b3-4eeb-9bce-8fa3acde3f12,cleared_village_changed,,بيوت السياد,645,حرف السياد,976,المنصوري,alias,needs_verification,auto_processed,
+146a0cd2-d64b-4364-81fb-093e9cfc78ec,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+20c9b3b4-ac00-48a4-883e-382894bce78c,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+299ab739-06ce-40d8-84a9-9c897ad92d1f,still_flagged,name_not_covered_by_candidate,رعشيت,1281,رعشين,1281,رعشين,trigram,needs_verification,needs_verification,رعشين#1281:0.50 ; برعشيت#207:0.44
+2f520ce8-e5f2-4e9d-89bf-dff0a98c80d9,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+304d3298-3837-43d1-8d8f-59e8aed8410a,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+512c900e-e5c3-45b6-b526-89c304d75277,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+58da2787-a614-4410-b79d-15a0d0697621,cleared_village_changed,,الفوقا,703,حومين الفوقا,1153,نبطية الفوقا,geo_context,needs_verification,auto_processed,
+78145585-421c-4c24-8c04-dbf701cb7bcb,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+7f33eba6-f426-487d-adae-07af61d17c33,still_flagged,below_floor,القنترة,1229,القنطرة,1229,القنطرة,trigram,needs_verification,needs_verification,القنطرة#1229:0.45 ; قنطرة#1228:0.33
+7f509439-4949-4d3a-a6f0-45dd1d92d7d7,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+89a5b113-4140-4974-b0f9-2903a9bedc69,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+b1097a42-47f4-43e1-9ff5-1cf89cd01cf9,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+b6258cbf-36a4-4a0f-8cea-8e2e90a3ba71,still_flagged,below_floor,الميتم,1108,المينا,1108,المينا,trigram,needs_verification,needs_verification,المينا#1108:0.40 ; المرج#987:0.30
+b8b041c7-ecfc-457d-9c45-8936a1e28d6e,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+b9a626e5-15ac-4791-b45c-b8b1ae3d63cc,still_flagged,location_ambiguity,الخيام,901,الخيام,901,الخيام,exact,needs_verification,needs_verification,الخيام#901:1.00 ; الخيارة#888:0.50
+d1244bcf-2a07-4e00-917b-aacd029b0746,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+eb126875-ef73-4016-812b-715bab304cdd,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+f71926b1-9aac-4518-b066-e03caa4b3f5e,still_flagged,below_floor,المصنوري,1472,النوري,1472,النوري,trigram,needs_verification,needs_verification,النوري#1472:0.45 ; المنصوري#976:0.38
+f8d5d31d-fdd6-46d5-a492-5ba5c3558ebe,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+00f025d1-901f-4e86-a1bb-518789280d2f,still_flagged,name_not_covered_by_candidate,نبطية-كفررمان,851,كفر رمان,851,كفر رمان,trigram,needs_verification,needs_verification,كفر رمان#851:0.57 ; الكفور النبطية#874:0.47
+0174b6ef-d7ef-4d26-947e-978ba8c4bf41,cleared_same_village,,أطراف طلوسة,1431,طلوسة,1431,طلوسة,exact,needs_verification,auto_processed,
+038cf425-912b-46b3-b66e-062fc9a2d4d5,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+087111c6-0b18-4e9c-a029-11afb2a5ff41,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+0ca3e8e4-28f4-4a7c-b710-1743dc55524a,still_flagged,below_floor,طلوسة-وادي السلوقي,1194,وادي الست,1194,وادي الست,trigram,needs_verification,needs_verification,وادي الست#1194:0.38 ; طلوسة#1431:0.38
+13a55ec4-1ea3-4410-a23f-f22d2be2744b,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+2b408c43-f198-4d9f-bbe6-1e293e42ff91,still_flagged,name_not_covered_by_candidate,بين ميفدون و زوطر الشرقية,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.50 ; ميفدون#1003:0.29
+2bfd2817-b256-4d07-bba3-b17682ec0223,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+3413c928-f5f7-4f51-bfe8-4c514fa59611,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+38ffe579-2d9f-4b73-bbcb-3471591099e9,cleared_same_village,,ساحة النبطية الفوقا,1153,نبطية الفوقا,1153,نبطية الفوقا,normalized,needs_verification,auto_processed,
+3e587b72-91c2-4e15-a7fd-f4b413cf07cf,still_flagged,below_floor,الطيبة,903,الخريبة,1420,طيبة بعلبك,trigram,needs_verification,needs_verification,طيبة بعلبك#1420:0.45 ; طيبة مرجعيون#1440:0.38
+41b70639-9bc0-42a9-855a-5d48c0571f9d,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+4f5cce7d-5e5b-4ee1-8753-3fd51d0bb233,still_flagged,name_not_covered_by_candidate,حي الدير-النبطية الفوقا,1153,نبطية الفوقا,1153,نبطية الفوقا,trigram,needs_verification,needs_verification,نبطية الفوقا#1153:0.58 ; الدوير النبطية#543:0.50
+5634294c-1b1b-46d3-ba95-ef0eac5dd710,cleared_same_village,,حي الدير- النبطية الفوقا,1153,نبطية الفوقا,1153,نبطية الفوقا,trigram,needs_verification,auto_processed,
+5a5ecd49-653f-47b5-94a6-ddf6eeb786d6,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+5d8047f8-181d-4974-8dc2-2dbe3a6bad6f,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+67de2d4e-527c-4697-b001-5328982014e8,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+6d758f5f-b75f-45be-ad7f-5b1d2aa78a6d,still_flagged,name_not_covered_by_candidate,العريش,129,العريضة,129,العريضة,trigram,needs_verification,needs_verification,العريضة#129:0.50 ; وادي العرايش#1189:0.33
+6d99dbf7-b561-43b8-aae6-13a2dbbf4f58,still_flagged,name_not_covered_by_candidate,كفرمان قضاء النبطية,1276,قصيبة النبطية,851,كفر رمان,trigram,needs_verification,needs_verification,كفر رمان#851:0.67 ; كفر شليمان#859:0.42
+706663ac-cfb9-4f03-8a40-9422e2f64422,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+756a8d99-6e1c-412e-8a52-5d86fcf00f7c,other_reason_remains,condition_review,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,needs_verification,
+7920313d-af89-46fa-baec-a7e7557d8a44,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+7c07caeb-ece3-4856-b332-55fa0c1e97c7,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+7def9e35-455b-4452-97de-1a91568eb2ce,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+8fa66612-c310-43e7-9dd4-382c51be18da,cleared_village_changed,,وادي سلوقي,1397,سلوقي,1464,تولين,alias,needs_verification,auto_processed,
+92504c1c-eca7-40c4-b1d1-ffa0f590853f,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+947016c1-6a6e-4bed-b25d-9d68cc682a8f,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+9d15e5be-7670-422e-9cca-afdab26edab8,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+a613f05e-5d52-4b5a-bcb4-5398fa2123cd,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+a9ffc152-988b-4add-aab9-a5a6cb84e171,still_flagged,same_name_collision,مشاع,1066,مشاع الجبه,1066,مشاع الجبه,trigram,needs_verification,needs_verification,مشاع الجبه#1066:0.56 ; مشاع الفتوح#1067:0.50
+afbf938a-3efe-4d73-9162-ad3ae22e6c2d,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+b1887f03-99ad-4b85-800d-57938ad93f4a,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+b8a584c0-0572-48d8-aaf1-4106965dc9f0,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+beaa2570-3900-47bd-bd61-eebd53510fe5,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+bf1d3183-b853-4e3b-9cdd-cfadb48d9309,still_flagged,below_floor,بين ارنون و كفرتبنيت,857,كفر تبنيت,857,كفر تبنيت,trigram,needs_verification,needs_verification,كفر تبنيت#857:0.35 ; أرنون#176:0.29
+c2122b42-78ef-403b-95ca-a634f3ca9f3f,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+d8f7ac7d-caa8-4fcf-b1fb-11e3c819017b,cleared_village_changed,,أطراف النبطية,543,الدوير النبطية,1152,نبطية التحتا,alias,needs_verification,auto_processed,
+e15ef03e-2218-4640-ac4b-6e9fa3b2fa5b,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+edf1bc32-312d-4e74-a6fd-e839748e96ff,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+fab9f6e0-d4d0-4249-9d2e-0032422c80ab,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+fdc2679b-307a-4a09-a287-dd89c9ca0d9e,still_flagged,same_name_collision,حي الدير,460,ضهر الدير,460,ضهر الدير,trigram,needs_verification,needs_verification,ضهر الدير#460:0.60 ; وادي الدير#1186:0.55
+fdc8dd9f-e257-4005-85a2-70b6ae2d7085,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+03f8432a-9620-42f3-9f36-82ae2667c645,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+050a464a-8cd6-4d5e-8a00-8213aced7d79,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+06280578-4504-4529-ad64-db517de45ea2,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+06df51b4-cedd-48a5-bcd8-c1e63f69f0dc,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+09561ebb-c4d7-4fb1-ba26-758bd3de28d1,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+0c5279cf-183a-4cea-86e9-73763fd8627d,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+11e8887c-1b2a-4172-97b5-944a4427faac,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+160ec1f2-6b70-4c06-a77f-340cd89e4655,cleared_village_changed,,السلوقي,1397,سلوقي,1464,تولين,alias,needs_verification,auto_processed,
+24379763-2637-4079-ac57-f81327fed8e5,cleared_village_changed,,الحنية,1109,المنيه,678,حنية,normalized,needs_verification,auto_processed,
+25360c35-5cb5-4099-b386-616b0d5ccb93,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+28ccc77a-c067-4ed1-9e17-99dda82b73ef,cleared_same_village,,عرب الصاليم,118,عرب صاليم,118,عرب صاليم,normalized,needs_verification,auto_processed,
+2db427ad-d8cf-4527-acc3-6b60b4767575,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+328d9ee4-bae6-4540-93c8-94c0efce2c6a,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+35310518-9678-46d8-b8f8-76869297c365,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+3a88eddf-2fc2-49fc-8437-671703801278,cleared_same_village,,كفررمان,851,كفر رمان,851,كفر رمان,compact,needs_verification,auto_processed,
+4091f7b2-7233-4165-b963-47aa3684de1a,other_reason_remains,condition_review,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,needs_verification,
+54568787-a033-4df1-9966-2a8fcd8c41e3,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+5784b39b-6939-4fd9-a7cf-bc5e4ed4653e,cleared_village_changed,,الحنية,1109,المنيه,678,حنية,normalized,needs_verification,auto_processed,
+5c69a830-1805-4064-a7d6-d6127f767d52,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+6272357a-74b6-401c-a7ba-64b79a5133d9,other_reason_remains,condition_review,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,needs_verification,
+69da48f2-448f-4f2a-a8f6-1397578e4817,still_flagged,below_floor,وادي زيفين,1481,وادي جزين,1481,وادي جزين,trigram,needs_verification,needs_verification,وادي جزين#1481:0.40 ; وادي شاهين#1183:0.38
+6a95eabf-8d82-4926-a9ac-dd237bf54318,still_flagged,name_not_covered_by_candidate,عرابصاليم,118,عرب صاليم,118,عرب صاليم,trigram,needs_verification,needs_verification,عرب صاليم#118:0.58 ; بصاليم#374:0.42
+73264411-53ec-4e38-9b16-6597efe4fac7,other_reason_remains,condition_review,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,needs_verification,
+74c2a84a-f545-4e07-a2ec-78c2081286d0,still_flagged,name_not_covered_by_candidate, Hardinga ,638,حردين,638,حردين,trigram,needs_verification,needs_verification,حردين#638:0.55 ; حاريص#650:0.25
+77586f69-5bb8-4405-9fb7-125ee183a6eb,cleared_same_village,,المنصوري,976,المنصوري,976,المنصوري,exact,needs_verification,auto_processed,
+80af5479-87c4-444c-8fd5-b1cc90ad7499,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+81c503fb-e3cd-4e5b-992d-e761e5d1e95d,still_flagged,below_floor,الراهبات,1293,الرام,1293,الرام,trigram,needs_verification,needs_verification,الرام#1293:0.36 ; الراموط#1296:0.31
+86bc5b05-2189-47a3-bebe-f276adc8f980,cleared_same_village,,الرمادية,1324,رمادية,1324,رمادية,normalized,needs_verification,auto_processed,
+96a74feb-15db-4480-b209-064393b49d4f,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+9fbfff02-59ae-4206-8ab7-92f502772ece,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+a7b60cb4-38d3-47a1-a14a-5d21cab20c1b,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+b407a657-42d3-4bf9-ba1f-c6abe3af5006,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+bdf5e3bd-b46b-49b6-b029-5c3f9bed403b,cleared_same_village,,عربي الصاليم,118,عرب صاليم,118,عرب صاليم,trigram,needs_verification,auto_processed,
+c26d3cdc-14f1-4082-997a-e8b20ad525a4,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+c472ee41-f82a-4228-8f33-739a0f956a83,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+c4bd12e6-f893-4977-a2aa-8f19db9fddb5,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+c6b4166a-7981-493e-9160-d900977844b8,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+cabaacc1-6b0f-4c4f-ae2c-6925428dd9e7,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+cbb16d56-f0f9-456c-9547-39945de9ff96,still_flagged,name_not_covered_by_candidate,عربيصاليم,118,عرب صاليم,118,عرب صاليم,trigram,needs_verification,needs_verification,عرب صاليم#118:0.58 ; بصاليم#374:0.31
+d37d9251-f1be-4591-aaa9-b977fe2b9783,cleared_same_village,,دوحة كفررمان,851,كفر رمان,851,كفر رمان,alias,needs_verification,auto_processed,
+d9fc2663-08fd-4994-8ef2-05085b83c328,cleared_same_village,,وادي زبقين,1523,زبقين,1523,زبقين,alias,needs_verification,auto_processed,
+e4635cae-e989-491e-9cc4-d721421738c5,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+e63e3aef-1385-4d84-84fc-d25da4b63f08,cleared_village_changed,,مدينة النبطية,1529,زبدين النبطية,1152,نبطية التحتا,alias,needs_verification,auto_processed,
+ed3e9f9c-4a96-4dc8-a633-e716004a57ed,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+ef277321-ae5a-48de-ba45-4e4bdd379575,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+ef43e962-63ed-4055-be16-b4e11d795cbf,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+fbec6690-4569-4913-bfbb-797de5cae9fd,cleared_same_village,,عرب الصاليم,118,عرب صاليم,118,عرب صاليم,normalized,needs_verification,auto_processed,
+25b4221e-2847-42bb-9b0f-5b1b8ad96f49,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+2e5a4240-94ef-479e-a954-22320f9ada10,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+747a777d-88e1-495a-a36c-dec0e7158d8a,cleared_village_changed,,الجبل الرفيع,1079,ميس الجبل,851,كفر رمان,alias,needs_verification,auto_processed,
+9127df22-9993-4e6e-a227-2bf7f6b89d6f,still_flagged,below_floor,كفرربينيت,808,كفربيت,808,كفربيت,trigram,needs_verification,needs_verification,كفربيت#808:0.42 ; كفر تبنيت#857:0.36
+968ff8dc-ffab-4085-8dfa-83d46f5a02a8,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+a1b9f08f-021f-4381-aa22-d3aba297b87e,still_flagged,tie_between_distinct_places,الريحان,48,عين الريحان,48,عين الريحان,trigram,needs_verification,needs_verification,عين الريحان#48:0.67 ; الريحانية#1319:0.64
+a8ee0219-84a4-41f0-8ea7-23bcb60e0f18,cleared_village_changed,,جبل الرفيع,751,جبلا,851,كفر رمان,alias,needs_verification,auto_processed,
+d93f2758-4479-4c3e-b50d-ac7d25cf31dc,cleared_village_changed,,جبل الرفيع,751,جبلا,851,كفر رمان,alias,needs_verification,auto_processed,
+e0d4d5d2-7629-436c-9348-fdf3681ae415,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+e6cf9e6e-d258-435d-8c8e-adf046156575,cleared_same_village,,عرب الصاليم,118,عرب صاليم,118,عرب صاليم,normalized,needs_verification,auto_processed,
+f73984e0-1240-413a-9193-1fecce9bab70,still_flagged,name_not_covered_by_candidate,كفرربنيت,857,كفر تبنيت,857,كفر تبنيت,trigram,needs_verification,needs_verification,كفر تبنيت#857:0.50 ; كفربيت#808:0.33
+a9dd0684-09cb-4b10-af8b-aea09cdc484a,still_flagged,tie_between_distinct_places,الريحان,48,عين الريحان,48,عين الريحان,trigram,needs_verification,needs_verification,عين الريحان#48:0.67 ; الريحانية#1319:0.64
+aec36ee8-2a24-4ea5-a32d-65e67b41d8f1,still_flagged,name_not_covered_by_candidate,عرابصاليم,118,عرب صاليم,118,عرب صاليم,trigram,needs_verification,needs_verification,عرب صاليم#118:0.58 ; بصاليم#374:0.42
+ec41e699-d418-4392-83b7-dd52b3cea703,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+f930b447-9165-4b06-8086-c794ceb985bb,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+5ef752a4-e4cb-4016-a46f-8857a991b016,cleared_village_changed,,السلوقي,1397,سلوقي,1464,تولين,alias,needs_verification,auto_processed,
+7757529d-e40e-49e5-a066-a4dc7e5f9d00,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+c63a4778-1617-4c7a-b55b-e376150b1f1d,still_flagged,name_not_covered_by_candidate,شقراء,409,شقرا,409,شقرا,trigram,needs_verification,needs_verification,شقرا#409:0.57 ; الشويفات الامراء#448:0.20
+d57b5edb-e4be-46a9-894c-1ed342472d52,still_flagged,same_name_collision,عرمون,121,عرمون,121,عرمون,exact,needs_verification,needs_verification,عرمون#121:1.00 ; عرمون كسروان#122:0.46
+d70c799a-9d97-4a3f-8f49-297ac00af6c3,still_flagged,same_name_collision,عرمون,121,عرمون,121,عرمون,exact,needs_verification,needs_verification,عرمون#121:1.00 ; عرمون كسروان#122:0.46
+032b74c5-0e99-4bc2-a13b-36bc70577d99,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+2c39feb1-0e1f-4487-aed5-ee20ab93dc52,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+4cac3f75-6faf-461d-8033-31986df61ffa,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+583d1014-5da3-4a26-bec0-7750fe926e94,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+62ff0e85-02d5-424a-ad05-a0b47af559ea,still_flagged,below_floor,قناطرة,1228,قنطرة,1228,قنطرة,trigram,needs_verification,needs_verification,قنطرة#1228:0.44 ; القنطرة#1229:0.44
+75335274-c59d-48cd-af28-cc2f7ab0e67d,still_flagged,below_floor,معرية,937,معمارية,937,معمارية,trigram,needs_verification,needs_verification,معمارية#937:0.40 ; معنيه#938:0.33
+78983805-4c7b-4b8a-89f5-e4b34606d5b7,still_flagged,below_floor,قناطرة,1228,قنطرة,1228,قنطرة,trigram,needs_verification,needs_verification,قنطرة#1228:0.44 ; القنطرة#1229:0.44
+9c6a2b5a-d505-488e-944e-59d1be82c047,still_flagged,below_floor,معرية,937,معمارية,937,معمارية,trigram,needs_verification,needs_verification,معمارية#937:0.40 ; معنيه#938:0.33
+a82245b7-1679-48c9-8aec-d3f07fe4e665,still_flagged,name_not_covered_by_candidate,ميوفدون,1003,ميفدون,1003,ميفدون,trigram,needs_verification,needs_verification,ميفدون#1003:0.50 ; ميدون#1002:0.40
+b972a13d-e181-4eef-a77e-6f327f03f87c,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+bffa867d-0723-44ae-b3ca-6e7355824611,still_flagged,below_floor,معرية,937,معمارية,937,معمارية,trigram,needs_verification,needs_verification,معمارية#937:0.40 ; معنيه#938:0.33
+c48b2e34-364e-4a2e-849e-b40ee7ac1bd7,still_flagged,below_floor,بين حداثا و حاريص,601,حداثا,601,حداثا,trigram,needs_verification,needs_verification,حداثا#601:0.35 ; حاريص#650:0.35
+dbebfdfe-4ba7-41f1-832f-4374c383ad0e,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+de097c22-e7fa-4a1c-8919-b6bf84a8b0b5,still_flagged,name_not_covered_by_candidate,العريش,129,العريضة,129,العريضة,trigram,needs_verification,needs_verification,العريضة#129:0.50 ; وادي العرايش#1189:0.33
+e4ea45a9-ab2c-46d5-9fe5-39240e128118,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+f6c138e3-0680-4d72-a9d7-31c3a9532f9c,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+2865c03f-ecfc-4a26-b2da-b7f1a96a9bc7,still_flagged,below_floor,Benton Jbeil,318,بلاط,318,بلاط,trigram,needs_verification,needs_verification,بلاط#318:0.41 ; بنت جبيل#280:0.33
+3aa09f96-9c45-47b1-854a-414c03f17c27,cleared_same_village,,الهبارية,672,هبّارية,672,هبّارية,normalized,needs_verification,auto_processed,
+489b72da-aee1-4155-ae78-dc8427770757,still_flagged,below_floor,Benton Jbeil,318,بلاط,318,بلاط,trigram,needs_verification,needs_verification,بلاط#318:0.41 ; بنت جبيل#280:0.33
+4db9d1b2-46ca-44e0-ae48-fc024aada278,no_replacement_village,no_candidate,خان يونس,274,بيت يونس,,,,needs_verification,needs_verification,
+afef3062-94ff-4dd4-80c9-f616329747de,cleared_same_village,,الهبارية,672,هبّارية,672,هبّارية,normalized,needs_verification,auto_processed,
+d085ce7b-f9cc-42c4-b0de-54473959b325,still_flagged,below_floor,Benton Jbeil,318,بلاط,318,بلاط,trigram,needs_verification,needs_verification,بلاط#318:0.41 ; بنت جبيل#280:0.33
+ec514700-d189-4ca8-ba09-6251d5bd2c58,cleared_same_village,,الهبارية,672,هبّارية,672,هبّارية,normalized,needs_verification,auto_processed,
+ee57a275-2f58-4253-8cae-9379c379d144,still_flagged,below_floor,الطيبة الجنوبية,1308,راس مسقا الجنوبية,1308,راس مسقا الجنوبية,trigram,needs_verification,needs_verification,راس مسقا الجنوبية#1308:0.39 ; خريبة الجندي#906:0.29
+0cd4337b-ded6-4b85-8c5a-495e8f2a2e34,still_flagged,below_floor,حانين,616,حنين,616,حنين,trigram,needs_verification,needs_verification,حنين#616:0.38 ; حام#610:0.25
+6f8b4683-d471-40e7-a106-5722e1d29865,still_flagged,below_floor,زوطر,1519,زوطر الشرقية,1519,زوطر الشرقية,trigram,needs_verification,needs_verification,زوطر الشرقية#1519:0.45 ; زوطر الغربية#1520:0.45
+79990547-19e4-462c-b0f3-6600e5c251ef,cleared_same_village,,الهبارية,672,هبّارية,672,هبّارية,normalized,needs_verification,auto_processed,
+7b1e1589-520b-4ec3-abf7-1e3a4bf61503,still_flagged,below_floor,بين القنطرة-الطيبة,1229,القنطرة,1229,القنطرة,trigram,needs_verification,needs_verification,القنطرة#1229:0.47 ; قنطرة#1228:0.35
+855d1f09-73df-4186-81be-6214933e3c92,still_flagged,same_name_collision,الفوقا,703,حومين الفوقا,703,حومين الفوقا,trigram,needs_verification,needs_verification,حومين الفوقا#703:0.54 ; نبطية الفوقا#1153:0.54
+a0d273a4-8310-4e40-9aee-72c8a4064003,still_flagged,name_not_covered_by_candidate,وادي الخنازير,1211,قاع وادي الخنزير,1211,قاع وادي الخنزير,trigram,needs_verification,needs_verification,قاع وادي الخنزير#1211:0.55 ; وادي الدير#1186:0.47
+b77451df-3b83-4ced-8984-1859de9e78e1,cleared_village_changed,,وادي السلوقي,1194,وادي الست,1464,تولين,alias,needs_verification,auto_processed,
+f4618b6a-6856-43bd-98d2-6f815829e669,still_flagged,name_not_covered_by_candidate,السدانة-كفرشوبا,813,كفر شوبا,813,كفر شوبا,trigram,needs_verification,needs_verification,كفر شوبا#813:0.57 ; السنديانة#1350:0.24
+02e061a0-23c5-41dd-9e98-9c35fbf9ad22,other_reason_remains,condition_review,بعلبك,186,بعلبك,186,بعلبك,exact,needs_verification,needs_verification,
+0a5c4358-31ea-4639-89ac-9aeaa12ae221,cleared_same_village,,صور,1407,صور,1407,صور,exact,needs_verification,auto_processed,
+0351a447-e102-4da8-bf8b-0f604c0cab88,still_flagged,location_ambiguity,تلة علي الطاهر,87,علي الطاهر,87,علي الطاهر,trigram,needs_verification,needs_verification,علي الطاهر#87:0.73 ; علي النهري#86:0.30
+6ee3b5ac-3dd5-4bf6-b12b-2ef4e7a97758,still_flagged,tie_between_distinct_places,وادي الحجير,1186,وادي الدير,1186,وادي الدير,trigram,needs_verification,needs_verification,وادي الدير#1186:0.53 ; وادي الحور#1190:0.53
+f9a49a70-a979-49ba-8118-84b3a28f3e75,still_flagged,name_not_covered_by_candidate,الأودية,469,الداودية,469,الداودية,trigram,needs_verification,needs_verification,الداودية#469:0.55 ; العبودية#8:0.42
+3a0a6a17-9303-4e0e-9d25-718340441768,other_reason_remains,condition_review,البياضة,310,البياض صور,724,إسكندرونة,alias,needs_verification,needs_verification,
+426c2e9c-de32-4578-b662-1c8f40d3ed25,still_flagged,name_not_covered_by_candidate,يحمر الشقيف,1492,يحمر,1492,يحمر,trigram,needs_verification,needs_verification,يحمر#1492:0.50 ; عدشيت الشقيف#17:0.39
+c9ab0b81-be22-4415-b5e7-c77190e36659,cleared_same_village,,دير ميماس,518,دير ميماس,518,دير ميماس,exact,needs_verification,auto_processed,
+1785eda6-eda7-4fe5-abab-ab8e9b0c9c1b,still_flagged,below_floor,قرى عدة,1274,قريعة,1274,قريعة,trigram,needs_verification,needs_verification,قريعة#1274:0.44 ; قرين#1270:0.33
+f8b42981-9abd-47a1-bd14-e4d2311c712f,other_reason_remains,condition_review,منصوري,978,منصورية,976,المنصوري,normalized,needs_verification,needs_verification,
+20f4c44e-0793-4790-a0c3-882ef41f0008,cleared_same_village,,جنين,732,جنين,732,جنين,exact,needs_verification,auto_processed,
+5197e9db-f116-461e-882a-83782edbe219,other_reason_remains,condition_review,مرتفعات حلتا,675,حلتا,675,حلتا,exact,needs_verification,needs_verification,
+64da8b12-1bca-4e9e-8d3c-5802b4f4f631,still_flagged,name_not_covered_by_candidate,المجدية,963,المجدل,963,المجدل,trigram,needs_verification,needs_verification,المجدل#963:0.50 ; المسعودية#998:0.38
+6dd5ddec-2b53-4638-b00e-8572f289a695,still_flagged,location_ambiguity,طلوسة,1431,طلوسة,1431,طلوسة,exact,needs_verification,needs_verification,طلوسة#1431:1.00 ; طليا#1421:0.22
+a29e39f3-3304-40be-aa75-bd12f47d39e4,still_flagged,below_floor,حلاوة,674,حلوة,674,حلوة,trigram,needs_verification,needs_verification,حلوة#674:0.38 ; حلبا#607:0.22
+e081590c-ff61-42bd-b661-473e2e4496d7,still_flagged,below_floor,حداثا_الطيري,601,حداثا,601,حداثا,trigram,needs_verification,needs_verification,حداثا#601:0.46 ; حدث الجبه#634:0.21
+8ad2c8df-50f1-4f18-9a64-43dd80c423ba,other_reason_remains,condition_review,الطيبه,903,الخريبة,1440,طيبة مرجعيون,geo_context,needs_verification,needs_verification,
+f0bb5ede-03ba-4c57-a864-1056ae73e68c,cleared_same_village,,الطاهر,87,علي الطاهر,87,علي الطاهر,trigram,needs_verification,auto_processed,
+bb79f872-820a-4774-a9de-ee6d85f6172f,still_flagged,name_not_covered_by_candidate,العريش,129,العريضة,129,العريضة,trigram,needs_verification,needs_verification,العريضة#129:0.50 ; وادي العرايش#1189:0.33
+ca1ed1af-2287-4510-9465-e45b61bfe5d7,other_reason_remains,condition_review,قضاء بنت جبيل,280,بنت جبيل,280,بنت جبيل,trigram,needs_verification,needs_verification,

@@ -294,8 +294,8 @@ export const IncidentDetailPage = () => {
         <section className="rounded-lg border border-warning/40 bg-warning/5 p-5 sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-caption font-semibold uppercase tracking-wide text-warning">Duplicate review required</p>
-              <h2 className="mt-1 text-h4 font-semibold text-text-primary">Possible duplicate</h2>
+              <p className="text-caption font-semibold uppercase tracking-wide text-warning">Possible duplicate: please check</p>
+              <h2 className="mt-1 text-h4 font-semibold text-text-primary">Suggested matching incident</h2>
               <p className="mt-2 text-small text-text-muted">
                 {duplicateCandidate
                   ? `${Math.round(duplicateCandidate.similarity_score * 100)}% similarity (${duplicateConfidence})`

@@ -34,6 +34,9 @@ from app.news.models import (
     Condition,
     Village,
 )
+from app.news.services.matching.condition_evidence_override import (
+    condition_fallback_from_text,
+)
 from app.news.services.matching.conflict_attribution import (
     has_conflict_attribution_text,
 )
@@ -1291,6 +1294,18 @@ class MatchingService(MatchingServiceInterface):
                 source_hint,
             )
 
+        fallback_label = condition_fallback_from_text(text)
+        if fallback_label is not None:
+            fallback_match = self._match_condition_label(fallback_label)
+            if fallback_match.matched_id is not None:
+                return _ConditionResolution(
+                    fallback_match,
+                    False,
+                    None,
+                    "keyword_fallback",
+                    source_hint,
+                )
+
         unclassified = self._match_unclassified_condition()
         if unclassified.matched_id is not None:
             unclassified = _ClassifiedMatch(
@@ -1305,6 +1320,16 @@ class MatchingService(MatchingServiceInterface):
             "unclassified",
             source_hint,
         )
+
+    def _match_condition_label(self, label: str) -> _ClassifiedMatch:
+        for candidate, _score in self.conditions.find_similar(label, self.candidate_limit):
+            if getattr(candidate, "action_en", None) == label:
+                return _ClassifiedMatch(
+                    candidate.id,
+                    MATCH_THRESHOLD,
+                    MatchResultStatus.matched,
+                )
+        return _ClassifiedMatch(None, None, MatchResultStatus.unmatched)
 
     def _match_unclassified_condition(self) -> _ClassifiedMatch:
         label = "Unclassified / Needs Review"

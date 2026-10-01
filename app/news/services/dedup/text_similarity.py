@@ -55,6 +55,33 @@ def event_token_similarity(left: str | None, right: str | None) -> float | None:
     return len(shared) / float(smaller)
 
 
+def balanced_event_token_similarity(
+    left: str | None, right: str | None
+) -> float | None:
+    """Return token coverage that must be strong on both sides."""
+    left_tokens = {_canonical_event_token(token) for token in _event_tokens(left)}
+    right_tokens = {_canonical_event_token(token) for token in _event_tokens(right)}
+    larger = max(len(left_tokens), len(right_tokens))
+    if min(len(left_tokens), len(right_tokens)) < 4 or larger == 0:
+        return None
+    shared = left_tokens & right_tokens
+    if len(shared) < 4:
+        return None
+    return len(shared) / float(larger)
+
+
+def _canonical_event_token(token: str) -> str:
+    if "غار" in token:
+        return "غارة"
+    if "ستهدف" in token:
+        return "استهداف"
+    if "اسرائيل" in token:
+        return "اسرائيل"
+    if "دباب" in token:
+        return "دبابة"
+    return token
+
+
 def _event_tokens(text: str | None) -> set[str]:
     if not text:
         return set()
