@@ -83,7 +83,10 @@ def test_kinetic_red_alert_reenters_incident_pipeline() -> None:
     )
 
     assert service.process(message, []) is False
-    assert message.status == MessageStatus.pending
+    # 'parsed', not 'pending': the audit fills filter_result, and the relevance
+    # stage only claims pending rows with filter_result IS NULL, so a pending
+    # row would be claimed by no pipeline stage at all.
+    assert message.status == MessageStatus.parsed
     assert message.filter_result["air_violation_rerouted"]["matched_terms"]
     repository.route_from_match.assert_not_called()
 

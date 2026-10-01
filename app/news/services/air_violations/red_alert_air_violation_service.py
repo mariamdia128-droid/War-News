@@ -367,7 +367,12 @@ class RedAlertAirViolationService:
         }
         message.filter_result = audit
         # A collector retry must never reopen a message whose incident already
-        # reached a terminal state. New/excluded alerts restart at relevance.
+        # reached a terminal state.
         if message.status not in {MessageStatus.materialized, MessageStatus.duplicate}:
-            message.status = MessageStatus.pending
+            # 'parsed', not 'pending': writing the audit fills filter_result,
+            # and the relevance stage only claims pending rows whose
+            # filter_result IS NULL, so a pending row here is claimed by no
+            # stage at all. 'parsed' feeds pre-dedup/extraction when there is
+            # no extraction yet, and matching when there is.
+            message.status = MessageStatus.parsed
             message.error_message = None

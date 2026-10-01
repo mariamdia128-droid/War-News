@@ -188,6 +188,10 @@ def write_review_files(plans: list[Plan]) -> None:
         "-- Messages already 'materialized' or 'duplicate' are left untouched: they",
         "-- are represented by a live incident or by their canonical message, and",
         "-- reopening them is what would create a duplicate incident.",
+        "--",
+        "-- Re-queued rows go to 'parsed', not 'pending': they keep their",
+        "-- filter_result, and the relevance stage only claims pending rows whose",
+        "-- filter_result IS NULL, so 'pending' would strand them in no stage.",
         f"-- {len(movable)} rows are moved here; {len(orphans)} import rows have no",
         "-- source message and are listed, not deleted, at the end of this file.",
         "BEGIN;",
@@ -197,7 +201,12 @@ def write_review_files(plans: list[Plan]) -> None:
         lines.extend([
             f"-- air_violation_id={plan.row.id} reason={plan.eligibility.reason}",
             "UPDATE raw_messages rm",
-            "SET status = 'pending'::message_status,",
+            # 'parsed', not 'pending': these rows keep their filter_result, and
+            # the relevance stage only claims pending rows whose filter_result
+            # IS NULL, so a pending row is claimed by no stage at all. 'parsed'
+            # feeds pre-dedup/extraction without an extraction_result, and
+            # matching with one.
+            "SET status = 'parsed'::message_status,",
             "    match_result = NULL,",
             "    error_message = NULL, processing_claim_stage = NULL,",
             "    processing_claimed_at = NULL, processing_claimed_by = NULL",
