@@ -284,6 +284,10 @@ BARE_DRONE_KEYWORDS = (
     "drone",
     "uav",
 )
+# Drone words that never mean anything else, matched on whole tokens so the
+# feminine "مسيرة" (which also means a march/procession) keeps needing context.
+# "مسيّر" folds to "مسير" under Arabic normalization.
+UNAMBIGUOUS_DRONE_TOKENS = ("درون", "drone", "uav", "مسير")
 DRONE_CONTEXT_KEYWORDS = (
     "redalert.com.lb",
     RED_ZONE_OCR_MARKER,
@@ -425,7 +429,7 @@ def classify_condition(text: str) -> int | None:
         if any(
             normalize_arabic(context) in normalized
             for context in DRONE_CONTEXT_KEYWORDS
-        ) or any(term in normalized.split() for term in ("درون", "drone", "uav")):
+        ) or any(term in normalized.split() for term in UNAMBIGUOUS_DRONE_TOKENS):
             return 36
     has_helicopter = any(
         normalize_arabic(term) in normalized for term in HELICOPTER_KEYWORDS
@@ -436,7 +440,10 @@ def classify_condition(text: str) -> int | None:
     if has_helicopter:
         return 38 if has_flight else None
     for condition_id, keywords in AIR_KEYWORDS:
-        if condition_id in {36, 38}:
+        # Helicopter (38) is already decided above: it needs hover language.
+        # Recon phrases must still reach 36 here; the guard below keeps the
+        # bare drone words context-gated.
+        if condition_id == 38:
             continue
         for keyword in keywords:
             normalized_keyword = normalize_arabic(keyword)

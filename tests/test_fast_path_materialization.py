@@ -22,12 +22,14 @@ def _raw_message(
     message_id: int = 1,
     match_result: dict,
     extraction_result: dict | None = None,
+    raw_text: str = "قصف على بلدة",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=message_id,
         status=MessageStatus.parsed,
         duplicate_of_id=None,
-        raw_text="قصف على بلدة",
+        raw_text=raw_text,
+        filter_result=None,
         source_id=1,
         message_datetime=datetime(2026, 8, 18, 11, 0, tzinfo=timezone.utc),
         extraction_result=extraction_result
@@ -150,6 +152,7 @@ def test_process_fast_path_terminalizes_air_violation_route() -> None:
     db = MagicMock()
     service = IncidentMaterializationService(db)
     message = _raw_message(
+        raw_text="طيران استطلاع إسرائيلي يحلق فوق مدينة صور",
         match_result={
             "matched_condition_id": 36,
             "condition_match_status": "matched",
@@ -159,7 +162,7 @@ def test_process_fast_path_terminalizes_air_violation_route() -> None:
                     "village_match_status": "matched",
                 }
             ],
-        }
+        },
     )
 
     created = service.process_fast_path(message, FastPathDedupService(MagicMock()))
@@ -169,6 +172,31 @@ def test_process_fast_path_terminalizes_air_violation_route() -> None:
     assert "air_violations" in (message.error_message or "")
     assert service.fast_stats.skipped_air_violation_routed == 1
     db.commit.assert_called()
+
+
+def test_process_fast_path_does_not_terminalize_kinetic_air_condition() -> None:
+    """A strike keeps moving through incidents even when the LLM picked 36."""
+    db = MagicMock()
+    service = IncidentMaterializationService(db)
+    message = _raw_message(
+        raw_text="الطيران المسيّر الاسرائيلي استهدف مدينة النبطية في جنوب لبنان",
+        match_result={
+            "matched_condition_id": 36,
+            "condition_match_status": "matched",
+            "village_matches": [
+                {
+                    "matched_village_id": 42,
+                    "village_match_status": "matched",
+                }
+            ],
+        },
+    )
+
+    service.process_fast_path(message, FastPathDedupService(MagicMock()))
+
+    assert message.status != MessageStatus.routed_air_violation
+    assert service.fast_stats.skipped_air_violation_routed == 0
+    assert message.filter_result["air_violation_rerouted"]["matched_terms"]
 
 
 class _RollbackAwareSession:

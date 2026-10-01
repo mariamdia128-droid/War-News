@@ -113,9 +113,12 @@ class AirViolationKhabarImportService:
                     raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
                 enrichment = source_lookup.lookup(AirViolationWorkbookService._optional(row.get('link'))).copy()
                 source_text = enrichment.get('text') or ''
-                exclusion = air_violation_exclusion(source_text)
-                if exclusion is not None:
-                    raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
+                # Only screen enrichment text when there is some; an absent
+                # link is not an ineligible row.
+                if source_text.strip():
+                    exclusion = air_violation_exclusion(source_text)
+                    if exclusion is not None:
+                        raise ValueError(f"{exclusion.reason}: {exclusion.evidence_span}")
                 condition_id = classify_condition(text) or classify_condition(source_text)
                 if condition_id not in AIR_VIOLATION_CONDITION_IDS:
                     raise ValueError('No supported aircraft action found in Khabar.')

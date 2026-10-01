@@ -71,3 +71,16 @@ def test_hashtags_urls_and_channel_handles_are_removed() -> None:
         "#الشهيد @channel https://example.test طيران استطلاعي فوق صور"
     )
     assert result.eligible is True
+
+
+def test_hashtag_only_alert_keeps_its_tags_as_content() -> None:
+    """Red Alert posts are nothing but hashtags, so they must not read empty."""
+    result = evaluate_air_violation_text("#مقاتلات_حربية #الجنوب")
+    assert result.eligible is True
+    assert result.reason == "presence_only"
+
+
+def test_hashtag_only_alert_still_rejects_kinetic_tags() -> None:
+    result = evaluate_air_violation_text("#غارة #النبطية")
+    assert result.eligible is False
+    assert result.reason == "excluded_kinetic_casualty_or_damage"

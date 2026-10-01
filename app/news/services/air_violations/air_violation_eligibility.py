@@ -55,9 +55,13 @@ _FIRE_TERMS = ("حريق",)
 _APACHE_TERMS = ("اباتشي", "apache", "ah-64")
 
 
-def _strip_source_noise(value: str) -> str:
+def _unwrap_hashtags(value: str) -> str:
+    return _HASHTAG_RE.sub(lambda match: " " + match.group(0)[1:].replace("_", " "), value)
+
+
+def _strip_source_noise(value: str, *, keep_hashtags: bool = False) -> str:
     value = _URL_RE.sub(" ", value)
-    value = _HASHTAG_RE.sub(" ", value)
+    value = _unwrap_hashtags(value) if keep_hashtags else _HASHTAG_RE.sub(" ", value)
     value = _HANDLE_RE.sub(" ", value)
     kept: list[str] = []
     for raw_line in value.splitlines():
@@ -71,10 +75,22 @@ def _strip_source_noise(value: str) -> str:
     return "\n".join(kept)
 
 
+def _normalize(value: str) -> str:
+    return re.sub(r"\s+", " ", normalize_arabic_text(value).casefold()).strip()
+
+
 def cleaned_air_violation_text(text: str | None) -> str:
-    cleaned = _strip_source_noise(text or "")
-    cleaned = normalize_arabic_text(cleaned).casefold()
-    return re.sub(r"\s+", " ", cleaned).strip()
+    """Strip source noise, then normalize Arabic for term matching.
+
+    Hashtags are dropped because trailing tag lists ("#شهيد") describe a feed,
+    not the event. Red Alert posts are hashtags only, though, so when dropping
+    them would leave nothing the tags are unwrapped and kept as the content.
+    """
+    raw = text or ""
+    cleaned = _normalize(_strip_source_noise(raw))
+    if cleaned:
+        return cleaned
+    return _normalize(_strip_source_noise(raw, keep_hashtags=True))
 
 
 def _matched_terms(text: str, terms: tuple[str, ...]) -> list[str]:
