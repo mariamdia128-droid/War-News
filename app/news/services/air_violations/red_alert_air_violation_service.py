@@ -8,6 +8,7 @@ from app.news.dtos.match_result_dto import VillageMatchResult
 from app.news.interfaces import AirViolationRepositoryInterface
 from app.news.models import MessageStatus, RawMessage, Village
 from app.news.services.air_violations.air_violation_exclusions import air_violation_exclusion
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_DRONE_CONDITION_ID
 from app.news.services.air_violations.latin_location_words import latin_location_words, latin_name_in_words
 
 ConditionClassifier = Callable[[str], int | None]
@@ -28,6 +29,7 @@ CAZA_ONLY_ALIASES: dict[str, tuple[str, str | None]] = {
     "القطاع الأوسط": ("Multiple regions", "مناطق متعددة"),
 }
 CAZA_ONLY_ALIASES.update({
+    "south lebanon": ("South Lebanon", "جنوب لبنان"),
     "lebanon": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
     "\u0644\u0628\u0646\u0627\u0646": ("Multiple regions", "\u0645\u0646\u0627\u0637\u0642 \u0645\u062a\u0639\u062f\u062f\u0629"),
 })
@@ -55,11 +57,7 @@ class RedAlertAirViolationService:
         exclusion = air_violation_exclusion(text)
         if exclusion is not None:
             self.air_violations.discard_for_message(message)
-            self._reject(
-                message,
-                exclusion.reason,
-                error=exclusion.evidence_span,
-            )
+            self._route_to_incident_pipeline(message, exclusion.reason, exclusion.evidence_span)
             return False
 
         condition_id = self.classify_condition(text)
@@ -88,6 +86,12 @@ class RedAlertAirViolationService:
                 self.air_violations.discard_for_message(message)
                 self._reject(message, self._missing_village_reason(message))
                 return False
+            if condition_id == AIR_VIOLATION_DRONE_CONDITION_ID and caza_en in {
+                "Multiple regions", "South Lebanon", "Unknown",
+            }:
+                self.air_violations.discard_for_message(message)
+                self._reject(message, "Surveillance location is not confirmed to one caza")
+                return False
             result = self._match_result(
                 text=text,
                 condition_id=condition_id,
@@ -105,6 +109,17 @@ class RedAlertAirViolationService:
             message.status = MessageStatus.routed_air_violation
             message.error_message = "red_alert: routed to air_violations; not an incident"
             return wrote_air_violation
+
+        if condition_id == AIR_VIOLATION_DRONE_CONDITION_ID:
+            matched_cazas = {
+                matched_village.caza_en
+                for matched_village, _raw_location in village_matches
+                if matched_village.caza_en
+            }
+            if len(matched_cazas) > 1:
+                self.air_violations.discard_for_message(message)
+                self._reject(message, "Surveillance locations span multiple cazas")
+                return False
 
         village, raw_location = village_match
         result = self._match_result(
@@ -249,12 +264,15 @@ class RedAlertAirViolationService:
     def _match_caza(text: str, villages: list[Village]) -> tuple[str | None, str | None]:
         normalized_text = text.casefold()
         token_text = re.sub(r"[\W_]+", " ", normalized_text).strip()
+        names_south_lebanon = "south lebanon" in token_text or "جنوب لبنان" in token_text
         mentioned: set[tuple[str | None, str | None]] = set()
         for village in villages:
             for name in (village.caza_en, village.caza_ar):
                 if name and len(name) >= 4 and name.casefold() in normalized_text:
                     mentioned.add((village.caza_en, village.caza_ar))
         for alias, caza in CAZA_ONLY_ALIASES.items():
+            if names_south_lebanon and alias in {"lebanon", "لبنان"}:
+                continue
             alias_token = re.sub(r"[\W_]+", " ", alias.casefold()).strip()
             if re.search(rf"(?<!\w){re.escape(alias_token)}(?!\w)", token_text):
                 mentioned.add(caza)
@@ -335,3 +353,21 @@ class RedAlertAirViolationService:
         message.filter_result = self._result(message, verdict, reasoning)
         message.status = MessageStatus.rejected
         message.error_message = error
+
+    @staticmethod
+    def _route_to_incident_pipeline(
+        message: RawMessage,
+        reason: str,
+        evidence_span: str | None,
+    ) -> None:
+        audit = dict(message.filter_result or {})
+        audit["air_violation_rerouted"] = {
+            "reason": reason,
+            "matched_terms": [evidence_span] if evidence_span else [],
+        }
+        message.filter_result = audit
+        # A collector retry must never reopen a message whose incident already
+        # reached a terminal state. New/excluded alerts restart at relevance.
+        if message.status not in {MessageStatus.materialized, MessageStatus.duplicate}:
+            message.status = MessageStatus.pending
+            message.error_message = None

@@ -211,6 +211,32 @@ def test_terminal_status_mapping_keeps_existing_statuses() -> None:
     assert terminal_status_for_reason(ERROR_UNMATCHED_CONDITION) == MessageStatus.error
 
 
+def test_kinetic_air_match_is_not_terminalized_as_air_violation() -> None:
+    match_result = {
+        "condition_match_status": "matched",
+        "matched_condition_id": 38,
+        "village_matches": [],
+    }
+
+    assert permanent_ineligibility_reason(
+        match_result,
+        "مروحية أباتشي استهدفت مبنى في ميفدون",
+    ) is None
+
+
+def test_presence_only_air_match_remains_terminal_air_violation() -> None:
+    match_result = {
+        "condition_match_status": "matched",
+        "matched_condition_id": 36,
+        "village_matches": [],
+    }
+
+    assert permanent_ineligibility_reason(
+        match_result,
+        "طيران مسير يحلق فوق صور",
+    ) == ERROR_AIR_VIOLATION
+
+
 def test_bulk_terminalize_sql_holds_unmatched_places() -> None:
     from app.news.services.dedup.fast_path_eligibility import (
         HELD_UNMATCHED_PLACE,

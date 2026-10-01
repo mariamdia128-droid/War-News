@@ -12,6 +12,7 @@ from app.core.cache import increment
 from app.news.constants.air_violation_conditions import (
     AIR_VIOLATION_CONDITION_ID_TUPLE,
     AIR_VIOLATION_CONDITION_IDS,
+    AIR_VIOLATION_DRONE_CONDITION_ID,
     AIR_VIOLATION_WARPLANE_CONDITION_ID,
 )
 from app.news.dtos import (
@@ -37,8 +38,12 @@ from app.news.services.air_violations.window_grouping_service import (
     AirViolationWindowInput,
     assign_air_violation_window_ids,
     group_air_violation_windows,
+    surveillance_window_minutes,
 )
 from app.news.services.air_violations.caza_alias_resolver import canonicalize_caza
+from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_text,
+)
 from app.sources.models import Source, SourceType
 
 
@@ -72,6 +77,9 @@ def _normalize_caza_token(value: str) -> str:
 def air_violation_caza_window_hours(caza_en: str | None, condition_id: int | None = None) -> int:
     if condition_id == AIR_VIOLATION_WARPLANE_CONDITION_ID:
         return AIR_VIOLATION_WARPLANE_CAZA_HOURS
+    if condition_id == AIR_VIOLATION_DRONE_CONDITION_ID:
+        minutes = surveillance_window_minutes(caza_en)
+        return max(1, (minutes or 60) // 60)
     return AIR_VIOLATION_DEFAULT_CAZA_HOURS
 
 
@@ -291,6 +299,8 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         )
         window_stats: dict[str, dict[str, object]] = {}
         for item in all_items:
+            if int(item["condition_id"]) != 36:
+                continue
             item_id = int(item["id"])
             window_id = assignments.get(item_id) or item.get("window_id")
             if not window_id:
@@ -298,7 +308,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             item_dt = datetime.combine(item["event_date"], item.get("event_time") or time.min)
             stats = window_stats.setdefault(
                 str(window_id),
-                {"start": item_dt, "end": item_dt, "count": 0, "villages": []},
+                {"start": item_dt, "end": item_dt, "count": 0, "villages": [], "reports": []},
             )
             stats["start"] = min(stats["start"], item_dt)
             stats["end"] = max(stats["end"], item_dt)
@@ -307,8 +317,34 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                 *stats["villages"],
                 *(item.get("villages") or []),
             ]))
+            stats["reports"].append({
+                "id": item_id,
+                "event_date": item["event_date"],
+                "event_time": item.get("event_time"),
+                "khabar": item.get("khabar") or "",
+                "source_name": item.get("source_name") or "Unknown source",
+                "source_link": item.get("source_link"),
+                "villages": list(item.get("villages") or []),
+            })
 
         for item in items:
+            if int(item["condition_id"]) != 36:
+                item["window_id"] = None
+                item["window_start"] = None
+                item["window_end"] = None
+                item["window_violation_count"] = None
+                item["window_duration_minutes"] = None
+                item["window_reports"] = []
+                continue
+            window_duration_minutes = surveillance_window_minutes(item.get("caza_en"))
+            if window_duration_minutes is None:
+                item["window_id"] = None
+                item["window_start"] = None
+                item["window_end"] = None
+                item["window_violation_count"] = None
+                item["window_duration_minutes"] = None
+                item["window_reports"] = []
+                continue
             item_id = int(item["id"])
             window_id = assignments.get(item_id) or item.get("window_id")
             item["window_id"] = window_id
@@ -316,6 +352,19 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             item["window_start"] = stats["start"] if stats else None
             item["window_end"] = stats["end"] if stats else None
             item["window_violation_count"] = stats["count"] if stats else None
+            item["window_duration_minutes"] = window_duration_minutes
+            if stats:
+                item["villages"] = list(stats["villages"])
+                item["window_reports"] = sorted(
+                    stats["reports"],
+                    key=lambda report: (
+                        report["event_date"],
+                        report["event_time"] or time.min,
+                        report["id"],
+                    ),
+                )
+            else:
+                item["window_reports"] = []
         return items
 
     @staticmethod
@@ -326,7 +375,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
             window_id = item.get("window_id")
             key = (
                 str(window_id)
-                if window_id and int(item["condition_id"]) in AIR_VIOLATION_CONDITION_IDS
+                if window_id and int(item["condition_id"]) == 36
                 else f"record-{item['id']}"
             )
             if key in seen:
@@ -491,8 +540,9 @@ class AirViolationRepository(AirViolationRepositoryInterface):
     def list_all(self, params: AirViolationListParams) -> AirViolationListResponse:
         filters = self._filters(params, supported_only=False)
 
-        base_query = (
-            select(
+        def list_query(query_filters: list[object]):
+            return (
+                select(
                 AirViolation.id,
                 AirViolation.raw_message_id,
                 AirViolation.condition_id,
@@ -529,30 +579,56 @@ class AirViolationRepository(AirViolationRepositoryInterface):
                     ),
                     else_=func.coalesce(Source.name, "Unknown source"),
                 ).label("source_name"),
+                )
+                .outerjoin(Condition, Condition.id == AirViolation.condition_id)
+                .outerjoin(Source, Source.id == AirViolation.source_id)
+                .outerjoin(RawMessage, RawMessage.id == AirViolation.raw_message_id)
+                .where(*query_filters)
             )
-            .outerjoin(Condition, Condition.id == AirViolation.condition_id)
-            .outerjoin(Source, Source.id == AirViolation.source_id)
-            .outerjoin(RawMessage, RawMessage.id == AirViolation.raw_message_id)
-            .where(*filters)
-        )
 
         all_rows = self.db.execute(
-            base_query.order_by(
+            list_query(filters).order_by(
                 AirViolation.event_date.desc(),
                 AirViolation.event_time.desc().nullslast(),
                 AirViolation.id.desc(),
             )
         ).all()
         all_items = self._with_village_labels(all_rows)
-        all_items = self._attach_window_metadata(all_items, all_items)
-        page_items = all_items[params.offset:params.offset + params.limit]
+        window_context_items = all_items
+        if all_items and (
+            params.event_date_from is not None
+            or params.event_date_to is not None
+            or params.last_hours is not None
+        ):
+            # A filter can begin or end in the middle of a 1/4-hour window.
+            # Include the adjacent dates while calculating metadata so details
+            # still show every report and village belonging to that window.
+            event_dates = [item["event_date"] for item in all_items]
+            context_params = params.model_copy(update={
+                "limit": 100,
+                "offset": 0,
+                "event_date_from": min(event_dates) - timedelta(days=1),
+                "event_date_to": max(event_dates) + timedelta(days=1),
+                "last_hours": None,
+            })
+            context_rows = self.db.execute(
+                list_query(self._filters(context_params, supported_only=False)).order_by(
+                    AirViolation.event_date.desc(),
+                    AirViolation.event_time.desc().nullslast(),
+                    AirViolation.id.desc(),
+                )
+            ).all()
+            window_context_items = self._with_village_labels(context_rows)
+        all_items = self._attach_window_metadata(all_items, window_context_items)
+        display_items = self._collapse_windowed_items(all_items)
+        page_items = display_items[params.offset:params.offset + params.limit]
 
         return AirViolationListResponse(
             items=[
                 AirViolationDTO.model_validate(item)
                 for item in page_items
             ],
-            total=len(all_items),
+            total=len(display_items),
             limit=params.limit,
             offset=params.offset,
         )
@@ -622,8 +698,17 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         if row is None:
             return None
         return AirViolationDTO.model_validate(self._with_village_labels([row])[0])
-    def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
+    def route_from_match(self, message: RawMessage, result: MatchResultDTO) -> bool:
         if result.matched_condition_id not in AIR_VIOLATION_CONDITION_IDS:
+            return False
+        eligibility = evaluate_air_violation_text(message.raw_text)
+        if not eligibility.eligible:
+            audit = dict(message.filter_result or {})
+            audit["air_violation_rerouted"] = {
+                "reason": eligibility.reason,
+                "matched_terms": eligibility.matched_terms,
+            }
+            message.filter_result = audit
             return False
         matched_village_id: int | None = next(
             (
@@ -691,6 +776,7 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         )
         if (
             existing is None
+            and result.matched_condition_id != AIR_VIOLATION_WARPLANE_CONDITION_ID
             and not self._should_bypass_recent_duplicate_check(message, result)
             and self._has_recent_air_violation(
                 caza_en,
@@ -735,7 +821,10 @@ class AirViolationRepository(AirViolationRepositoryInterface):
         message: RawMessage,
         result: MatchResultDTO,
     ) -> bool:
-        return False
+        # A stable upstream message ID identifies a real report. Preserve each
+        # locality-specific report so its villages and source remain available
+        # inside the surveillance window details.
+        return cls._has_strong_message_identity(message) and bool(result.village_matches)
 
     @staticmethod
     def _requires_exact_duplicate_text(result: MatchResultDTO) -> bool:

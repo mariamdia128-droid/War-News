@@ -746,6 +746,57 @@ def test_action_does_not_persist_match_when_air_violation_routing_fails() -> Non
     assert repository.saved is None
 
 
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "نجاة فريق إسعاف من غارة نفذتها مروحية أباتشي إسرائيلية على مبنى تجاري في ميفدون - شوكين",
+        "عاجل | مراسلنا: الطيران المسيّر الاسرائيلي استهدف مدينة النبطية في جنوب لبنان",
+    ],
+)
+def test_post_llm_air_result_is_rematched_to_incident(raw_text: str) -> None:
+    air = MatchResultDTO(
+        village_matches=[],
+        any_village_low_confidence=False,
+        matched_condition_id=38,
+        condition_confidence=0.9,
+        condition_match_status=MatchResultStatus.matched,
+        condition_review_required=False,
+        raw_condition_text="helicopter",
+    )
+    incident = air.model_copy(
+        update={"matched_condition_id": 5, "raw_condition_text": "Bombs"}
+    )
+
+    class _SequentialMatcher:
+        def __init__(self) -> None:
+            self.calls: list[ExtractionResult] = []
+
+        def match(self, extraction_result, *, cnrs_classification=None):
+            self.calls.append(extraction_result)
+            return air if len(self.calls) == 1 else incident
+
+    message = SimpleNamespace(
+        id=42,
+        raw_text=raw_text,
+        raw_payload={},
+        filter_result=None,
+        cnrs_classification=None,
+        extraction_result=_extraction(action="Helicopter Hovering").model_dump(mode="json"),
+    )
+    repository = _RawMessageRepositoryStub(message)
+    matcher = _SequentialMatcher()
+    air_repository = SimpleNamespace(route_from_match=lambda _message, _result: False)
+
+    result = MatchIncidentAction(
+        repository, matcher, air_repository  # type: ignore[arg-type]
+    ).execute(42)
+
+    assert result.matched_condition_id == 5
+    assert matcher.calls[1].action_description == "Bombs"
+    assert message.filter_result["air_violation_rerouted"]["matched_terms"]
+    assert repository.saved == (message, incident)
+
+
 def test_nabatiyeh_style_near_tie_downgrades_to_low_confidence() -> None:
     """Recon: five * النبطية villages tied at ~0.615; lowest id must not auto-match."""
     villages = _MultiSimilarRepositoryStub(

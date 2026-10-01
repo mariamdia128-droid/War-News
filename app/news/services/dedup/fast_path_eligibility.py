@@ -6,6 +6,9 @@ from sqlalchemy import TextClause, text
 
 from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
 from app.news.models import MessageStatus
+from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_text,
+)
 
 ELIGIBLE_MATCH_STATUSES = frozenset({"matched", "matched_low_confidence"})
 AIR_VIOLATION_CONDITION_SQL = ", ".join(str(value) for value in sorted(AIR_VIOLATION_CONDITION_IDS))
@@ -153,6 +156,7 @@ def terminal_status_for_reason(reason: str) -> MessageStatus:
 
 def permanent_ineligibility_reason(
     match_result: dict[str, Any] | None,
+    source_text: str | None = None,
 ) -> str | None:
     """Return a terminal reason, or None if the match can still materialize.
 
@@ -177,6 +181,14 @@ def permanent_ineligibility_reason(
     if valid_condition_ids and all(
         value in AIR_VIOLATION_CONDITION_IDS for value in valid_condition_ids
     ):
+        # Invalid presence-only classifications are not terminal air rows.
+        # MatchIncidentAction normally rematches them to an incident condition;
+        # keeping them non-terminal here ensures stale/retried rows return to
+        # that normal incident path instead of being marked routed.
+        if source_text is not None and not evaluate_air_violation_text(
+            source_text
+        ).eligible:
+            return None
         return ERROR_AIR_VIOLATION
     if unmatched_target_places(match_result):
         return HELD_UNMATCHED_PLACE
@@ -244,6 +256,7 @@ def ineligible_fast_path_update_sql() -> TextClause:
           AND raw_messages.duplicate_of_id IS NULL
           AND raw_messages.match_result IS NOT NULL
           AND raw_messages.extraction_result IS NOT NULL
+          AND NOT ({_IS_AIR_VIOLATION_SQL})
           AND NOT EXISTS (
                 SELECT 1
                 FROM incidents

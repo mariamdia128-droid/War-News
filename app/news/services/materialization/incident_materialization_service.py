@@ -27,6 +27,7 @@ from app.llm.dtos import (
 )
 from app.news.interfaces import DedupMatchingInterface
 from app.news.models import (
+    Condition,
     Incident,
     IncidentDetail,
     IncidentUpdate,
@@ -34,6 +35,13 @@ from app.news.models import (
     MessageStatus,
     RawMessage,
     UpdateAction,
+)
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
+from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_text,
+)
+from app.news.services.matching.condition_evidence_override import (
+    condition_fallback_from_text,
 )
 from app.news.repositories.incident_repository import IncidentRepository
 from app.news.repositories.emergency_organization_repository import (
@@ -295,7 +303,10 @@ class IncidentMaterializationService:
     ) -> list[Incident]:
         """Tier-1 fast materialize: dedup by village+condition, then insert minimal rows."""
         match_result = self._normalize_match_result(representative.match_result)
-        ineligible_reason = permanent_ineligibility_reason(match_result)
+        match_result = self._reroute_ineligible_air_match(representative, match_result)
+        ineligible_reason = permanent_ineligibility_reason(
+            match_result, representative.raw_text
+        )
         if ineligible_reason is not None:
             if ineligible_reason == ERROR_AIR_VIOLATION:
                 self.fast_stats.skipped_air_violation_routed += 1
@@ -945,6 +956,58 @@ class IncidentMaterializationService:
         representative.status = MessageStatus.held_for_review
         self.db.commit()
 
+    def _reroute_ineligible_air_match(
+        self,
+        representative: RawMessage,
+        match_result: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Replace a stale LLM air condition with deterministic incident evidence."""
+        if not match_result:
+            return match_result
+        ids = [
+            self._optional_int(match_result.get("matched_condition_id")),
+            *[
+                self._optional_int(item.get("matched_condition_id"))
+                for item in match_result.get("village_matches", [])
+                if isinstance(item, dict)
+            ],
+        ]
+        air_ids = [value for value in ids if value in AIR_VIOLATION_CONDITION_IDS]
+        eligibility = evaluate_air_violation_text(representative.raw_text)
+        if not air_ids or eligibility.eligible:
+            return match_result
+
+        action = (
+            condition_fallback_from_text(representative.raw_text)
+            or "Unclassified / Needs Review"
+        )
+        condition_id = self.db.scalar(
+            select(Condition.id).where(Condition.action_en == action).limit(1)
+        )
+        if condition_id is None:
+            return match_result
+
+        rerouted = dict(match_result)
+        if self._optional_int(rerouted.get("matched_condition_id")) in AIR_VIOLATION_CONDITION_IDS:
+            rerouted["matched_condition_id"] = condition_id
+            rerouted["raw_condition_text"] = action
+        villages: list[dict[str, Any]] = []
+        for item in rerouted.get("village_matches", []):
+            village = dict(item)
+            if self._optional_int(village.get("matched_condition_id")) in AIR_VIOLATION_CONDITION_IDS:
+                village["matched_condition_id"] = condition_id
+                village["raw_condition_text"] = action
+            villages.append(village)
+        rerouted["village_matches"] = villages
+        representative.match_result = rerouted
+        audit = dict(representative.filter_result or {})
+        audit["air_violation_rerouted"] = {
+            "reason": eligibility.reason,
+            "matched_terms": eligibility.matched_terms,
+        }
+        representative.filter_result = audit
+        return rerouted
+
     def _has_live_incident(self, raw_message_id: int) -> bool:
         return (
             self.db.scalar(
@@ -1144,7 +1207,10 @@ class IncidentMaterializationService:
         abort processing for other villages on the same message.
         """
         match_result = self._normalize_match_result(representative.match_result)
-        ineligible_reason = permanent_ineligibility_reason(match_result)
+        match_result = self._reroute_ineligible_air_match(representative, match_result)
+        ineligible_reason = permanent_ineligibility_reason(
+            match_result, representative.raw_text
+        )
         if ineligible_reason is not None:
             if ineligible_reason == ERROR_AIR_VIOLATION:
                 self.stats.skipped_air_violation_routed += 1

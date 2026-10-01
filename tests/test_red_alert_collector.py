@@ -67,6 +67,46 @@ def test_rejects_air_violation_without_a_canonical_village() -> None:
     assert message.filter_result["reasoning"] == "No locality was specified in the Red Alert notice"
 
 
+def test_kinetic_red_alert_reenters_incident_pipeline() -> None:
+    repository = MagicMock()
+    service = RedAlertAirViolationService(
+        repository, lambda text: 38, lambda text, villages: None
+    )
+    message = SimpleNamespace(
+        id=199,
+        raw_text="نجاة مسعفين من غارة نفذتها مروحية أباتشي في ميفدون",
+        raw_payload={},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.pending,
+        error_message=None,
+    )
+
+    assert service.process(message, []) is False
+    assert message.status == MessageStatus.pending
+    assert message.filter_result["air_violation_rerouted"]["matched_terms"]
+    repository.route_from_match.assert_not_called()
+
+
+def test_kinetic_red_alert_does_not_reopen_materialized_message() -> None:
+    repository = MagicMock()
+    service = RedAlertAirViolationService(
+        repository, lambda text: 38, lambda text, villages: None
+    )
+    message = SimpleNamespace(
+        id=200,
+        raw_text="طائرة مسيرة استهدفت سيارة في النبطية",
+        raw_payload={},
+        filter_result=None,
+        match_result=None,
+        status=MessageStatus.materialized,
+        error_message=None,
+    )
+
+    assert service.process(message, []) is False
+    assert message.status == MessageStatus.materialized
+
+
 def test_rejects_unreadable_ocr_with_an_image_specific_reason() -> None:
     repository = MagicMock()
     service = RedAlertAirViolationService(repository, lambda text: 36, lambda text, villages: None)
@@ -583,7 +623,7 @@ def test_red_zone_canonical_name_shared_by_two_villages_is_left_unmatched() -> N
     assert message.status == MessageStatus.rejected
 
 
-def test_red_zone_unions_alias_and_canonical_name_matches() -> None:
+def test_red_zone_rejects_surveillance_villages_from_different_cazas() -> None:
     repository = MagicMock()
     repository.route_from_match.return_value = True
     service = RedAlertAirViolationService(repository, lambda text: 36, match_village, match_villages)
@@ -592,10 +632,11 @@ def test_red_zone_unions_alias_and_canonical_name_matches() -> None:
     chiyah = _village(405, "شياح", caza_en="Baabda")
     chiyah.ref_name_en = "Chiyah"  # no alias; canonical name only
 
-    assert service.process(_red_zone_message(109, "", "Sohmor Chiyah"), [sohmor, chiyah]) is True
-    routed_result = repository.route_from_match.call_args.args[1]
+    message = _red_zone_message(109, "", "Sohmor Chiyah")
 
-    assert {match.matched_village_id for match in routed_result.village_matches} == {404, 405}
+    assert service.process(message, [sohmor, chiyah]) is False
+    repository.route_from_match.assert_not_called()
+    assert message.filter_result["reasoning"] == "Surveillance locations span multiple cazas"
 
 
 def test_red_zone_ocr_ignores_alias_outside_the_red_zone_crop() -> None:

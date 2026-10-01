@@ -6,6 +6,13 @@ from app.news.dtos import MatchResultDTO, MatchResultStatus
 from app.news.interfaces import MatchingServiceInterface
 from app.news.interfaces import RawMessageRepositoryInterface
 from app.news.interfaces import AirViolationRepositoryInterface
+from app.news.constants.air_violation_conditions import AIR_VIOLATION_CONDITION_IDS
+from app.news.services.air_violations.air_violation_eligibility import (
+    evaluate_air_violation_text,
+)
+from app.news.services.matching.condition_evidence_override import (
+    condition_fallback_from_text,
+)
 
 TIER1_IRRELEVANT_REASON = "tier1_extraction: model marked the post is_relevant=false"
 
@@ -81,6 +88,37 @@ class MatchIncidentAction:
                 extraction_result,
                 cnrs_classification=getattr(message, "cnrs_classification", None),
             )
+
+        # The model may still select an air-presence condition for a kinetic
+        # report. Reconcile that choice deterministically before either sink
+        # sees it, then run the normal matcher again with explicit incident
+        # evidence. This is the final post-LLM safety boundary.
+        if result.matched_condition_id in AIR_VIOLATION_CONDITION_IDS:
+            eligibility = evaluate_air_violation_text(
+                getattr(message, "raw_text", None)
+            )
+            if not eligibility.eligible:
+                filter_result = dict(
+                    getattr(message, "filter_result", None) or {}
+                )
+                filter_result["air_violation_rerouted"] = {
+                    "reason": eligibility.reason,
+                    "matched_terms": eligibility.matched_terms,
+                }
+                message.filter_result = filter_result
+                incident_action = (
+                    condition_fallback_from_text(
+                        getattr(message, "raw_text", None)
+                    )
+                    or "Unclassified / Needs Review"
+                )
+                extraction_result = extraction_result.model_copy(
+                    update={"action_description": incident_action}
+                )
+                result = self.matching_service.match(
+                    extraction_result,
+                    cnrs_classification=None,
+                )
         # Route air violations before marking matching complete. If routing
         # fails, match_result remains unset and the pipeline can safely retry
         # this message instead of terminalizing it without an AirViolation row.
