@@ -244,6 +244,30 @@
   category: air_violation_keyword
   meaning: "Drone / recon"
 
+- term: "طيران مسير"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "مسيّرة"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "مسيرات"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "درون"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "drone"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
+- term: "UAV"
+  category: air_violation_keyword
+  meaning: "Drone / recon"
+
 - term: "طيران مروحي"
   category: air_violation_keyword
   meaning: "Helicopter"
@@ -253,7 +277,15 @@
   category: air_violation_keyword
   meaning: "Helicopter"
 
+- term: "مروحيات"
+  category: air_violation_keyword
+  meaning: "Helicopter"
+
 - term: "هليكوبتر"
+  category: air_violation_keyword
+  meaning: "Helicopter"
+
+- term: "helicopter"
   category: air_violation_keyword
   meaning: "Helicopter"
 

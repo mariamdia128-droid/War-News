@@ -209,7 +209,6 @@ def _air_keyword_phrases(meaning: str) -> tuple[str, ...]:
 # IDs stay code-only (Phase 2.5). Standard Arabic phrases load from terminology;
 # OCR/English typos remain local to Red Alert ingestion.
 AIR_KEYWORDS: tuple[tuple[int, tuple[str, ...]], ...] = (
-    (35, _air_keyword_phrases("Warplane")),
     (
         36,
         _air_keyword_phrases("Drone / recon")
@@ -219,12 +218,11 @@ AIR_KEYWORDS: tuple[tuple[int, tuple[str, ...]], ...] = (
             "معمر سر",
         ),
     ),
+    (35, _air_keyword_phrases("Warplane")),
     (
         38,
         _air_keyword_phrases("Helicopter")
         + (
-            "apache",
-            "ah-64",
             # Common Tesseract substitution in Red Alert helicopter headers.
             "كوترية",
         ),
@@ -273,10 +271,18 @@ NON_AIR_DRONE_WORD_PATTERNS = (
     "منذ 20 تشرين الثاني 2025",
 )
 BARE_DRONE_KEYWORDS = (
+    "طيران مسير",
+    "طيران مسيّر",
+    "طائرة مسيرة",
     "مسيرة",
     "مسيّرة",
+    "مسيّر",
+    "مسيرات",
     "مسيره",
     "مسير",
+    "درون",
+    "drone",
+    "uav",
 )
 DRONE_CONTEXT_KEYWORDS = (
     "redalert.com.lb",
@@ -289,6 +295,27 @@ DRONE_CONTEXT_KEYWORDS = (
     "حذر",
     "فوق",
     "تحليق",
+)
+HELICOPTER_KEYWORDS = (
+    "طيران مروحي",
+    "مروحية",
+    "مروحيات",
+    "هليكوبتر",
+    "helicopter",
+    # OCR substitution in Red Alert helicopter map headers.
+    "كوترية",
+)
+HELICOPTER_FLIGHT_KEYWORDS = (
+    "تحلق",
+    "يحلق",
+    "تحليق",
+    "تحوم",
+    "تحويم",
+    "حلقت",
+    "hover",
+    "hovering",
+    "flying",
+    "flies",
 )
 
 SUPPORTED_DELIVERY_METHODS = frozenset({"public_preview", "telegram_api"})
@@ -392,7 +419,25 @@ def classify_condition(text: str) -> int | None:
         return None
     if any(normalize_arabic(part) in normalized for part in NON_AIR_DRONE_WORD_PATTERNS):
         return None
+    # Drone identity wins before every helicopter rule. Arabic normalization
+    # folds spelling/tashkeel variants, while English tokens use word bounds.
+    if any(normalize_arabic(term) in normalized for term in BARE_DRONE_KEYWORDS):
+        if any(
+            normalize_arabic(context) in normalized
+            for context in DRONE_CONTEXT_KEYWORDS
+        ) or any(term in normalized.split() for term in ("درون", "drone", "uav")):
+            return 36
+    has_helicopter = any(
+        normalize_arabic(term) in normalized for term in HELICOPTER_KEYWORDS
+    )
+    has_flight = any(
+        normalize_arabic(term) in normalized for term in HELICOPTER_FLIGHT_KEYWORDS
+    )
+    if has_helicopter:
+        return 38 if has_flight else None
     for condition_id, keywords in AIR_KEYWORDS:
+        if condition_id in {36, 38}:
+            continue
         for keyword in keywords:
             normalized_keyword = normalize_arabic(keyword)
             if normalized_keyword not in normalized:

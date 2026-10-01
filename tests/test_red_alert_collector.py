@@ -390,8 +390,64 @@ def test_normalize_delivery_method_accepts_hyphenated_alias() -> None:
 def test_classifies_supported_air_violation_actions() -> None:
     assert classify_condition("تحليق طيران حربي فوق الناقورة") == 35
     assert classify_condition("طائرة استطلاع فوق صور") == 36
-    assert classify_condition("مروحية فوق الجنوب") == 38
+    assert classify_condition("مروحية تحلق فوق الجنوب") == 38
     assert classify_condition("خبر سياسي لا يتعلق بالطيران") is None
+
+
+@pytest.mark.parametrize(
+    "term",
+    [
+        "طيران مسير",
+        "طيران مسيّر",
+        "مسيرة",
+        "مسيّرة",
+        "مسيّر",
+        "مسيرات",
+        "درون",
+        "drone",
+        "UAV",
+        "طائرة مسيرة",
+    ],
+)
+def test_every_drone_variant_is_surveillance(term: str) -> None:
+    assert classify_condition(f"{term} فوق صور") == 36
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "مروحية تحلق فوق صور",
+        "طيران مروحي يحلق فوق الناقورة",
+        "مروحيات تحوم فوق الجنوب",
+        "هليكوبتر حلقت فوق الخيام",
+        "helicopter hovering over Tyre",
+    ],
+)
+def test_helicopter_requires_and_accepts_flight_language(text: str) -> None:
+    assert classify_condition(text) == 38
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "مروحية فوق صور",
+        "طيران مروحي في الجنوب",
+        "هليكوبتر اسرائيلية",
+        "helicopter over Tyre",
+        "مروحيات معادية",
+    ],
+)
+def test_helicopter_without_flight_language_is_unclassified(text: str) -> None:
+    assert classify_condition(text) is None
+
+
+def test_apache_strike_is_never_helicopter_hovering() -> None:
+    assert classify_condition("مروحية أباتشي استهدفت مبنى في ميفدون") is None
+    assert classify_condition("AH-64 attacked a building") is None
+
+
+def test_ordinary_warplane_overflight_is_warplane() -> None:
+    assert classify_condition("تحليق طيران حربي فوق الناقورة") == 35
 
 
 def test_rejects_end_of_day_statistics_as_news() -> None:
