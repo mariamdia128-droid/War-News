@@ -91,7 +91,12 @@ def suppress_category_casualties(
             key: (None if key in CATEGORY_CASUALTY_FIELDS else value)
             for key, value in mapped.items()
         },
-        True,
+        any(
+            isinstance(mapped.get(field), int)
+            and not isinstance(mapped.get(field), bool)
+            and mapped.get(field) > 0
+            for field in CATEGORY_CASUALTY_FIELDS
+        ),
     )
 
 

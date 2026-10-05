@@ -35,6 +35,7 @@ from app.news.services.incident_details.casualty_status import (
     status_for_incident_row,
     target_location_count_from_extraction,
 )
+from app.news.services.materialization.verification_signals import casualty_review_reason
 from app.news.services.casualty_flag_evaluator import evaluate_casualty_flags_safely
 from app.news.services.dedup.dedup_matching_service import DedupMatchingService
 from app.news.services.clustering.embedding_service import EmbeddingService
@@ -191,6 +192,11 @@ class Tier2DetailFillService:
             extraction.casualty_scope == CasualtyScope.bulletin_aggregate
             and is_multi_village
         )
+        casualty_reason = casualty_review_reason(
+            extraction,
+            target_count=len(target_village_ids),
+            category_casualties_suppressed=category_casualties_suppressed,
+        )
         if is_multi_village_aggregate:
             self.bulletin_groups.create_for_message(
                 raw_message_id=raw_message_id,
@@ -270,19 +276,13 @@ class Tier2DetailFillService:
             )
             incident.khabar_embedding = embedding
             incident.details_pending = False
-            if category_casualties_suppressed:
+            if casualty_reason:
                 incident.verification_status = "needs_verification"
-                incident.verification_reason = (
-                    "Category casualties require manual per-village confirmation "
-                    "for a multi-target bulletin"
-                )
-            if extraction.casualty_scope_needs_review:
-                incident.verification_status = "needs_verification"
-                incident.verification_reason = extraction.casualty_scope_review_reason
+                incident.verification_reason = casualty_reason
                 self._record_scope_downgrade(
                     incident,
                     raw_message_id=raw_message_id,
-                    reason=extraction.casualty_scope_review_reason,
+                    reason=casualty_reason,
                 )
             row_status = status_for_incident_row(
                 raw_message.raw_text or "",

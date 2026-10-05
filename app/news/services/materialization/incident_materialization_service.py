@@ -92,6 +92,7 @@ from app.news.services.dedup.fast_path_eligibility import (
 from app.news.services.materialization.verification_signals import (
     _verification_reason,
     active_non_duplicate_verification_reasons,
+    casualty_review_reason,
 )
 
 
@@ -156,9 +157,19 @@ def _incident_event_datetime(value: datetime) -> datetime:
     return value.astimezone(BEIRUT_TIMEZONE)
 
 
-def _extraction_review_reason(extraction: ExtractionResult) -> str | None:
-    if extraction.casualty_scope_needs_review:
-        return extraction.casualty_scope_review_reason
+def _extraction_review_reason(
+    extraction: ExtractionResult,
+    *,
+    target_count: int,
+    category_casualties_suppressed: bool = False,
+) -> str | None:
+    casualty_reason = casualty_review_reason(
+        extraction,
+        target_count=target_count,
+        category_casualties_suppressed=category_casualties_suppressed,
+    )
+    if casualty_reason:
+        return casualty_reason
     if extraction.needs_review:
         return extraction.review_reason
     return None
@@ -551,7 +562,10 @@ class IncidentMaterializationService:
                     deaths=village_deaths,
                     injuries=village_injuries,
                     duplicate_flag=True,
-                    scope_review_reason=_extraction_review_reason(extraction),
+                    scope_review_reason=_extraction_review_reason(
+                        extraction,
+                        target_count=len(target_matches),
+                    ),
                     low_confidence_village_match=(
                         village_status == "matched_low_confidence"
                     ),
@@ -699,7 +713,10 @@ class IncidentMaterializationService:
                 location_ambiguity_note=self._location_ambiguity_note(extraction),
                 deaths=village_deaths,
                 injuries=village_injuries,
-                scope_review_reason=_extraction_review_reason(extraction),
+                scope_review_reason=_extraction_review_reason(
+                    extraction,
+                    target_count=len(target_matches),
+                ),
                 low_confidence_village_match=(
                     village_status == "matched_low_confidence"
                 ),
@@ -1291,6 +1308,11 @@ class IncidentMaterializationService:
             mapped_fields, category_casualties_suppressed = (
                 suppress_category_casualties(mapped_fields)
             )
+        extraction_review_reason = _extraction_review_reason(
+            extraction,
+            target_count=len(target_matches),
+            category_casualties_suppressed=category_casualties_suppressed,
+        )
         self._ensure_bulletin_group(
             representative,
             extraction,
@@ -1398,21 +1420,13 @@ class IncidentMaterializationService:
                             canonical_raw_message_id = existing_raw_id
                         existing.duplicate_level = "high"
                         existing.duplicate_similarity_score = score
-                        if category_casualties_suppressed:
+                        if extraction_review_reason:
                             existing.verification_status = "needs_verification"
-                            existing.verification_reason = (
-                                "Category casualties require manual per-village "
-                                "confirmation for a multi-target bulletin"
-                            )
-                        if extraction.casualty_scope_needs_review:
-                            existing.verification_status = "needs_verification"
-                            existing.verification_reason = (
-                                extraction.casualty_scope_review_reason
-                            )
+                            existing.verification_reason = extraction_review_reason
                             self._record_scope_downgrade(
                                 existing,
                                 raw_message_id=representative.id,
-                                reason=extraction.casualty_scope_review_reason,
+                                reason=extraction_review_reason,
                             )
                         self.dedup_service.merge_into_incident(
                             existing=existing,
@@ -1480,15 +1494,11 @@ class IncidentMaterializationService:
                 ),
                 village_id=village_id,
             )
-            extraction_review_reason = _extraction_review_reason(extraction)
-            if category_casualties_suppressed or extraction_review_reason:
+            if extraction_review_reason:
                 verification_status = "needs_verification"
             verification_reason = (
                 extraction_review_reason
                 if extraction_review_reason
-                else "Category casualties require manual per-village confirmation "
-                "for a multi-target bulletin"
-                if category_casualties_suppressed
                 else _verification_reason(
                     representative.match_result,
                     duplicate_flag=duplicate_flag,
@@ -1565,9 +1575,7 @@ class IncidentMaterializationService:
                 self._record_scope_downgrade(
                     incident,
                     raw_message_id=representative.id,
-                    reason=extraction.casualty_scope_review_reason
-                    if extraction.casualty_scope_needs_review
-                    else None,
+                    reason=extraction_review_reason,
                 )
                 self._mark_materialized(representative, fast_path=False)
                 _notify_new_incident(self.db, incident)

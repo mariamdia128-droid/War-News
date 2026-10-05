@@ -457,7 +457,7 @@ def test_multi_target_category_casualties_are_suppressed_and_flagged() -> None:
     )
 
 
-def test_scope_downgrade_flags_incident_and_records_provenance() -> None:
+def test_zero_casualty_scope_downgrade_does_not_flag_incident() -> None:
     db = _SessionStub()
     service = IncidentMaterializationService(db)  # type: ignore[arg-type]
     representative = _representative()
@@ -474,13 +474,9 @@ def test_scope_downgrade_flags_incident_and_records_provenance() -> None:
 
     result = service.materialize(representative)
 
-    assert result[0].verification_status == "needs_verification"
-    assert result[0].verification_reason.startswith("Unsupported casualty_scope")
-    update = next(
-        value for value in db.committed if isinstance(value, IncidentUpdate)
-    )
-    assert update.new_values["casualty_scope"] == "unspecified"
-    assert update.new_values["casualty_scope_source_raw_message_id"] == 42
+    assert result[0].verification_status == "auto_processed"
+    assert result[0].verification_reason is None
+    assert not any(isinstance(value, IncidentUpdate) for value in db.committed)
 
 
 def test_materialization_strips_emoji_from_khabar_and_hash() -> None:

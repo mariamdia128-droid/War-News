@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 LOW_CONFIDENCE_VILLAGE_REVIEW_REASON = (
     "Low-confidence village match requires manual review."
@@ -11,6 +13,128 @@ CASUALTY_ALLOCATION = "casualty_allocation"
 TIER2_RETRY_CAP = "tier2_retry_cap"
 CASUALTY_TRANSITION_CONFLICT = "casualty_transition_conflict"
 STORY_REVISION_REVIEW = "story_revision_review"
+
+VAGUE_CASUALTY_REVIEW_REASON = "Casualties are mentioned without an exact number."
+AGGREGATE_CASUALTY_REVIEW_REASON = (
+    "Aggregate casualty toll across multiple locations has no per-location breakdown."
+)
+CATEGORY_CASUALTY_REVIEW_REASON = (
+    "Category casualties require manual per-village confirmation for a multi-target bulletin"
+)
+
+
+def _get(value: object, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _positive_casualty_total(extraction: object) -> int:
+    casualties = _get(extraction, "casualties", {}) or {}
+    values = [
+        _get(casualties, field)
+        for field in (
+            "deaths",
+            "injuries",
+            "total_deaths",
+            "total_injuries",
+            "male_deaths",
+            "male_injuries",
+            "female_deaths",
+            "female_injuries",
+            "children_deaths",
+            "children_injuries",
+        )
+    ]
+    return sum(
+        value
+        for value in values
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+    )
+
+
+def _has_per_location_casualties(extraction: object) -> bool:
+    for role in _get(extraction, "village_roles", ()) or ():
+        if _get(role, "role", "target") not in ("target", getattr(_get(role, "role"), "value", None)):
+            continue
+        if any(
+            isinstance(value := _get(role, field), int)
+            and not isinstance(value, bool)
+            and value > 0
+            for field in ("deaths", "injuries")
+        ):
+            return True
+    for event in _get(extraction, "sub_events", ()) or ():
+        locations = _get(event, "locations", ()) or ()
+        casualties = _get(event, "casualties", {}) or {}
+        if len(locations) == 1 and any(
+            isinstance(value := _get(casualties, field), int)
+            and not isinstance(value, bool)
+            and value > 0
+            for field in ("deaths", "injuries", "total_deaths", "total_injuries")
+        ):
+            return True
+        for location in locations:
+            if any(
+                isinstance(value := _get(location, field), int)
+                and not isinstance(value, bool)
+                and value > 0
+                for field in ("deaths", "injuries")
+            ):
+                return True
+    return False
+
+
+def _claimed_casualty_scope(extraction: object) -> str:
+    scope = _get(extraction, "casualty_scope", "unspecified")
+    scope = getattr(scope, "value", scope)
+    if scope != "unspecified":
+        return str(scope)
+    old_reason = str(_get(extraction, "casualty_scope_review_reason", "") or "")
+    marker = "Unsupported casualty_scope="
+    if marker in old_reason:
+        return old_reason.split(marker, 1)[1].split(":", 1)[0]
+    if _get(extraction, "casualty_status") == "aggregate_only":
+        return "bulletin_aggregate"
+    return "unspecified"
+
+
+def casualty_review_reason(
+    extraction: object,
+    *,
+    target_count: int,
+    category_casualties_suppressed: bool = False,
+) -> str | None:
+    """Return a review reason only for product-approved casualty decisions."""
+    statuses = (
+        _get(extraction, "casualty_status"),
+        _get(extraction, "casualty_deaths_status"),
+        _get(extraction, "casualty_injuries_status"),
+    )
+    if "count_missing" in statuses:
+        return VAGUE_CASUALTY_REVIEW_REASON
+    positive_total = _positive_casualty_total(extraction)
+    stored_scope_reason = str(
+        _get(extraction, "casualty_scope_review_reason", "") or ""
+    )
+    if (
+        stored_scope_reason.startswith(
+            "Split extraction: a bulletin-wide casualty toll"
+        )
+        and positive_total > 0
+        and target_count >= 2
+    ):
+        return stored_scope_reason
+    if category_casualties_suppressed:
+        return CATEGORY_CASUALTY_REVIEW_REASON
+    if (
+        _claimed_casualty_scope(extraction) == "bulletin_aggregate"
+        and positive_total > 0
+        and target_count >= 2
+        and not _has_per_location_casualties(extraction)
+    ):
+        return AGGREGATE_CASUALTY_REVIEW_REASON
+    return None
 
 
 def _is_weak_village(item: object) -> bool:
@@ -80,10 +204,19 @@ def active_non_duplicate_verification_reasons(
         for item in village_matches
     ):
         reasons.add(CONDITION_REVIEW)
-    if (
-        extraction.get("casualty_scope_needs_review")
-        or extraction.get("casualty_scope_review_reason")
-        or extraction.get("category_casualties_suppressed")
+    target_ids = {
+        item.get("matched_village_id")
+        for item in village_matches
+        if isinstance(item, dict)
+        and item.get("village_role", "target") == "target"
+        and isinstance(item.get("matched_village_id"), int)
+    }
+    if casualty_review_reason(
+        extraction,
+        target_count=len(target_ids),
+        category_casualties_suppressed=bool(
+            extraction.get("category_casualties_suppressed")
+        ),
     ):
         reasons.add(CASUALTY_ALLOCATION)
     if tier2_retry_limit is not None and tier2_retry_count >= tier2_retry_limit:

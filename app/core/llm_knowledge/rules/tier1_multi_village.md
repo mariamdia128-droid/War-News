@@ -27,6 +27,14 @@ Load when the message appears to name multiple target locations.
 7. `casualty_scope_evidence` must be the full clause showing whether the toll is shared or per-village.
 8. A genuine bulletin aggregate still keeps every named target village as its own `village_roles` entry. Downstream materialization must create one incident row per named target village, linked by the same bulletin casualty group; never collapse an aggregate bulletin to only the first village.
 
+### Casualty review rule
+
+Set `casualty_scope_needs_review=true` only when casualty wording has no exact
+number, or when a positive aggregate toll covers two or more target locations
+without a per-location breakdown. Zero casualties never require casualty-scope
+review. Exact per-village figures do not require review. An aggregate with one
+target is effectively per-village and does not require review.
+
 8. If the bulletin describes more than one distinct action/condition across the villages, emit one `sub_events` item per distinct action. Each item must have only that action's own `locations`, a condition-matchable `action_text`, and an `evidence_span` from that action's sentence or clause. Do not rely on one root `action_description` plus flat `village_roles` for multi-action bulletins.
 9. For multi-action bulletins, root `action_description` is a bulletin-level summary for humans only, for example "multiple actions across 2 villages". It must not be treated as the per-village condition source when `sub_events` exist or should exist.
 10. A single target village must not appear in two conflicting `sub_events` unless the text explicitly uses revision/follow-up language showing that the later action updates or supersedes the earlier one.

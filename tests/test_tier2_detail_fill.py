@@ -335,7 +335,7 @@ def test_multi_village_explicit_zero_is_not_overwritten_by_root_toll() -> None:
     assert other.total_deaths == 2
 
 
-def test_multi_village_aggregate_downgraded_to_unspecified_does_not_stamp() -> None:
+def test_zero_casualty_scope_downgrade_does_not_flag_or_stamp() -> None:
     first = _incident_stub(village_id=101)
     second = _incident_stub(village_id=102)
 
@@ -344,7 +344,7 @@ def test_multi_village_aggregate_downgraded_to_unspecified_does_not_stamp() -> N
     for incident in (first, second):
         assert incident.deaths is None
         assert incident.total_deaths is None
-        assert incident.verification_status == "needs_verification"
+        assert not hasattr(incident, "verification_status")
 
 
 def test_single_village_still_backfills_root_toll() -> None:

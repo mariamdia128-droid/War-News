@@ -1,5 +1,21 @@
 # llm_knowledge CHANGELOG
 
+## 2026-10-05 — Casualty review follows unresolved casualty decisions
+
+Casualty-scope validation no longer sends zero-casualty incidents to manual
+review. Review is limited to casualty wording without an exact number and a
+positive aggregate toll across two or more targets without a per-location
+breakdown. Exact single-location and per-village figures are automatic.
+Category casualty fields remain suppressed in multi-target bulletins, but the
+suppression flags review only when it removed a positive casualty count.
+
+Real database example: raw message `38286` was labeled unsupported aggregate
+while most sibling rows had no casualty toll; only its genuinely unallocated
+positive toll requires a casualty decision. Tests in
+`test_casualty_verification_rules.py` cover zero casualties, exact single
+village, aggregate single target, aggregate multi-target, vague wording, and
+positive-versus-zero category suppression.
+
 ## 2026-10-01 — Air violations: presence-only routing and deterministic regressions
 
 **1. Kinetic/casualty/damage exclusion and post-model reroute.**

@@ -68,6 +68,9 @@ from app.news.services.incident_details.casualty_status import (
 from app.news.services.incident_details.casualty_scope_backstop import (
     validate_casualty_scope,
 )
+from app.news.services.materialization.verification_signals import (
+    casualty_review_reason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -710,7 +713,19 @@ class OllamaExtractionService(ExtractionClassifierInterface):
                 villages, village_roles, sub_events
             ),
         )
-        return result.model_copy(update=status_fields(casualty_status))
+        result = result.model_copy(update=status_fields(casualty_status))
+        review_reason = casualty_review_reason(
+            result,
+            target_count=target_location_count_from_extraction(
+                villages, village_roles, sub_events
+            ),
+        )
+        return result.model_copy(
+            update={
+                "casualty_scope_needs_review": review_reason is not None,
+                "casualty_scope_review_reason": review_reason,
+            }
+        )
 
     @staticmethod
     def _count_fill_targets(
@@ -1198,9 +1213,21 @@ class OllamaExtractionService(ExtractionClassifierInterface):
         )
         update: dict[str, object] = {"extraction_flow": EXTRACTION_FLOW_SPLIT}
         if assembly.scope_review_reason and not result.casualty_scope_needs_review:
-            update["casualty_scope_needs_review"] = True
+            update["casualty_scope_needs_review"] = False
             update["casualty_scope_review_reason"] = assembly.scope_review_reason
         result = result.model_copy(update=update)
+        scope_reason = casualty_review_reason(
+            result,
+            target_count=target_location_count_from_extraction(
+                result.village, result.village_roles, result.sub_events
+            ),
+        )
+        result = result.model_copy(
+            update={
+                "casualty_scope_needs_review": scope_reason is not None,
+                "casualty_scope_review_reason": scope_reason,
+            }
+        )
         assemble_ms = (time.perf_counter() - phase_started) * 1000
 
         logger.info(
