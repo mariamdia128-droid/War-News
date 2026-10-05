@@ -5,7 +5,7 @@ import logging
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any
+from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -320,6 +320,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             Incident.edit_lock_expires_at,
             Incident.village_id,
             Incident.story_group_id,
+            RawMessage.match_result,
         )
         base_query = (
             select(*selected_columns)
@@ -417,6 +418,7 @@ class IncidentRepository(IncidentRepositoryInterface):
                         "khabar": strip_emoji_and_pictographs(
                             row._mapping["khabar"]
                         ).strip(),
+                        **self._list_village_match_payload(row._mapping),
                     }
                 )
                 for row in page_rows
@@ -517,6 +519,9 @@ class IncidentRepository(IncidentRepositoryInterface):
 
         anchor_village_id = match_village_id("geo_context_anchor_village_id")
         alternate_village_id = match_village_id("alternate_candidate_village_id")
+        geo_context_distance = village_match.get("geo_context_distance_meters")
+        if not isinstance(geo_context_distance, (int, float)):
+            geo_context_distance = None
         related_village_ids = {
             value
             for value in (anchor_village_id, alternate_village_id)
@@ -618,6 +623,10 @@ class IncidentRepository(IncidentRepositoryInterface):
             "geo_context_anchor_village_name": related_village_names.get(
                 anchor_village_id
             ),
+            "geo_context_distance_meters": geo_context_distance,
+            "normalized_from": village_match.get("normalized_from")
+            if isinstance(village_match.get("normalized_from"), str)
+            else None,
             "alternate_candidate_village_id": alternate_village_id,
             "alternate_candidate_village_name": related_village_names.get(
                 alternate_village_id
@@ -637,6 +646,45 @@ class IncidentRepository(IncidentRepositoryInterface):
             **serialize_incident_category_sections(detail),
         }
         return IncidentDetailDTO.model_validate(values)
+
+    def _list_village_match_payload(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        match_result = row.get("match_result") if isinstance(row, Mapping) else None
+        if not isinstance(match_result, dict):
+            return {}
+        village_matches = match_result.get("village_matches")
+        if not isinstance(village_matches, list):
+            village_matches = [match_result] if match_result else []
+        village_id = row.get("village_id")
+        village_match = next(
+            (
+                entry
+                for entry in village_matches
+                if isinstance(entry, dict)
+                and entry.get("matched_village_id") == village_id
+            ),
+            {},
+        )
+        anchor_id = village_match.get("geo_context_anchor_village_id")
+        anchor_name = None
+        if isinstance(anchor_id, int) and not isinstance(anchor_id, bool):
+            anchor_name = self.db.scalar(
+                select(func.coalesce(Village.ref_name_en, Village.cad_name))
+                .where(Village.id == anchor_id)
+                .limit(1)
+            )
+        distance = village_match.get("geo_context_distance_meters")
+        return {
+            "resolved_by_geo_context": bool(
+                village_match.get("resolved_by_geo_context", False)
+            ),
+            "geo_context_anchor_village_name": anchor_name,
+            "geo_context_distance_meters": distance
+            if isinstance(distance, (int, float))
+            else None,
+            "normalized_from": village_match.get("normalized_from")
+            if isinstance(village_match.get("normalized_from"), str)
+            else None,
+        }
 
     def _toll_revisions_for(self, incident_id: UUID) -> list[TollRevisionDTO]:
         updates = self.db.scalars(

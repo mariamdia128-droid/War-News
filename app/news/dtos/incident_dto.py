@@ -57,6 +57,10 @@ class IncidentListItemDTO(BaseModel):
     edit_lock_expires_at: datetime | None = None
     village_id: int | None = None
     story_group_id: UUID | None = None
+    resolved_by_geo_context: bool = False
+    geo_context_anchor_village_name: str | None = None
+    geo_context_distance_meters: float | None = None
+    normalized_from: str | None = None
 
     @field_validator("duplicate_level", mode="before")
     @classmethod
@@ -218,6 +222,8 @@ class IncidentDetailDTO(BaseModel):
     resolved_by_geo_context: bool = False
     geo_context_anchor_village_id: int | None = None
     geo_context_anchor_village_name: str | None = None
+    geo_context_distance_meters: float | None = None
+    normalized_from: str | None = None
     alternate_candidate_village_id: int | None = None
     alternate_candidate_village_name: str | None = None
     casualty_demographics: CasualtyDemographicsDTO

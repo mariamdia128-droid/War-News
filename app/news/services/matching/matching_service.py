@@ -250,6 +250,32 @@ def _strip_generic_descriptors(text: str) -> str:
     return " ".join(tokens[start:]) if start else text
 
 
+def _split_dash_neighborhood(text: str) -> str | None:
+    normalized = normalize_arabic_text(text or "")
+    if not normalized.startswith("حي "):
+        return None
+    parts = [part.strip() for part in re.split(r"\s*[-–—]\s*", normalized, maxsplit=1)]
+    if len(parts) == 2 and parts[1]:
+        return parts[1]
+    return None
+
+
+def _split_village_pair_text(text: str) -> list[str] | None:
+    normalized = normalize_arabic_text(text or "")
+    if not normalized:
+        return None
+    between = re.match(r"^بين\s+(.+?)\s+و\s+(.+)$", normalized)
+    if between:
+        return [between.group(1).strip(), between.group(2).strip()]
+    dash_parts = [part.strip() for part in re.split(r"\s*[-–—]\s*", normalized)]
+    if len(dash_parts) == 2 and all(dash_parts):
+        return dash_parts
+    conjunction = re.match(r"^(.+?)\s+و\s*(.+)$", normalized)
+    if conjunction:
+        return [conjunction.group(1).strip(), conjunction.group(2).strip()]
+    return None
+
+
 def _condition_match_exceptions() -> tuple[str, ...]:
     return _exception_terms(
         "terminology/condition_match_exceptions.yaml",
@@ -284,6 +310,7 @@ class _VillageCandidateResolution:
     note: str | None = None
     geo_resolvable: bool = False
     search_text: str = ""
+    normalized_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -291,6 +318,7 @@ class _GeoResolution:
     classified: _ClassifiedMatch
     resolved_by_geo_context: bool = False
     anchor_village_id: int | None = None
+    distance_meters: float | None = None
     original_top_candidate_id: int | None = None
     alternate_candidate_village_id: int | None = None
 
@@ -345,6 +373,7 @@ class MatchingService(MatchingServiceInterface):
             sub_event_matches,
             root_condition,
         )
+        village_mentions = self._expand_village_mentions(village_mentions)
         candidate_resolutions = [
             self._resolve_village_candidates(
                 mention.village,
@@ -418,8 +447,10 @@ class MatchingService(MatchingServiceInterface):
                         if geo_resolution.resolved_by_geo_context
                         else resolution.note
                     ),
+                    normalized_from=resolution.normalized_from,
                     resolved_by_geo_context=(geo_resolution.resolved_by_geo_context),
                     geo_context_anchor_village_id=(geo_resolution.anchor_village_id),
+                    geo_context_distance_meters=geo_resolution.distance_meters,
                     original_top_candidate_id=(
                         geo_resolution.original_top_candidate_id
                     ),
@@ -600,6 +631,36 @@ class MatchingService(MatchingServiceInterface):
             for village_text in (extraction_result.village or [])
         ]
 
+    def _expand_village_mentions(
+        self,
+        items: list[
+            tuple[VillageRoleEntry, int | None, int | None, _ConditionResolution]
+        ],
+    ) -> list[tuple[VillageRoleEntry, int | None, int | None, _ConditionResolution]]:
+        expanded: list[
+            tuple[VillageRoleEntry, int | None, int | None, _ConditionResolution]
+        ] = []
+        for mention, event_index, event_size, condition in items:
+            split_mentions = self._split_if_resolvable_pair(mention)
+            expanded_event_size = len(split_mentions) if len(split_mentions) > 1 else event_size
+            expanded.extend(
+                (split, event_index, expanded_event_size, condition)
+                for split in split_mentions
+            )
+        return expanded
+
+    def _split_if_resolvable_pair(self, mention: VillageRoleEntry) -> list[VillageRoleEntry]:
+        parts = _split_village_pair_text(mention.village)
+        if not parts:
+            return [mention]
+        resolutions = [self._resolve_village_candidates(part) for part in parts]
+        if not all(
+            resolution.classified.status == MatchResultStatus.matched
+            for resolution in resolutions
+        ):
+            return [mention]
+        return [mention.model_copy(update={"village": part}) for part in parts]
+
     @staticmethod
     def _context_anchor_mentions(
         extraction_result: ExtractionResult,
@@ -642,6 +703,7 @@ class MatchingService(MatchingServiceInterface):
             " ".join(part for part in (normalized, qualifier_text or "") if part)
         )
         search_text = _strip_district_hint(normalized)
+        normalized_from: str | None = None
         if _is_exception_match(search_text, _village_match_exceptions()):
             return _VillageCandidateResolution(
                 (),
@@ -653,6 +715,13 @@ class MatchingService(MatchingServiceInterface):
             )
 
         resolution = self._resolve_search_text(search_text, district_hint)
+        dash_city = _split_dash_neighborhood(search_text)
+        if dash_city is not None:
+            alternative = self._resolve_search_text(dash_city, district_hint)
+            if self._resolution_rank(alternative) > self._resolution_rank(resolution):
+                resolution = alternative
+                search_text = dash_city
+                normalized_from = normalized
         stripped = _strip_generic_descriptors(search_text)
         if stripped != search_text:
             # A leading descriptor ("أطراف X") is dropped only when the remaining
@@ -661,6 +730,7 @@ class MatchingService(MatchingServiceInterface):
             alternative = self._resolve_search_text(stripped, district_hint)
             if self._resolution_rank(alternative) > self._resolution_rank(resolution):
                 resolution = alternative
+                normalized_from = normalized_from or normalized
                 search_text = stripped
         if search_text in _non_lebanese_places() and not (
             resolution.alias_hit or resolution.method == "exact"
@@ -671,7 +741,18 @@ class MatchingService(MatchingServiceInterface):
                 (),
                 _ClassifiedMatch(None, None, MatchResultStatus.unmatched),
             )
-        return resolution
+        return _VillageCandidateResolution(
+            resolution.candidates,
+            resolution.classified,
+            alias_hit=resolution.alias_hit,
+            collision_like=resolution.collision_like,
+            conditional_candidate_ids=resolution.conditional_candidate_ids,
+            method=resolution.method,
+            note=resolution.note,
+            geo_resolvable=resolution.geo_resolvable,
+            search_text=search_text,
+            normalized_from=normalized_from,
+        )
 
     @staticmethod
     def _resolution_rank(resolution: _VillageCandidateResolution) -> float:
@@ -1121,14 +1202,6 @@ class MatchingService(MatchingServiceInterface):
         if len(eligible) < 2:
             return fallback
 
-        original = resolution.candidates[0][0]
-        if (
-            getattr(original, "coord_x", None) is None
-            or getattr(original, "coord_y", None) is None
-        ):
-            return fallback
-
-        original_distance, _ = self._nearest_anchor(original, anchors)
         best_candidate, best_score = eligible[0]
         best_distance, best_anchor = self._nearest_anchor(
             best_candidate,
@@ -1142,13 +1215,20 @@ class MatchingService(MatchingServiceInterface):
                 best_distance = distance
                 best_anchor = anchor
 
+        if best_distance > self.geo_context_max_distance_meters:
+            return fallback
+        for candidate, _score in eligible:
+            if candidate.id == best_candidate.id or _are_related_places(
+                candidate, best_candidate
+            ):
+                continue
+            distance, _anchor = self._nearest_anchor(candidate, anchors)
+            if distance <= self.geo_context_max_distance_meters:
+                return fallback
+
+        original = resolution.candidates[0][0]
         if (
             best_candidate.id == original.id
-            or best_distance > self.geo_context_max_distance_meters
-            or (
-                original_distance - best_distance
-                < self.geo_context_min_distance_advantage_meters
-            )
         ):
             return fallback
 
@@ -1160,6 +1240,7 @@ class MatchingService(MatchingServiceInterface):
             ),
             resolved_by_geo_context=True,
             anchor_village_id=best_anchor.id,
+            distance_meters=best_distance,
             original_top_candidate_id=original.id,
             alternate_candidate_village_id=original.id,
         )

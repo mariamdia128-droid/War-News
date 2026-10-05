@@ -76,6 +76,24 @@ const relatedSourceNotes = (row: Incident, pageRows: Incident[]): string[] => {
   return notes;
 };
 
+const villageResolutionNote = (row: Incident) => {
+  if (row.resolved_by_geo_context) {
+    const distance =
+      typeof row.geo_context_distance_meters === "number"
+        ? `, ${(row.geo_context_distance_meters / 1000).toFixed(1)} km`
+        : "";
+    return `Village resolved from nearby location${
+      row.geo_context_anchor_village_name
+        ? ` (${row.geo_context_anchor_village_name}${distance})`
+        : distance
+    }`;
+  }
+  if (row.normalized_from) {
+    return `Village resolved from "${row.normalized_from}"`;
+  }
+  return null;
+};
+
 const openVerificationTypes = (row: Incident) => row.verification_types ?? [];
 
 const openVerificationFlags = (row: Incident) => row.open_flags ?? [];
@@ -282,6 +300,11 @@ export const IncidentsPage = () => {
               {note}
             </p>
           ))}
+          {villageResolutionNote(row) ? (
+            <p className="text-caption text-text-muted">
+              {villageResolutionNote(row)}
+            </p>
+          ) : null}
         </div>
       ),
     },

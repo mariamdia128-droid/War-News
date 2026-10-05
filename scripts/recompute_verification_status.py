@@ -22,7 +22,9 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.news.models import Incident, IncidentUpdate, RawMessage, UpdateAction
 from app.news.repositories.condition_repository import ConditionRepository
+from app.news.repositories.village_repository import VillageRepository
 from app.news.services.matching.matching_service import MatchingService
+from app.llm.dtos import ExtractionResult
 from app.news.services.materialization.verification_signals import (
     CONDITION_REVIEW,
     LOW_CONFIDENCE_VILLAGE,
@@ -130,6 +132,20 @@ def _rerun_condition(
     return condition_id, condition_hint
 
 
+def _rerun_match(
+    matcher: MatchingService,
+    raw: RawMessage,
+) -> dict[str, Any]:
+    extraction = ExtractionResult.model_validate(raw.extraction_result or {})
+    result = matcher.match(
+        extraction,
+        cnrs_classification=getattr(raw, "cnrs_classification", None),
+    )
+    match = result.model_dump(mode="json")
+    raw.match_result = match
+    return match
+
+
 def _preserved_hard_reasons(reason: str | None) -> list[str]:
     value = (reason or "").strip()
     lower = value.casefold()
@@ -155,7 +171,12 @@ def recompute(
     raw: RawMessage,
     matcher: MatchingService,
 ) -> Recomputed:
-    condition_id, condition_hint = _rerun_condition(matcher, raw, incident)
+    match = _rerun_match(matcher, raw)
+    own = _incident_match(match, incident.village_id) or {}
+    condition_id = own.get("matched_condition_id") or match.get("matched_condition_id")
+    condition_hint = own.get("condition_review_reason") or match.get(
+        "condition_review_reason"
+    )
     match = dict(raw.match_result or {})
     extraction = dict(raw.extraction_result or {})
     own = _incident_match(match, incident.village_id) or {}
@@ -235,7 +256,7 @@ def main() -> int:
     processed = succeeded = failed = skipped = 0
     transitions: Counter[tuple[str, str, str]] = Counter()
     samples: dict[tuple[str, str, str], list[str]] = defaultdict(list)
-    matcher = MatchingService(object(), ConditionRepository(db))
+    matcher = MatchingService(VillageRepository(db), ConditionRepository(db))
     try:
         incidents = list(
             db.scalars(
@@ -249,6 +270,8 @@ def main() -> int:
         )
         for incident in incidents:
             processed += 1
+            if processed == 1 or processed % 100 == 0:
+                print(f"progress processed={processed}/{len(incidents)}", flush=True)
             try:
                 if incident.verified_by_user_id is not None or _latest_status_change_is_manual(
                     db, incident.id
