@@ -200,3 +200,9 @@ def test_bazourieh_definite_article_shares_the_reference_key() -> None:
     from app.core.text_normalization import village_match_key
 
     assert village_match_key("البازورية") == village_match_key("بازورية")
+
+
+def test_wadi_hujayr_short_form_is_seeded_to_qabrikha() -> None:
+    rows = {row.alias_text: row for row in PROPOSED_VILLAGE_LOCATION_ALIASES}
+
+    assert rows["وادي الحجير"].parent_acs_code == 73262

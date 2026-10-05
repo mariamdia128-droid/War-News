@@ -1905,6 +1905,30 @@ class IncidentMaterializationService:
             if len(group) == 1:
                 deduped.append(group[0])
                 continue
+            condition_ids = {
+                condition_id
+                for match in group
+                if (
+                    condition_id := cls._optional_int(
+                        match.get("matched_condition_id")
+                    )
+                )
+                is not None
+            }
+            if len(condition_ids) > 1:
+                # The same village can legitimately occur under two action
+                # headings (Khiyam artillery and Khiyam detonations). Keep one
+                # row per condition; this is not Cartesian duplication.
+                seen_conditions: set[int] = set()
+                for match in group:
+                    condition_id = cls._optional_int(
+                        match.get("matched_condition_id")
+                    )
+                    if condition_id is None or condition_id in seen_conditions:
+                        continue
+                    seen_conditions.add(condition_id)
+                    deduped.append(match)
+                continue
             mentioned = [match for match in group if _action_mentions(match)]
             if mentioned:
                 deduped.extend(mentioned)
@@ -2182,6 +2206,16 @@ class IncidentMaterializationService:
             ),
             key=lambda value: value[0],
         )
+        if len(ordered) < 2:
+            return None
+
+        primary_event_index = ordered[0][1].get("event_index")
+        if primary_event_index is not None:
+            ordered = [
+                value
+                for value in ordered
+                if value[1].get("event_index") == primary_event_index
+            ]
         if len(ordered) < 2:
             return None
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.llm.services.tier1_segmenter import split_segments
+from app.llm.services.sectioned_bulletin import recover_sectioned_sub_events
 
 _STUDY_DIR = Path(__file__).resolve().parents[1] / "outputs" / "accuracy_study_import"
 
@@ -185,3 +186,41 @@ def test_footer_is_merged_into_previous_item() -> None:
 def test_empty_or_eventless_text_is_one_segment(text: str) -> None:
     segments = _assert_covers(text)
     assert len(segments) == 1
+
+
+def test_sectioned_bulletin_recovers_every_action_location_pair() -> None:
+    text = """صفحة الإعلامي الشهيد علي شعيب :
+
+ملخص الاعتداءات الإسرائيلية من منتصف الليل حتى الساعة
+
+الغارات الحربية المعادية
+بني حيان
+بين ميفدون وزوطر الشرقية
+
+القصف المدفعي المعادي
+النبطية الفوقا
+ميس الجبل
+حاريص
+الخيام
+صربين
+
+التفجيرات
+الخيام
+
+قنابل مضيئة
+وادي الحجير"""
+
+    events = recover_sectioned_sub_events(text)
+
+    assert [event.action_text for event in events] == [
+        "الغارات الحربية المعادية",
+        "القصف المدفعي المعادي",
+        "التفجيرات",
+        "قنابل مضيئة",
+    ]
+    assert [[location.village for location in event.locations] for event in events] == [
+        ["بني حيان", "ميفدون", "زوطر الشرقيه"],
+        ["النبطية الفوقا", "ميس الجبل", "حاريص", "الخيام", "صربين"],
+        ["الخيام"],
+        ["وادي الحجير"],
+    ]

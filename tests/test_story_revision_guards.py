@@ -53,6 +53,34 @@ def test_llm_not_called_outside_borderline_band() -> None:
     llm.assert_not_called()
 
 
+def test_detailed_recurrence_days_later_is_not_merged_as_story_revision() -> None:
+    candidate = SimpleNamespace(
+        incident=SimpleNamespace(
+            id=uuid4(),
+            khabar="غارة حربية معادية استهدفت ميفدون",
+            deaths=None,
+            injuries=None,
+            total_deaths=None,
+            total_injuries=None,
+        ),
+        embedding_similarity=0.92,
+        time_gap_seconds=67 * 60 * 60,
+    )
+    current = (
+        "ملخص الاعتداءات الإسرائيلية من منتصف الليل حتى الساعة "
+        "الغارات الحربية المعادية بني حيان بين ميفدون وزوطر الشرقية "
+        "القصف المدفعي المعادي النبطية الفوقا ميس الجبل حاريص الخيام صربين "
+        "التفجيرات الخيام قنابل مضيئة وادي الحجير"
+    )
+
+    result = StoryRelationshipService().classify_best(
+        current_text=current,
+        candidates=[candidate],
+    )
+
+    assert result.relationship == StoryRelationship.unrelated
+
+
 def test_story_revision_llm_response_requires_a_marker() -> None:
     confirmed = parse_story_revision_response(
         '{"relationship_hint":"revision","matched_keywords":["حصيلة أولية"]}'

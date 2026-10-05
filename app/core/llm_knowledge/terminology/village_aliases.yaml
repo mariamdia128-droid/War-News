@@ -125,6 +125,11 @@
   meaning: "acs:73262"
   notes: "Confirmed no-ACS local name -> Qabrikha."
 
+- term: "وادي الحجير"
+  category: village_location_alias
+  meaning: "acs:73262"
+  notes: "Common shortened form of محمية وادي الحجير -> Qabrikha."
+
 - term: "محرونة"
   category: village_location_alias
   meaning: "acs:62215"

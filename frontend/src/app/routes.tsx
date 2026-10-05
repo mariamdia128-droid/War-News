@@ -13,6 +13,7 @@ import { IncidentsPage } from "../features/news/pages/IncidentsPage";
 import { RejectedNewsPage } from "../features/news/pages/RejectedNewsPage";
 import { SettingsPage } from "../features/settings/pages/SettingsPage";
 import { SourcesPage } from "../features/sources/pages/SourcesPage";
+import { IntelligenceFlowPage } from "../features/intelligenceFlow/pages/IntelligenceFlowPage";
 import { AppShell } from "./AppShell";
 import { useAuthStore } from "../stores/authStore";
 import { getSession } from "../features/auth/api";
@@ -137,6 +138,7 @@ export const createRoutes = (): RouteObject[] => [
         { path: "logs/:logType", element: <LogsPage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "accounts", element: <AccountsPage /> },
+        { path: "intelligence-flow", element: <IntelligenceFlowPage /> },
         { path: "*", element: <RouteRepairRedirect fallback="/superadmin/dashboard" /> },
       ],
     },

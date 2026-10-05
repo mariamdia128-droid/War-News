@@ -927,3 +927,77 @@ def test_extract_tier1_fills_dual_death_word_the_model_left_null() -> None:
     }
     demographics = result.categories[ExtractionCategoryKey.casualty_demographics]
     assert demographics.casualties.deaths == 2
+
+
+def test_tier1_repairs_sectioned_bulletin_when_model_collapses_location_lists() -> None:
+    post_text = """ملخص الاعتداءات الإسرائيلية من منتصف الليل حتى الساعة
+
+الغارات الحربية المعادية
+بني حيان
+بين ميفدون وزوطر الشرقية
+
+القصف المدفعي المعادي
+النبطية الفوقا
+ميس الجبل
+حاريص
+الخيام
+صربين
+
+التفجيرات
+الخيام
+
+قنابل مضيئة
+وادي الحجير"""
+    # Reproduce raw 38575: the model retained the action sections but reduced
+    # their location lists to one location each.
+    response = json.dumps(
+        {
+            "is_relevant": True,
+            "village": ["ميفدون", "بني حيان"],
+            "village_roles": [
+                {"village": "ميفدون", "role": "target"},
+                {"village": "بني حيان", "role": "target"},
+            ],
+            "action_description": "Bombs",
+            "sub_events": [
+                {
+                    "locations": [{"village": "ميفدون", "role": "target"}],
+                    "action_text": "غارات حربية معادية",
+                    "casualties": {},
+                },
+                {
+                    "locations": [{"village": "النبطية الفوقا", "role": "target"}],
+                    "action_text": "قصف مدفعي معادي",
+                    "casualties": {},
+                },
+                {
+                    "locations": [{"village": "الخيام", "role": "target"}],
+                    "action_text": "تفجير",
+                    "casualties": {},
+                },
+                {
+                    "locations": [{"village": "وادي الحجير", "role": "target"}],
+                    "action_text": "قنابل مضيئة",
+                    "casualties": {},
+                },
+            ],
+            "casualties": {},
+            "casualty_evidence": [],
+            "casualty_transitions": [],
+        },
+        ensure_ascii=False,
+    )
+    service = OllamaExtractionService(
+        client=_client_for_model_contents([response]),
+        presence_gate=_PresenceGateStub(categories=[]),
+    )
+
+    result = service.extract_tier1(post_text, raw_message_id=38575)
+
+    assert [[location.village for location in event.locations] for event in result.sub_events] == [
+        ["ميفدون", "بني حيان"],
+        ["النبطية الفوقا", "ميس الجبل", "حاريص", "الخيام", "صربين"],
+        ["الخيام"],
+        ["وادي الحجير"],
+    ]
+    assert result.location_alternatives == ["زوطر الشرقيه"]

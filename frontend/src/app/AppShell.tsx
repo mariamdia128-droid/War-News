@@ -106,6 +106,14 @@ const SettingsIcon = ({ className }: { className?: string }) => (
   </IconBase>
 );
 
+const IntelligenceFlowIcon = ({ className }: { className?: string }) => (
+  <IconBase className={className}>
+    <path d="M3 12h4l2-6 4 12 2-6h6" />
+    <circle cx="3" cy="12" r="1" />
+    <circle cx="21" cy="12" r="1" />
+  </IconBase>
+);
+
 const SignOutIcon = ({ className }: { className?: string }) => (
   <IconBase className={className}>
     <path d="M10 17l5-5-5-5" />
@@ -186,6 +194,12 @@ const navItems: NavItem[] = [
     icon: AccountsIcon,
     hiddenFrom: [ROLES.ADMIN],
   },
+  {
+    label: "Intelligence Flow",
+    path: "intelligence-flow",
+    icon: IntelligenceFlowIcon,
+    hiddenFrom: [ROLES.ADMIN],
+  },
 ];
 
 const pageMeta = [
@@ -198,6 +212,7 @@ const pageMeta = [
   { match: (pathname: string) => pathname.includes("/logs"), title: "Logs" },
   { match: (pathname: string) => pathname.includes("/settings"), title: "Settings" },
   { match: (pathname: string) => pathname.startsWith("/superadmin/accounts"), title: "Accounts" },
+  { match: (pathname: string) => pathname.includes("/intelligence-flow"), title: "Intelligence Flow" },
 ];
 
 const focusableSelector =

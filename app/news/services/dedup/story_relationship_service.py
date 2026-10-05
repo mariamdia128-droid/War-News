@@ -19,6 +19,7 @@ from app.core.text_normalization import normalize_arabic_text
 from app.llm.dtos import StoryRelationship, StoryRelationshipClassification
 from app.news.services.incident_details.story_revision_backstop import (
     detect_story_revision_backstop,
+    has_story_revision_recall_markers,
 )
 
 _HOUSE_RE = re.compile(r"منزل|بيت|مبنى|بنايه|شقه")
@@ -34,6 +35,10 @@ logger = logging.getLogger(__name__)
 # thresholds the LLM fallback (when configured) decides.
 SPARSE_REVISION_MIN_SIMILARITY = 0.40
 SPARSE_REVISION_CONFIDENT_SIMILARITY = 0.55
+# Similar text at the same village days later is normally a recurring strike,
+# not a continuation of the old incident.  Longer links require explicit
+# revision/casualty-update wording handled by the deterministic backstop.
+HEURISTIC_STORY_MAX_GAP_SECONDS = 24 * 60 * 60
 
 LlmClassifyFn = Callable[
     [str, str],
@@ -134,8 +139,22 @@ class StoryRelationshipService:
                 relationship_evidence=None,
             )
 
+        recall_marked = has_story_revision_recall_markers(current_text)
+        eligible_candidates = [
+            candidate
+            for candidate in candidates
+            if recall_marked
+            or getattr(candidate, "time_gap_seconds", None) is None
+            or abs(float(candidate.time_gap_seconds)) <= HEURISTIC_STORY_MAX_GAP_SECONDS
+        ]
+        if not eligible_candidates:
+            return StoryRelationshipClassification(
+                relationship=StoryRelationship.unrelated,
+                relationship_evidence=None,
+            )
+
         ranked: list[StoryRelationshipClassification] = []
-        for candidate in candidates:
+        for candidate in eligible_candidates:
             incident = candidate.incident
             ranked.append(
                 self.classify(
@@ -149,7 +168,7 @@ class StoryRelationshipService:
                     embedding_similarity=getattr(candidate, "embedding_similarity", None),
                 )
             )
-        ranked.sort(key=lambda item: _relationship_rank(item, candidates))
+        ranked.sort(key=lambda item: _relationship_rank(item, eligible_candidates))
         return ranked[0]
 
 

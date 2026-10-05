@@ -8,6 +8,7 @@ type DialogProps = {
   children: ReactNode;
   onClose: () => void;
   size?: "md" | "lg" | "xl" | "panel";
+  closeLabel?: string;
 };
 
 const focusableSelector =
@@ -20,7 +21,7 @@ const sizeClasses = {
   panel: "ml-auto h-full max-w-3xl rounded-none border-y-0 border-r-0",
 };
 
-export const Dialog = ({ title, eyebrow = "View details", children, onClose, size = "md" }: DialogProps) => {
+export const Dialog = ({ title, eyebrow = "View details", children, onClose, size = "md", closeLabel = "Close" }: DialogProps) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const titleId = useId();
 
@@ -92,10 +93,10 @@ export const Dialog = ({ title, eyebrow = "View details", children, onClose, siz
             type="button"
             className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2 text-caption font-semibold text-text-primary transition-colors duration-150 ease-out hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             onClick={onClose}
-            aria-label="Close details"
+            aria-label={closeLabel}
           >
             <span aria-hidden="true" className="text-base leading-none">×</span>
-            Close
+            {closeLabel}
           </button>
         </div>
         <div className="min-h-0 overflow-y-auto px-6 py-5">{children}</div>

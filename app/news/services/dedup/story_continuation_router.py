@@ -116,19 +116,33 @@ def _story_equivalent_village_ids(
     allowed = {village_id}
     matches = match_result.get("village_matches") or []
     current_event_index: int | None = None
+    current_match: dict[str, Any] | None = None
     for item in matches:
         if not isinstance(item, dict):
             continue
         if item.get("matched_village_id") != village_id:
             continue
+        current_match = item
         if item.get("event_location_count", 0) and item.get("event_location_count") > 1:
             current_event_index = item.get("event_index")
         break
+    normalized_text = strip_boilerplate(candidate_text or "")
+    route_event = "طريق" in normalized_text and any(
+        separator in normalized_text for separator in ("-", "–", "—", " بين ")
+    )
+    qualifier = str((current_match or {}).get("qualifier_text") or "").lower()
+    if "fuzzy area" in qualifier:
+        alternate = (current_match or {}).get("alternate_candidate_village_id")
+        if isinstance(alternate, int) and not isinstance(alternate, bool):
+            allowed.add(alternate)
+        return allowed
+    if not route_event:
+        # Locations grouped under one action heading are separate targets, not
+        # aliases for story deduplication (Bani Hayyan must not merge into the
+        # Mayfadoun incident merely because both are listed under airstrikes).
+        return allowed
     if current_event_index is None:
-        normalized_text = strip_boilerplate(candidate_text or "")
-        if "طريق" in normalized_text and any(
-            separator in normalized_text for separator in ("-", "–", "—")
-        ):
+        if route_event:
             for item in matches:
                 if not isinstance(item, dict):
                     continue

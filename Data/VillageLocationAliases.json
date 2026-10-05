@@ -175,6 +175,13 @@
         "evidence": "ACS reconciliation spreadsheet; no independent ACS row."
     },
     {
+        "alias_text": "وادي الحجير",
+        "parent_acs_code": 73262,
+        "note": "Common shortened form of محمية وادي الحجير -> Qabrikha.",
+        "confidence": "confirmed",
+        "evidence": "CNRS incident bulletin terminology."
+    },
+    {
         "alias_text": "محرونة",
         "parent_acs_code": 62215,
         "note": "Confirmed no-ACS local name -> Mazraat Mechref.",

@@ -180,6 +180,33 @@ def test_single_action_route_treats_both_endpoints_as_story_equivalent() -> None
     ) == {652, 1529}
 
 
+def test_multi_target_action_does_not_make_distinct_villages_story_equivalent() -> None:
+    match_result = {
+        "village_matches": [
+            {
+                "matched_village_id": 205,
+                "village_match_status": "matched",
+                "village_role": "target",
+                "event_index": 0,
+                "event_location_count": 2,
+            },
+            {
+                "matched_village_id": 1003,
+                "village_match_status": "matched",
+                "village_role": "target",
+                "event_index": 0,
+                "event_location_count": 2,
+            },
+        ]
+    }
+
+    assert _story_equivalent_village_ids(
+        match_result,
+        205,
+        candidate_text="الغارات الحربية المعادية بني حيان ميفدون",
+    ) == {205}
+
+
 def test_raw_9302_route_can_revise_raw_8788_zibdine_incident() -> None:
     canonical = Incident()
     canonical.id = uuid4()
