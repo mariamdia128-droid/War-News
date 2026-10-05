@@ -283,8 +283,24 @@ def test_list_all_starts_from_incidents_and_requires_materialized_raw_message() 
     ).lower()
     assert "from incidents left outer join raw_messages" in compiled
     assert "incidents.is_deleted is false" in compiled
+    assert "incidents.village_id is not null" in compiled
     assert "raw_messages.id is not null" in compiled
     assert "raw_messages.status = 'materialized'" in compiled
+
+
+def test_list_all_and_count_exclude_staging_and_null_village_incidents() -> None:
+    db = _ListSessionStub()
+
+    IncidentRepository(db).list_all(IncidentListParams())  # type: ignore[arg-type]
+
+    compiled_statements = [
+        str(statement.compile(compile_kwargs={"literal_binds": True})).lower()
+        for statement in db.statements
+    ]
+    assert compiled_statements
+    assert all("from incidents left outer join raw_messages" in statement for statement in compiled_statements)
+    assert all("incidents.village_id is not null" in statement for statement in compiled_statements)
+    assert all("raw_messages.filter_result" not in statement for statement in compiled_statements)
 
 
 def test_list_all_excludes_ocr_payload_rows() -> None:
@@ -364,34 +380,6 @@ def test_list_all_cursor_supports_excel_incident_without_raw_message() -> None:
         db.statements[0].compile(compile_kwargs={"literal_binds": True})
     ).lower()
     assert "coalesce(raw_messages.id, 0)" in compiled
-
-
-def test_incident_list_item_accepts_pre_materialization_row() -> None:
-    item = IncidentListItemDTO.model_validate(
-        {
-            "id": None,
-            "raw_message_id": 42,
-            "raw_status": "parsed",
-            "village": None,
-            "condition": None,
-            "event_date": date(2026, 8, 28),
-            "event_time": None,
-            "khabar": "Incoming report still in processing.",
-            "source": "Telegram",
-            "source_reference": "source-channel",
-            "matched": False,
-            "duplicate_flag": "none",
-            "details_pending": True,
-            "created_at": datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc),
-            "version": 1,
-            "locked_by_user_id": None,
-            "edit_lock_expires_at": None,
-        }
-    )
-
-    assert item.id is None
-    assert item.raw_message_id == 42
-    assert item.raw_status == "parsed"
 
 
 def test_incident_list_item_accepts_excel_import_without_raw_message() -> None:

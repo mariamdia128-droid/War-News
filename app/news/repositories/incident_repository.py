@@ -237,7 +237,6 @@ class IncidentRepository(IncidentRepositoryInterface):
         return ~or_(ordinary_burning_properties, palestine_only)
 
     def list_all(self, params: IncidentListParams) -> IncidentListResponse:
-        include_filtered_news = self._should_include_filtered_news_rows(params)
         needs_verification = self._needs_verification_column()
         event_datetime = func.coalesce(
             RawMessage.message_datetime,
@@ -251,31 +250,8 @@ class IncidentRepository(IncidentRepositoryInterface):
         filters = self._list_filters(
             params,
             event_date_expr=event_date,
-            include_filtered_news=include_filtered_news,
         )
         cursor = self._decode_list_cursor(params.cursor)
-        base_from = RawMessage if include_filtered_news else Incident
-        incident_join = (
-            (Incident.raw_message_id == RawMessage.id)
-            & (Incident.is_deleted.is_(False))
-            & (Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE))
-        )
-        raw_matched_condition_id = func.nullif(
-            RawMessage.match_result["matched_condition_id"].astext,
-            "",
-        ).cast(Condition.id.type)
-        raw_matched_village_id = func.nullif(
-            RawMessage.match_result["matched_village_id"].astext,
-            "",
-        ).cast(Village.id.type)
-        resolved_condition_id = func.coalesce(
-            Incident.condition_id,
-            raw_matched_condition_id,
-        )
-        resolved_village_id = func.coalesce(
-            Incident.village_id,
-            raw_matched_village_id,
-        )
 
         selected_columns = (
             Incident.id.label("id"),
@@ -314,12 +290,10 @@ class IncidentRepository(IncidentRepositoryInterface):
             Incident.total_deaths,
             Incident.total_injuries,
             case(
-                (Incident.id.is_(None), False),
                 (needs_verification, False),
                 else_=True,
             ).label("matched"),
             case(
-                (Incident.id.is_(None), "needs_verification"),
                 (needs_verification, "needs_verification"),
                 (
                     Incident.verification_status == "needs_verification",
@@ -339,7 +313,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             ).label("duplicate_flag"),
             Incident.duplicate_level,
             Incident.duplicate_similarity_score,
-            func.coalesce(Incident.details_pending, true()).label("details_pending"),
+            Incident.details_pending,
             created_at.label("created_at"),
             func.coalesce(Incident.version, 1).label("version"),
             Incident.locked_by_user_id,
@@ -347,18 +321,12 @@ class IncidentRepository(IncidentRepositoryInterface):
             Incident.village_id,
             Incident.story_group_id,
         )
-        base_query = select(*selected_columns).select_from(base_from)
-        if include_filtered_news:
-            base_query = base_query.outerjoin(Incident, incident_join)
-        else:
-            base_query = base_query.outerjoin(
-                RawMessage,
-                RawMessage.id == Incident.raw_message_id,
-            )
         base_query = (
-            base_query
-            .outerjoin(Village, Village.id == resolved_village_id)
-            .outerjoin(Condition, Condition.id == resolved_condition_id)
+            select(*selected_columns)
+            .select_from(Incident)
+            .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
+            .outerjoin(Village, Village.id == Incident.village_id)
+            .outerjoin(Condition, Condition.id == Incident.condition_id)
             .outerjoin(Source, Source.id == func.coalesce(Incident.source_id, RawMessage.source_id))
             .where(*filters)
         )
@@ -382,23 +350,17 @@ class IncidentRepository(IncidentRepositoryInterface):
         flags_by_incident = self._visible_flags_by_incident(
             [row.id for row in page_rows if row.id is not None]
         )
-        count_id = RawMessage.id if include_filtered_news else Incident.id
-
         def joined_query(query):
-            query = query.select_from(base_from)
-            if include_filtered_news:
-                query = query.outerjoin(Incident, incident_join)
-            else:
-                query = query.outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
             return (
-                query
-                .outerjoin(Village, Village.id == resolved_village_id)
-                .outerjoin(Condition, Condition.id == resolved_condition_id)
+                query.select_from(Incident)
+                .outerjoin(RawMessage, RawMessage.id == Incident.raw_message_id)
+                .outerjoin(Village, Village.id == Incident.village_id)
+                .outerjoin(Condition, Condition.id == Incident.condition_id)
                 .outerjoin(Source, Source.id == func.coalesce(Incident.source_id, RawMessage.source_id))
                 .where(*filters)
             )
 
-        total = self.db.scalar(joined_query(select(func.count(count_id))))
+        total = self.db.scalar(joined_query(select(func.count(Incident.id))))
         latest_incident_at = self.db.scalar(
             joined_query(
                 select(
@@ -2695,60 +2657,19 @@ class IncidentRepository(IncidentRepositoryInterface):
         params: IncidentListParams,
         *,
         event_date_expr=None,
-        include_filtered_news: bool = False,
     ) -> list[object]:
         event_date_column = event_date_expr if event_date_expr is not None else Incident.event_date
-        if include_filtered_news:
-            filters: list[object] = [
-                RawMessage.id.is_not(None),
-                RawMessage.status != MessageStatus.routed_air_violation,
-                ~RawMessage.raw_payload.op("?")("ocr_text"),
-                or_(
-                    Incident.id.is_not(None),
-                    # Raw-level duplicates repeat news already ingested and
-                    # failed extractions are not usable news, and materialized
-                    # rows without an active incident were deleted or rerouted;
-                    # listing them inflates the incident count several times over.
-                    RawMessage.status.not_in(
-                        (
-                            MessageStatus.duplicate,
-                            MessageStatus.error,
-                            MessageStatus.materialized,
-                        )
-                    ),
-                ),
-                or_(
-                    Incident.id.is_not(None),
-                    RawMessage.filter_result["verdict"].as_string() == "relevant",
-                ),
-                or_(
-                    Incident.id.is_(None),
-                    and_(
-                        Incident.is_deleted.is_(False),
-                        Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
-                        cls._visible_incident_scope_filter(),
-                    ),
-                ),
-            ]
-        else:
-            filters = [
-                Incident.is_deleted.is_(False),
-                Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
-                cls._visible_incident_scope_filter(),
-                RawMessage.id.is_not(None),
-                RawMessage.status == MessageStatus.materialized,
-                ~RawMessage.raw_payload.op("?")("ocr_text"),
-            ]
+        filters: list[object] = [
+            Incident.is_deleted.is_(False),
+            Incident.village_id.is_not(None),
+            Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
+            cls._visible_incident_scope_filter(),
+            RawMessage.id.is_not(None),
+            RawMessage.status == MessageStatus.materialized,
+            ~RawMessage.raw_payload.op("?")("ocr_text"),
+        ]
         if params.verification_status is None:
-            if include_filtered_news:
-                filters.append(
-                    or_(
-                        Incident.id.is_(None),
-                        Incident.verification_status != "rejected",
-                    )
-                )
-            else:
-                filters.append(Incident.verification_status != "rejected")
+            filters.append(Incident.verification_status != "rejected")
         if params.village:
             village_pattern = f"%{params.village}%"
             filters.append(
@@ -2978,17 +2899,6 @@ class IncidentRepository(IncidentRepositoryInterface):
             or params.flagged_only
             or params.verification_status is not None
             or params.duplicate_only
-        )
-
-    @staticmethod
-    def _should_include_filtered_news_rows(params: IncidentListParams) -> bool:
-        return not bool(
-            params.village
-            or params.condition
-            or params.flagged_only
-            or params.verification_status is not None
-            or params.duplicate_only
-            or params.has_casualties
         )
 
     @staticmethod
