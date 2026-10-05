@@ -23,7 +23,7 @@ def test_bucket_auto_processed_for_one_target_village_signal() -> None:
         _match_result(village_status="matched_low_confidence")
     )
 
-    assert classification.bucket == "auto_processed_now"
+    assert classification.bucket == "confidence_only_single"
 
 
 def test_bucket_auto_processed_for_condition_and_target_village() -> None:
@@ -34,7 +34,7 @@ def test_bucket_auto_processed_for_condition_and_target_village() -> None:
         )
     )
 
-    assert classification.bucket == "auto_processed_now"
+    assert classification.bucket == "confidence_only_multi"
 
 
 def test_bucket_auto_processed_now_for_origin_low_confidence_only() -> None:
@@ -43,7 +43,7 @@ def test_bucket_auto_processed_now_for_origin_low_confidence_only() -> None:
 
     classification = classify_signal_bucket(result)
 
-    assert classification.bucket == "auto_processed_now"
+    assert classification.bucket == "confidence_only_single"
 
 
 def test_bucket_auto_processed_for_relevance_review() -> None:

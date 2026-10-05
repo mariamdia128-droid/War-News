@@ -116,6 +116,7 @@ def _revision_repo(*, latest_source_at: datetime, new_at: datetime):
         injuries=5,
         total_deaths=3,
         total_injuries=5,
+        village_id=1,
         verification_status="auto_processed",
         verification_reason=None,
     )

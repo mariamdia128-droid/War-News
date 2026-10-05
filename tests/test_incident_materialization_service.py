@@ -93,9 +93,7 @@ def test_initial_verification_status_ignores_duplicate_only_signals(signal: str)
     "match_kwargs",
     [
         {},
-        {"village_status": "unmatched", "village_id": None},
         {"condition_status": "matched_low_confidence"},
-        {"condition_status": "unmatched", "condition_id": None},
     ],
 )
 def test_initial_verification_status_auto_processes_non_duplicate_matches(
@@ -105,6 +103,17 @@ def test_initial_verification_status_auto_processes_non_duplicate_matches(
         _initial_verification_status(_match_result(**match_kwargs))
         == "auto_processed"
     )
+
+
+def test_initial_verification_status_requires_review_for_unresolved_village_or_condition() -> None:
+    assert _initial_verification_status(
+        _match_result(village_status="unmatched", village_id=None)
+    ) == "needs_verification"
+    match = _match_result(condition_status="unmatched", condition_id=None)
+    match["condition_review_reason"] = (
+        "No usable text-grounded or source-metadata condition candidate."
+    )
+    assert _initial_verification_status(match) == "needs_verification"
 
 
 def test_initial_verification_status_flags_low_confidence_village_match() -> None:
@@ -651,10 +660,10 @@ def test_air_violation_condition_is_skipped(condition_id: int, caplog) -> None:
 @pytest.mark.parametrize(
     "match_result, expected_reason",
     [
-        (
-            _match_result(village_status="unmatched", village_id=None),
-            ERROR_NO_VILLAGE,
-        ),
+            (
+                _match_result(village_status="unmatched", village_id=None),
+                "fast_path: held for review: extracted place not found in gazetteer",
+            ),
         (
             _match_result(condition_status="unmatched", condition_id=None),
             ERROR_UNMATCHED_CONDITION,

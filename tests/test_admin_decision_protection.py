@@ -82,6 +82,7 @@ def test_story_revision_demotes_verified_incident() -> None:
         injuries=None,
         total_deaths=5,
         total_injuries=None,
+        village_id=1,
         verification_status="verified",
         verification_reason=None,
     )

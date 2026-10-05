@@ -24,7 +24,7 @@ def test_low_confidence_village_review_reason_survives_duplicate_clear() -> None
     )
 
 
-def test_source_backed_condition_review_survives_overwritten_duplicate_reason() -> None:
+def test_condition_confidence_alone_does_not_survive_duplicate_clear() -> None:
     raw_message = SimpleNamespace(
         match_result={"condition_review_required": True},
         extraction_result={},
@@ -35,6 +35,6 @@ def test_source_backed_condition_review_survives_overwritten_duplicate_reason() 
     )
     incident = SimpleNamespace(raw_message_id=44)
 
-    assert repository._should_keep_needs_verification_after_duplicate_clear(
+    assert not repository._should_keep_needs_verification_after_duplicate_clear(
         "Possible cross-source duplicate segment", incident
     )

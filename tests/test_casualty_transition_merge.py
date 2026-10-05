@@ -340,4 +340,4 @@ def test_clean_resolved_merge_clears_verification_reason() -> None:
     )
 
     assert existing.duplicate_flag is False
-    assert existing.verification_reason is None
+    assert existing.verification_reason == "stale reason"

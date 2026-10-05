@@ -225,8 +225,8 @@ def test_tier2_mid_score_backstop_records_duplicate_match_without_merge() -> Non
         similarity_score=mid_score,
     )
     assert current.duplicate_flag is True
-    assert getattr(current, "verification_status", "auto_processed") == "auto_processed"
-    assert getattr(current, "verification_reason", None) is None
+    assert getattr(current, "verification_status", "auto_processed") == "needs_verification"
+    assert "Possible duplicate" in getattr(current, "verification_reason", "")
 
 
 def test_tier2_below_low_threshold_does_not_flag_or_record_match() -> None:

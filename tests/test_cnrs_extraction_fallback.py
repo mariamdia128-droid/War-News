@@ -266,6 +266,8 @@ def test_tier2_details_delegate_to_wrapped_extractor() -> None:
         presence_category_keys=[ExtractionCategoryKey.vehicles],
         root_casualties=ExtractionCasualties(),
         raw_message_id=42,
+        villages=None,
+        casualty_scope=None,
     )
 
     assert result == ollama.extract_tier2_details.return_value
@@ -274,6 +276,8 @@ def test_tier2_details_delegate_to_wrapped_extractor() -> None:
         presence_category_keys=[ExtractionCategoryKey.vehicles],
         root_casualties=ExtractionCasualties(),
         raw_message_id=42,
+        villages=None,
+        casualty_scope=None,
     )
 
 

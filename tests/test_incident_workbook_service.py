@@ -201,7 +201,7 @@ def test_import_workbook_rejects_row_when_village_is_unresolved() -> None:
     assert summary.failed == 1
     assert summary.row_errors[0].row == 2
     assert summary.row_errors[0].error == (
-        "Village not resolved: provide an ACS_Code for an existing village."
+        "ValueError: Village not resolved: provide an ACS_Code for an existing village."
     )
     assert not any(isinstance(item, (Incident, RawMessage)) for item in session.added)
 
@@ -233,9 +233,12 @@ def test_import_workbook_treats_zero_demographics_as_unknown() -> None:
     row = [None] * len(headers)
     _set_header_value(row, headers, "Khabar", "Casualty report")
     _set_header_value(row, headers, "Date", date(2026, 8, 21))
+    _set_header_value(row, headers, "ACS_Code", 12345)
     for header in ("Male_D", "Male_I", "female_D", "female_I", "Children_D", "Children_I"):
         _set_header_value(row, headers, header, 0)
-    session = _FakeSession()
+    session = _FakeSession(
+        villages=[Village(id=11, acs_code=12345, ref_name_en="Village")]
+    )
 
     summary = IncidentWorkbookService(session).import_workbook(_build_workbook(row))
 
@@ -261,6 +264,7 @@ def test_import_workbook_allows_missing_optional_legacy_columns() -> None:
     row = [None] * len(headers)
     row[headers.index("Khabar")] = "Workbook incident"
     row[headers.index("Date")] = date(2026, 8, 21)
+    row[headers.index("ACS_Code")] = 12345
 
     workbook = Workbook()
     sheet = workbook.active
@@ -270,7 +274,9 @@ def test_import_workbook_allows_missing_optional_legacy_columns() -> None:
     workbook.save(output)
     output.seek(0)
 
-    session = _FakeSession()
+    session = _FakeSession(
+        villages=[Village(id=11, acs_code=12345, ref_name_en="Village")]
+    )
     summary = IncidentWorkbookService(session).import_workbook(output)
 
     incident = next(item for item in session.added if isinstance(item, Incident))

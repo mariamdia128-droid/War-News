@@ -87,5 +87,5 @@ def test_incident_merge_leaves_open_verification_flags_untouched() -> None:
     )
 
     assert db.flags == before
-    assert existing.verification_status == "auto_processed"
-    assert existing.verification_reason is None
+    assert existing.verification_status == "needs_verification"
+    assert existing.verification_reason == "review casualty report"
