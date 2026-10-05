@@ -22,6 +22,7 @@ from app.news.services.incidents.incident_change_log import record_incident_chan
 
 router = APIRouter(prefix="/api/rejected-news", tags=["rejected-news"])
 RED_ALERT_SOURCE_NAME = "Red Alert Lebanon"
+RESTORED_REVIEW_REASON = "Restored from rejected by an administrator"
 
 
 class RejectedNewsItem(BaseModel):
@@ -352,12 +353,13 @@ def restore_rejected_news(
                 },
                 new_values={
                     "verification_status": "needs_verification",
+                    "verification_reason": RESTORED_REVIEW_REASON,
                     "restored_from_rejected_news": True,
                 },
                 performed_by=current_user.id,
             )
             incident.verification_status = "needs_verification"
-            incident.verification_reason = None
+            incident.verification_reason = RESTORED_REVIEW_REASON
             incident.verified_by_user_id = None
             incident.verified_at = None
             db.add(incident)

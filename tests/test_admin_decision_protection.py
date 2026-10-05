@@ -176,6 +176,46 @@ def test_restore_of_merged_duplicate_is_blocked_with_canonical_id() -> None:
     db.commit.assert_not_called()
 
 
+def test_restore_sets_plain_language_review_reason() -> None:
+    from app.api import rejected_news_router as router
+
+    incident = SimpleNamespace(
+        id=uuid4(),
+        verification_status="rejected",
+        verification_reason="manual rejection",
+        verified_by_user_id=uuid4(),
+        verified_at=datetime.now(timezone.utc),
+    )
+    message = SimpleNamespace(
+        id=9,
+        status=MessageStatus.rejected,
+        raw_payload={},
+        duplicate_of_id=None,
+        error_message=None,
+        extraction_retry_count=0,
+        match_retry_count=0,
+        processing_claim_stage=None,
+        processing_claimed_at=None,
+        processing_claimed_by=None,
+    )
+    db = MagicMock()
+    db.scalar.side_effect = [message, None]
+    db.scalars.return_value.all.return_value = [incident]
+
+    result = router.restore_rejected_news(
+        raw_message_id=9,
+        current_user=SimpleNamespace(id=uuid4()),
+        db=db,
+    )
+
+    assert result.id == 9
+    assert incident.verification_status == "needs_verification"
+    assert incident.verification_reason == router.RESTORED_REVIEW_REASON
+    assert incident.verified_by_user_id is None
+    assert incident.verified_at is None
+    db.commit.assert_called_once()
+
+
 # --- 2.7: partial multi-village failure is retried ---------------------------
 
 def test_fast_path_claim_readmits_partial_failures() -> None:
