@@ -49,27 +49,6 @@
   category: condition_exact_alias
   meaning: "قصف وغارات"
 
-- term: "مسيرة"
-  category: condition_exact_alias
-  meaning: "طيران استطلاعي"
-  notes: "Bare drone reference; crash, explosive, or strike evidence overrides this air-activity fallback."
-
-- term: "مسيّرة"
-  category: condition_exact_alias
-  meaning: "طيران استطلاعي"
-
-- term: "طيران مسير"
-  category: condition_exact_alias
-  meaning: "طيران استطلاعي"
-
-- term: "طيران مسيّر"
-  category: condition_exact_alias
-  meaning: "طيران استطلاعي"
-
-- term: "طيران مسيرة"
-  category: condition_exact_alias
-  meaning: "طيران استطلاعي"
-
 - term: "مدفعية العدو تستهدف"
   category: condition_alias
   meaning: "قصف مدفعي"

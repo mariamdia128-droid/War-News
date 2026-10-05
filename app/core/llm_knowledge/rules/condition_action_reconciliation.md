@@ -13,11 +13,14 @@ Generic attack wording `قصف`, `غارة`, `غارات`, `غارة جوية`, 
 wins, including `قصف مدفعي` → `Artillery Shelling` and `قنابل مضيئة` →
 `Flare Bomb`.
 
-Bare `مسيرة` / `مسيّرة` / `طيران مسير` is a drone reference, not evidence of
-`Drone Failure` or `Suicide Drone`. Those conditions require explicit crash or
-explosive wording. A drone phrase with strike wording (`استهدفت`, `غارة`, or
-`صاروخ`) is a strike and maps to `Bombs`; otherwise leave it to air-activity
-handling.
+Drone wording is context-sensitive. A drone phrase with strike wording
+(`غارة`, `استهدفت`, `استهداف`, `صاروخ`, `ضربة`, `قصف`, `أطلقت`) is a strike
+and maps to `Bombs`. Explosive wording (`مفخخة`, `انتحارية`) maps to
+`Suicide Drone`. Crash wording (`سقوط`, `تحطم`, `إسقاط`) maps to
+`Drone Failure`. Presence-only wording (`تحليق`, `يحلق`, `في الأجواء`) maps to
+`Surveillance Aircraft` and should be routed as air activity, not as an
+incident. Bare `مسيرة` / `مسيّرة` / `طيران مسير` with no action context is only
+a drone reference; do not resolve it by alias.
 
 If the bulletin contains multiple village-local actions, emit scoped
 `sub_events` so each village is matched against its own action. Use root

@@ -7,7 +7,7 @@ from app.news.services.matching.matching_service import MatchingService
 from app.news.services.matching.condition_aliases import CONDITION_ALIASES
 
 
-def test_generic_attack_and_bare_drone_aliases_are_exact_only() -> None:
+def test_generic_attack_aliases_are_exact_only_and_bare_drone_is_not_an_alias() -> None:
     aliases = {
         alias.text: (action_ar, alias.exact_only)
         for action_ar, values in CONDITION_ALIASES.items()
@@ -16,7 +16,7 @@ def test_generic_attack_and_bare_drone_aliases_are_exact_only() -> None:
     for term in ("قصف", "غارة", "غارات", "غارة جوية", "استهداف", "استهدف"):
         assert aliases[term] == ("قصف وغارات", True)
     for term in ("مسيرة", "مسيّرة", "طيران مسير"):
-        assert aliases[term] == ("طيران استطلاعي", True)
+        assert term not in aliases
 
 
 @pytest.mark.parametrize("condition_id", [3, 4])

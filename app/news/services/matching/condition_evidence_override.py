@@ -5,14 +5,39 @@ import re
 from app.core.text_normalization import normalize_arabic_text
 
 
-_DRONE_TERMS = ("مسير", "مسيرة", "مسيّرة", "طائرة مسيرة")
-_DRONE_STRIKE_TERMS = ("استهداف", "استهدفت", "استهدف")
+_DRONE_TERMS = ("مسير", "مسيرة", "مسيّرة", "طائرة مسيرة", "طيران مسير", "طيران مسيّر")
+_DRONE_STRIKE_TERMS = (
+    "غارة",
+    "غارات",
+    "استهداف",
+    "استهدفت",
+    "استهدف",
+    "صاروخ",
+    "ضربة",
+    "قصف",
+    "أطلقت",
+    "اطلقت",
+)
+_DRONE_EXPLOSIVE_TERMS = ("مفخخة", "مفخخه", "انتحارية", "انتحاريه")
+_DRONE_CRASH_TERMS = ("سقوط", "سقط", "تحطم", "تحطمت", "إسقاط", "اسقاط")
+_DRONE_PRESENCE_TERMS = (
+    "تحليق",
+    "تحلق",
+    "يحلق",
+    "في الأجواء",
+    "في الاجواء",
+    "فوق",
+)
 
 
 def _is_drone_strike(normalized: str) -> bool:
     return any(term in normalized for term in _DRONE_TERMS) and any(
         term in normalized for term in _DRONE_STRIKE_TERMS
     )
+
+
+def _has_drone_term(normalized: str) -> bool:
+    return any(term in normalized for term in _DRONE_TERMS)
 
 
 _TANK_FIRE_PATTERNS = (
@@ -43,6 +68,15 @@ _AERIAL_SWEEP = re.compile(
 def condition_from_explicit_evidence(text: str) -> str | None:
     """Return a condition only when the weapon/action is explicit in source text."""
     normalized = " ".join(normalize_arabic_text(text or "").split())
+    if _has_drone_term(normalized):
+        if any(term in normalized for term in _DRONE_EXPLOSIVE_TERMS):
+            return "Suicide Drone"
+        if any(term in normalized for term in _DRONE_CRASH_TERMS):
+            return "Drone Failure"
+        if _is_drone_strike(normalized):
+            return "Bombs"
+        if any(term in normalized for term in _DRONE_PRESENCE_TERMS):
+            return "Surveillance Aircraft"
     if any(pattern.search(normalized) for pattern in _TANK_FIRE_PATTERNS):
         return "Tank Fire"
     if _WARNING_RAID.search(normalized):
@@ -62,8 +96,6 @@ def condition_from_explicit_evidence(text: str) -> str | None:
     if _SWEEP.search(normalized):
         return "Sweeping Operations"
     if _AIRSTRIKE.search(normalized):
-        return "Bombs"
-    if _is_drone_strike(normalized):
         return "Bombs"
     return None
 

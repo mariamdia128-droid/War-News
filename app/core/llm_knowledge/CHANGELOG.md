@@ -1,5 +1,18 @@
 # llm_knowledge CHANGELOG
 
+## 2026-10-05 — Drone condition resolution is context-aware
+
+Bare `مسيرة` / `طيران مسير` is no longer an exact alias for `Surveillance
+Aircraft`. Drone wording now resolves only when the same action/evidence span
+contains context: strike wording maps to `Bombs`, explosive wording maps to
+`Suicide Drone`, crash wording maps to `Drone Failure`, and presence-only
+wording maps to `Surveillance Aircraft`.
+
+Real database example from the Phase 1 scoring check: `مسيرة` had resolved to
+`Surveillance Aircraft` at 1.000 even though a strike bulletin would then be
+stored as surveillance. Regression coverage is in
+`test_condition_evidence_override.py`.
+
 ## 2026-10-05 — Generic attack aliases and informational condition confidence
 
 Generic Arabic attack terms now resolve exactly to `Bombs`, while specific
