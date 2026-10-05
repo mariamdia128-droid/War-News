@@ -238,8 +238,13 @@ def active_non_duplicate_verification_reasons(
     if stored and not stored.startswith(("possible duplicate", "possible cross-source duplicate")):
         if stored == LOW_CONFIDENCE_VILLAGE_REVIEW_REASON.casefold():
             reasons.add(LOW_CONFIDENCE_VILLAGE)
-        elif "condition" in stored:
+        elif stored.startswith("no usable text-grounded or source-metadata condition"):
             reasons.add(CONDITION_REVIEW)
+        elif stored.startswith((
+            "low-confidence condition text match",
+            "source metadata fallback used",
+        )):
+            pass
         elif stored.startswith(("category casualties", "unsupported casualty_scope")):
             reasons.add(CASUALTY_ALLOCATION)
         elif stored.startswith("tier 2 detail extraction failed"):
