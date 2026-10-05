@@ -51,7 +51,7 @@ ALIASES: tuple[tuple[str, int, str], ...] = (
 
 
 def upgrade() -> None:
-    op.add_column("incidents", sa.Column("village_display_name", sa.String(), nullable=True))
+    op.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS village_display_name VARCHAR")
     alias_values = sa.table(
         "alias_values",
         sa.column("alias_text", sa.String()),
@@ -117,4 +117,4 @@ def downgrade() -> None:
         sa.text("DELETE FROM village_location_aliases WHERE alias_normalized = ANY(:aliases)")
         .bindparams(sa.bindparam("aliases", [alias for alias, _acs_code, _note in ALIASES]))
     )
-    op.drop_column("incidents", "village_display_name")
+    op.execute("ALTER TABLE incidents DROP COLUMN IF EXISTS village_display_name")
