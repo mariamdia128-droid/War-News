@@ -1143,13 +1143,14 @@ class IncidentMaterializationService:
         )
         if scope_review_reason:
             verification_status = "needs_verification"
-        verification_reason = scope_review_reason or (
+        verification_reason = (
             _verification_reason(
                 representative.match_result,
                 duplicate_flag=duplicate_flag,
                 insufficient_score=duplicate_flag,
                 low_confidence_village_match=low_confidence_village_match,
                 condition_review_reason=condition_review_reason,
+                hard_reasons=(scope_review_reason,) if scope_review_reason else (),
             )
             if verification_status == "needs_verification" or condition_review_reason
             else None
@@ -1496,9 +1497,7 @@ class IncidentMaterializationService:
             if extraction_review_reason:
                 verification_status = "needs_verification"
             verification_reason = (
-                extraction_review_reason
-                if extraction_review_reason
-                else _verification_reason(
+                _verification_reason(
                     representative.match_result,
                     duplicate_flag=duplicate_flag,
                     duplicate_level=duplicate_level,
@@ -1509,6 +1508,9 @@ class IncidentMaterializationService:
                     condition_review_reason=village_match.get(
                         "condition_review_reason"
                     ),
+                    hard_reasons=(extraction_review_reason,)
+                    if extraction_review_reason
+                    else (),
                 )
                 if verification_status == "needs_verification"
                 or village_match.get("condition_review_reason")

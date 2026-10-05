@@ -264,25 +264,29 @@ def _verification_reason(
     insufficient_score: bool = False,
     low_confidence_village_match: bool = False,
     condition_review_reason: str | None = None,
+    hard_reasons: tuple[str, ...] = (),
 ) -> str | None:
-    """Return a plain-language review reason for unresolved review signals."""
-    if condition_review_reason:
-        return condition_review_reason
-    if low_confidence_village_match:
-        return LOW_CONFIDENCE_VILLAGE_REVIEW_REASON
+    """Return all hard reasons first, followed by informational hints."""
+    reasons: list[str] = []
     if duplicate_flag:
         if duplicate_level is not None and duplicate_similarity_score is not None:
-            return (
+            reasons.append(
                 "Possible duplicate of an existing incident "
                 f"(similarity {duplicate_level}, score {duplicate_similarity_score:.2f})."
             )
-        return (
+        else:
+            reasons.append(
+                "Possible duplicate of an existing incident — flagged during "
+                "fast-path matching."
+            )
+    elif insufficient_score:
+        reasons.append(
             "Possible duplicate of an existing incident — flagged during "
             "fast-path matching."
         )
-    if insufficient_score:
-        return (
-            "Possible duplicate of an existing incident — flagged during "
-            "fast-path matching."
-        )
-    return None
+    reasons.extend(reason for reason in hard_reasons if reason)
+    if low_confidence_village_match:
+        reasons.append(LOW_CONFIDENCE_VILLAGE_REVIEW_REASON)
+    if condition_review_reason:
+        reasons.append(condition_review_reason)
+    return "; ".join(dict.fromkeys(reasons)) or None
