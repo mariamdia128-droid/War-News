@@ -16,6 +16,7 @@ from app.core.llm_knowledge.loader import load_terminology
 class ConditionAlias:
     text: str
     raw_message_ids: tuple[int, ...]
+    exact_only: bool = False
 
 
 def _parse_raw_message_ids(notes: str | None) -> tuple[int, ...]:
@@ -30,12 +31,13 @@ def _parse_raw_message_ids(notes: str | None) -> tuple[int, ...]:
 def _load_condition_aliases() -> dict[str, tuple[ConditionAlias, ...]]:
     grouped: dict[str, list[ConditionAlias]] = {}
     for entry in load_terminology("terminology/condition_labels.yaml"):
-        if entry.category != "condition_alias":
+        if entry.category not in {"condition_alias", "condition_exact_alias"}:
             continue
         grouped.setdefault(entry.meaning, []).append(
             ConditionAlias(
                 text=entry.term,
                 raw_message_ids=_parse_raw_message_ids(entry.notes),
+                exact_only=entry.category == "condition_exact_alias",
             )
         )
     return {key: tuple(values) for key, values in grouped.items()}

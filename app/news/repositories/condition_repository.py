@@ -1,4 +1,4 @@
-from sqlalchemy import case, desc, func, literal, select
+from sqlalchemy import and_, case, desc, func, literal, select
 from sqlalchemy.orm import Session
 
 from app.core.text_normalization import normalize_arabic_sql
@@ -41,6 +41,7 @@ class ConditionRepository(ConditionRepositoryInterface):
             )
             for action_ar, aliases in CONDITION_ALIASES.items()
             for alias in aliases
+            if not alias.exact_only
         ]
         alias_coverage_scores = [
             case(
@@ -49,6 +50,22 @@ class ConditionRepository(ConditionRepositoryInterface):
                     func.word_similarity(
                         normalized_text, normalize_arabic_sql(literal(alias.text))
                     ),
+                ),
+                else_=0.0,
+            )
+            for action_ar, aliases in CONDITION_ALIASES.items()
+            for alias in aliases
+            if not alias.exact_only
+        ]
+        alias_exact_scores = [
+            case(
+                (
+                    and_(
+                        Condition.action_ar == action_ar,
+                        normalize_arabic_sql(literal(alias.text))
+                        == normalized_text,
+                    ),
+                    1.0,
                 ),
                 else_=0.0,
             )
@@ -64,6 +81,7 @@ class ConditionRepository(ConditionRepositoryInterface):
             exact_score,
             func.word_similarity(normalized_action_ar, normalized_text),
             func.word_similarity(normalized_action_en, normalized_text_en),
+            *alias_exact_scores,
             *alias_scores,
         ).label("score")
         coverage_rank = (
@@ -71,6 +89,7 @@ class ConditionRepository(ConditionRepositoryInterface):
             * func.greatest(
                 func.word_similarity(normalized_text, normalized_action_ar),
                 func.word_similarity(func.lower(normalized_text), normalized_action_en),
+                *alias_exact_scores,
                 *alias_coverage_scores,
             )
         ).label("coverage_rank")

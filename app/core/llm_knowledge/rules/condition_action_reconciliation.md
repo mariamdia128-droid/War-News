@@ -8,6 +8,17 @@ Source-provided event metadata, such as CNRS `event_subtype`, is a secondary
 hint. It must not overwrite a specific text-grounded action such as `تمشيط`,
 `قنابل مضيئة`, tank fire, warning raid, or feigned raid.
 
+Generic attack wording `قصف`, `غارة`, `غارات`, `غارة جوية`, `غارات جوية`,
+`استهداف`, and `استهدف` maps to plain `Bombs`. A more specific phrase always
+wins, including `قصف مدفعي` → `Artillery Shelling` and `قنابل مضيئة` →
+`Flare Bomb`.
+
+Bare `مسيرة` / `مسيّرة` / `طيران مسير` is a drone reference, not evidence of
+`Drone Failure` or `Suicide Drone`. Those conditions require explicit crash or
+explosive wording. A drone phrase with strike wording (`استهدفت`, `غارة`, or
+`صاروخ`) is a strike and maps to `Bombs`; otherwise leave it to air-activity
+handling.
+
 If the bulletin contains multiple village-local actions, emit scoped
 `sub_events` so each village is matched against its own action. Use root
 `action_description` only as a fallback summary when the message has one

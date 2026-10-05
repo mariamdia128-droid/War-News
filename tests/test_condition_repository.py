@@ -89,13 +89,15 @@ def test_condition_query_includes_evidence_backed_aliases() -> None:
     ConditionRepository(db).find_similar("تنفيذ عملية تفجير")
 
     sql = str(db.statement.compile(dialect=postgresql.dialect()))
-    # Alias similarity must affect both score and bidirectional coverage ranking.
-    # SQL repeats score inside coverage_rank, so each alias appears three times:
-    # selected score, the score factor in coverage_rank, and alias coverage.
-    # The exact-label CASE (8ebac94) is part of score, so it appears twice.
-    assert sql.count("CASE") == 2 + 3 * sum(
-        len(aliases) for aliases in CONDITION_ALIASES.values()
+    # Fuzzy aliases affect score plus bidirectional coverage; every alias also
+    # has an exact-equality score that outranks trigram matching.
+    fuzzy_count = sum(
+        not alias.exact_only
+        for aliases in CONDITION_ALIASES.values()
+        for alias in aliases
     )
+    alias_count = sum(len(aliases) for aliases in CONDITION_ALIASES.values())
+    assert sql.count("CASE") == 2 + 3 * fuzzy_count + 3 * alias_count
 
 
 def test_condition_query_scores_exact_english_label_as_match() -> None:
@@ -198,10 +200,8 @@ def test_generic_strike_does_not_match_warning_or_feigned_with_real_repository()
         feigned_result = service.match(feigned_attacks)
 
         assert generic_result.matched_condition_id not in {2, 39}
-        assert generic_result.condition_match_status in {
-            MatchResultStatus.unmatched,
-            MatchResultStatus.matched_low_confidence,
-        }
+        assert generic_result.matched_condition_id == 46
+        assert generic_result.condition_match_status == MatchResultStatus.matched
         assert warning_result.matched_condition_id == 2
         assert warning_result.condition_match_status == MatchResultStatus.matched
         assert feigned_result.matched_condition_id == 39

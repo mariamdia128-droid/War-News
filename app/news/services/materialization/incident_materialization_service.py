@@ -107,10 +107,9 @@ def _initial_verification_status(
 ) -> str:
     """Return the initial review state for materialized incidents.
 
-    Relevance uncertainty, casualty-transition ambiguity, and
-    low-confidence condition matches do not force manual review here. A
-    low-confidence village match does, because the displayed village name is
-    otherwise indistinguishable from a full-confidence match.
+    Low-confidence condition matches are informational and do not force manual
+    review. An unresolved condition and a low-confidence village do, because
+    the displayed values otherwise look authoritative.
     """
     reasons = active_non_duplicate_verification_reasons(
         match_result=match_result,
@@ -1152,7 +1151,7 @@ class IncidentMaterializationService:
                 low_confidence_village_match=low_confidence_village_match,
                 condition_review_reason=condition_review_reason,
             )
-            if verification_status == "needs_verification"
+            if verification_status == "needs_verification" or condition_review_reason
             else None
         )
 
@@ -1512,6 +1511,7 @@ class IncidentMaterializationService:
                     ),
                 )
                 if verification_status == "needs_verification"
+                or village_match.get("condition_review_reason")
                 else None
             )
 

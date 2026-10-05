@@ -303,7 +303,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             ).label("verification_status"),
             case(
                 (needs_verification, Incident.verification_reason),
-                else_=None,
+                else_=Incident.verification_reason,
             ).label("verification_reason"),
             Incident.verified_by_user_id,
             Incident.verified_at,

@@ -1,5 +1,15 @@
 # llm_knowledge CHANGELOG
 
+## 2026-10-05 — Generic attack aliases and informational condition confidence
+
+Generic Arabic attack terms now resolve exactly to `Bombs`, while specific
+artillery and flare phrases retain their specific conditions. Bare drone
+wording cannot fuzzy-match Drone Failure or Suicide Drone without crash or
+explosive evidence; drone-strike phrases resolve to Bombs. Low-confidence
+condition matches are informational when the village is confident, while a
+truly unresolved condition remains review-required. Regression coverage is in
+`test_condition_phase1_rules.py`.
+
 ## 2026-10-05 — Casualty review follows unresolved casualty decisions
 
 Casualty-scope validation no longer sends zero-casualty incidents to manual

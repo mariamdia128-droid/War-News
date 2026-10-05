@@ -199,9 +199,21 @@ def active_non_duplicate_verification_reasons(
         match, village_matches, village_id
     ):
         reasons.add(LOW_CONFIDENCE_VILLAGE)
-    if condition_review_required or match.get("condition_review_required") or any(
-        isinstance(item, dict) and item.get("condition_review_required")
-        for item in village_matches
+    condition_reasons = [
+        str(reason)
+        for reason in [
+            match.get("condition_review_reason"),
+            *[
+                item.get("condition_review_reason")
+                for item in village_matches
+                if isinstance(item, dict)
+            ],
+        ]
+        if reason
+    ]
+    if any(
+        reason.startswith("No usable text-grounded or source-metadata condition")
+        for reason in condition_reasons
     ):
         reasons.add(CONDITION_REVIEW)
     target_ids = {

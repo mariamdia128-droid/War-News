@@ -6,6 +6,70 @@
 
 # --- Similarity aliases (canonical action_ar → alternate phrasing) ---
 
+- term: "قصف"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+  notes: "Generic attack term; exact alias only wins over fuzzy condition names."
+
+- term: "غارة"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+  notes: "Generic air-attack term; warning and feigned wording remain more specific."
+
+- term: "غارات"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "غارة جوية"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "غارات جوية"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "استهداف"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "استهدف"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "مسيرة استهدفت"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+  notes: "A drone strike, not a drone failure or suicide-drone classification."
+
+- term: "طيران مسير استهدف"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "طيران مسيرة استهدف"
+  category: condition_exact_alias
+  meaning: "قصف وغارات"
+
+- term: "مسيرة"
+  category: condition_exact_alias
+  meaning: "طيران استطلاعي"
+  notes: "Bare drone reference; crash, explosive, or strike evidence overrides this air-activity fallback."
+
+- term: "مسيّرة"
+  category: condition_exact_alias
+  meaning: "طيران استطلاعي"
+
+- term: "طيران مسير"
+  category: condition_exact_alias
+  meaning: "طيران استطلاعي"
+
+- term: "طيران مسيّر"
+  category: condition_exact_alias
+  meaning: "طيران استطلاعي"
+
+- term: "طيران مسيرة"
+  category: condition_exact_alias
+  meaning: "طيران استطلاعي"
+
 - term: "مدفعية العدو تستهدف"
   category: condition_alias
   meaning: "قصف مدفعي"

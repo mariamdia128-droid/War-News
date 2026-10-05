@@ -96,6 +96,9 @@ def _distinguishing_tokens(meaning: str) -> tuple[str, ...]:
 # Numeric IDs stay code-only (Phase 2.5). Arabic tokens load from terminology.
 CONDITION_DISTINGUISHING_TOKENS: dict[int, tuple[str, ...]] = {
     2: _distinguishing_tokens("Warning Raid") or ("تحذيريه",),
+    3: ("سقوط", "سقط", "تحطم", "تحطمت"),
+    4: ("مفخخة", "مفخخه", "انتحارية", "انتحاريه"),
+    38: ("مروحي", "هليكوبتر", "اباتشي", "أباتشي"),
     39: _distinguishing_tokens("Feigned Attacks") or ("وهميه",),
 }
 
@@ -1285,15 +1288,6 @@ class MatchingService(MatchingServiceInterface):
                 source_hint,
             )
 
-        if text_match.status == MatchResultStatus.matched_low_confidence:
-            return _ConditionResolution(
-                text_match,
-                True,
-                f"Low-confidence condition text match requires review (text: {text}).",
-                "llm_text",
-                source_hint,
-            )
-
         fallback_label = condition_fallback_from_text(text)
         if fallback_label is not None:
             fallback_match = self._match_condition_label(fallback_label)
@@ -1305,6 +1299,15 @@ class MatchingService(MatchingServiceInterface):
                     "keyword_fallback",
                     source_hint,
                 )
+
+        if text_match.status == MatchResultStatus.matched_low_confidence:
+            return _ConditionResolution(
+                text_match,
+                True,
+                f"Low-confidence condition text match requires review (text: {text}).",
+                "llm_text",
+                source_hint,
+            )
 
         unclassified = self._match_unclassified_condition()
         if unclassified.matched_id is not None:
