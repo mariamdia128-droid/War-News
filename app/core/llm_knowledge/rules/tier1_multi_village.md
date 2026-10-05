@@ -10,6 +10,9 @@ Load when the message appears to name multiple target locations.
 - A distinct-event connector introduces a genuinely separate second target, not a qualifier: `كما طال القصف/الغارة/الاستهداف ... بلدة Y`, `كما غارة أخرى في بلدة Y`, `أيضا استهداف في Y`, `بالإضافة إلى غارة على Y`, `وفي سياق متصل ... Y`, or `من جهة أخرى ... Y` after an already-described strike on `X` means two separately scoped locations, each with its own action/evidence — this is the opposite of a محيط/بين vicinity phrase describing one fuzzy place.
 - If each connector-led clause has its own explicit casualty figures and its own village, emit one `sub_event` per clause and set `casualty_scope: per_village_exact`; do not merge the clauses into one incident-level casualty count.
 - Every other dash phrase defaults to one target on the left and qualifier context on the right: `بلدة X - حي Y`, `مزرعة X - Y`, `بلدة X - قضاء Y`, or `بلدة X - [neighborhood/hamlet]`.
+- Neighborhood with a city after a dash (`حي X - النبطية`) should emit the city after the dash unless there is a known alias for the full neighborhood.
+- Clean compound location lists where both sides are standalone villages (`X وY`, `بين X وY`, `X - Y`) should emit the two clean village names separately. Do not split a canonical village name merely because it contains `و`.
+- Strip generic location prefixes before emitting a target village when they only describe surroundings: `خراج`, `أطراف`/`اطراف`, `محيط`, `بلدة`, `مدينة`, `قرية`, `سهل`, `تلة`, `أحراج`/`احراج`.
 - In `مزرعة X - Y وZ`, the complete `Y وZ` tail is qualifier context, not two additional targets.
 - Multiple `target` entries in expected extraction.
 
@@ -19,7 +22,7 @@ Load when the message appears to name multiple target locations.
 
 1. Each target village gets its own `village_roles` entry.
 2. Route endpoints (`طريق X - Y`, `طريق عام X - Y`, or `طريق بين X و Y`): emit both `X` and `Y` as separate target locations (and inside the same `sub_event.locations` if a single route action occurred). Plain `بين X و Y`, `بين بلدتي X و Y`, and `في المنطقة الواقعة بين X و Y` without a road/route are one fuzzy target attributed to the first village with the other village kept as review context.
-3. For every non-route dash phrase, emit only the left side as the target and preserve the entire right side as `qualifier_text`, including any `و`-joined parts.
+3. For non-route dash phrases that are clearly a village pair, emit both villages. For neighborhood or qualifier dash phrases, emit the target village only and preserve the qualifier; `حي X - المدينة` resolves to the city after the dash unless a known full-neighborhood alias exists.
 4. Copy per-village deaths/injuries only from that village's sentence or phrase. Singular/dual words are exact counts for that village: «النبطية الفوقا: شهيدان وجريحان» → deaths=2, injuries=2; «الريحان قضاء جزين: شهيد» → deaths=1. «مصابين» is plural, not a count.
    A number in parentheses after a place in a strike/shelling/demolition list is a strike count, never casualties: «عمليات التفجير: • حولا (٢)» → deaths null. Vague wording («وقوع إصابات»، «عشرات الجرحى»، «سقوط ضحايا») stays null.
 5. If only a shared toll is given covering all villages → `casualty_scope: bulletin_aggregate`.

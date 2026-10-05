@@ -23,6 +23,22 @@
   category: village_generic_descriptor
   meaning: suburbs
 
+- term: "أحراج"
+  category: village_generic_descriptor
+  meaning: groves
+
+- term: "احراج"
+  category: village_generic_descriptor
+  meaning: groves
+
+- term: "سهل"
+  category: village_generic_descriptor
+  meaning: plain
+
+- term: "تلة"
+  category: village_generic_descriptor
+  meaning: hill
+
 - term: "محيط"
   category: village_generic_descriptor
   meaning: surroundings

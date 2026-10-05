@@ -39,6 +39,10 @@ export type Incident = {
   edit_lock_expires_at: string | null;
   village_id?: number | null;
   story_group_id?: string | null;
+  resolved_by_geo_context?: boolean;
+  geo_context_anchor_village_name?: string | null;
+  geo_context_distance_meters?: number | null;
+  normalized_from?: string | null;
 };
 
 export type IncidentListResponse = {
@@ -165,6 +169,8 @@ export type IncidentDetail = Incident & {
   resolved_by_geo_context?: boolean;
   geo_context_anchor_village_id?: number | null;
   geo_context_anchor_village_name?: string | null;
+  geo_context_distance_meters?: number | null;
+  normalized_from?: string | null;
   alternate_candidate_village_id?: number | null;
   alternate_candidate_village_name?: string | null;
   casualty_demographics: CasualtyDemographics;

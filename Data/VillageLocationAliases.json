@@ -383,5 +383,19 @@
         "note": "Press Latin spelling -> Bazouriye (Sour). Not among the ACS names.",
         "confidence": "proposed",
         "evidence": "Air violation audit 2026-10-01: ACS holds Bazouriye / Bazouriat only."
+    },
+    {
+        "alias_text": "ميوفدون",
+        "parent_acs_code": 71344,
+        "note": "Common news misspelling -> Mayfadoun.",
+        "confidence": "proposed",
+        "evidence": "Verification Phase 2 top-40 village backlog: ميوفدون should resolve to ميفدون."
+    },
+    {
+        "alias_text": "Benton Jbeil",
+        "parent_acs_code": 72111,
+        "note": "Latin misspelling -> Bent Jbeil.",
+        "confidence": "proposed",
+        "evidence": "Verification Phase 2 top-40 village backlog: Benton Jbeil Latin misspelling."
     }
 ]

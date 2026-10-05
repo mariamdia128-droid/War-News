@@ -1628,3 +1628,79 @@ def test_descriptor_with_definite_article_is_stripped() -> None:
 
     assert result.village_matches[0].village_match_status == MatchResultStatus.matched
     assert result.village_matches[0].raw_village_text == "المدينة الخيام"
+
+
+def test_descriptor_normalization_records_original_text() -> None:
+    mayfadoun = _named_village(1003, "ميفدون")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "خراج ميفدون": [(mayfadoun, 0.30)],
+            "ميفدون": [(mayfadoun, 1.0)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["خراج ميفدون"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == mayfadoun.id
+    assert vm.normalized_from == "خراج ميفدون"
+
+
+def test_neighborhood_dash_prefers_city_after_dash() -> None:
+    nabatieh = _named_village(71111, "النبطية")
+    neighborhood = _named_village(999, "حي السلام")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "حي السلام النبطيه": [(neighborhood, 0.52)],
+            "النبطيه": [(nabatieh, 1.0)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["حي السلام - النبطية"], action=None)
+    )
+
+    vm = result.village_matches[0]
+    assert vm.matched_village_id == nabatieh.id
+    assert vm.normalized_from == "حي السلام - النبطيه"
+
+
+def test_resolvable_conjunction_splits_into_two_locations() -> None:
+    hadatha = _named_village(1, "حداثا")
+    harees = _named_village(2, "حاريص")
+    villages = _GeoVillageRepositoryStub(
+        {
+            "حداثا": [(hadatha, 1.0)],
+            "حاريص": [(harees, 1.0)],
+        }
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["حداثا وحاريص"], action=None)
+    )
+
+    assert [match.raw_village_text for match in result.village_matches] == [
+        "حداثا",
+        "حاريص",
+    ]
+    assert [match.matched_village_id for match in result.village_matches] == [1, 2]
+
+
+def test_geo_context_keeps_review_when_two_candidates_are_near_anchor() -> None:
+    anchor = _geo_village(10, "النبطية", 0, 0)
+    east = _geo_village(1519, "زوطر الشرقية", 10000, 0)
+    west = _geo_village(1520, "زوطر الغربية", 11000, 0)
+    villages = _GeoVillageRepositoryStub(
+        {"زوطر": [(east, 0.53), (west, 0.53)]},
+        aliases={"النبطيه": anchor},
+    )
+
+    result = MatchingService(villages, _SimilarRepositoryStub(None, None)).match(
+        _extraction(village=["النبطية", "زوطر"], action=None)
+    )
+
+    vm = result.village_matches[1]
+    assert vm.village_match_status == MatchResultStatus.matched_low_confidence
+    assert vm.resolved_by_geo_context is False

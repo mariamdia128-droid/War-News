@@ -1,5 +1,18 @@
 # llm_knowledge CHANGELOG
 
+## 2026-10-05 — Village phrase normalization and geo-context audit
+
+Tier 1 guidance now asks for cleaner village strings for descriptor prefixes
+(`خراج`, `أطراف`, `محيط`, `بلدة`, `مدينة`, `قرية`, `سهل`, `تلة`, `أحراج`),
+city-after-dash neighborhoods such as `حي X - النبطية`, and resolvable village
+pairs such as `حداثا وحاريص` or `بين القنطرة ودير سريان`. The matcher records
+`normalized_from` when it strips descriptor context and records geo-context
+resolution distance/anchor when a nearby village disambiguates a collision.
+
+Real examples from the Phase 2 village backlog: `وادي السلوكي-القنطرة` and
+`بين القنطرة ودير سريان` should be split/cleaned before matching; `خراج X` and
+`أطراف X` should preserve the raw phrase as audit context while matching `X`.
+
 ## 2026-10-05 — Drone condition resolution is context-aware
 
 Bare `مسيرة` / `طيران مسير` is no longer an exact alias for `Surveillance
