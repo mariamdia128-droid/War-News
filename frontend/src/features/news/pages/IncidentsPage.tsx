@@ -59,15 +59,10 @@ const relatedSourceNotes = (row: Incident, pageRows: Incident[]): string[] => {
       other.story_group_id === row.story_group_id,
   );
   const sameLocation = [...sameBulletin, ...sameGroup].find((other) => {
-    if (row.village_id == null || other.village_id == null) {
-      return other.story_group_id != null && other.story_group_id === row.story_group_id;
-    }
     return other.village_id === row.village_id;
   });
   const otherVillage = sameBulletin.find(
     (other) =>
-      row.village_id != null &&
-      other.village_id != null &&
       other.village_id !== row.village_id,
   );
   if (sameLocation) {
@@ -77,30 +72,8 @@ const relatedSourceNotes = (row: Incident, pageRows: Incident[]): string[] => {
   }
   if (otherVillage) {
     notes.push("Related: same bulletin, different village");
-  } else if (!sameLocation && sameBulletin.length > 0) {
-    notes.push("Source: same bulletin as another village on this page");
   }
   return notes;
-};
-
-const preMaterializationStatus = (
-  rawStatus: string | null,
-  incidentId: string | null,
-) => {
-  if (incidentId) {
-    return null;
-  }
-  if (rawStatus === "parsed") {
-    return { label: "Processing", variant: "accent" as const };
-  }
-  return { label: "Processing", variant: "neutral" as const };
-};
-
-const PreMaterializationStatusBadge = ({ row }: { row: Incident }) => {
-  const status = preMaterializationStatus(row.raw_status, row.id);
-  return status ? (
-    <StatusBadge label={status.label} variant={status.variant} />
-  ) : null;
 };
 
 const openVerificationTypes = (row: Incident) => row.verification_types ?? [];
@@ -282,7 +255,6 @@ export const IncidentsPage = () => {
             <span className="font-semibold text-text-primary">
               {row.village || "Unknown village"}
             </span>
-            <PreMaterializationStatusBadge row={row} />
             {row.duplicate_flag === "possible" ? (
               <DuplicateBadge isDuplicate />
             ) : null}
@@ -297,9 +269,6 @@ export const IncidentsPage = () => {
                 label={`Automatically merged${row.duplicate_similarity_score == null ? "" : ` — ${Math.round(row.duplicate_similarity_score * 100)}%`}`}
                 variant="success"
               />
-            ) : null}
-            {row.details_pending ? (
-              <StatusBadge label="Details pending" variant="neutral" />
             ) : null}
           </div>
           <p
@@ -636,7 +605,7 @@ export const IncidentsPage = () => {
             <DataTable
               columns={columns}
               rows={rows}
-              getRowKey={(row) => row.id ?? `raw-${row.raw_message_id}`}
+              getRowKey={(row) => row.id!}
               loading={isLoading}
               error={isError}
               clientSort={false}
