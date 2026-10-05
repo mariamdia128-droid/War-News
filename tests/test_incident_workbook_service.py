@@ -180,7 +180,7 @@ def test_import_workbook_maps_legacy_row_fields() -> None:
     assert detail.la_td == 1
 
 
-def test_import_workbook_leaves_lookup_fields_null_when_unmatched() -> None:
+def test_import_workbook_rejects_row_when_village_is_unresolved() -> None:
     headers = _legacy_headers()
     row = [None] * len(headers)
     row[0] = "Lookup-only village text"
@@ -196,13 +196,14 @@ def test_import_workbook_leaves_lookup_fields_null_when_unmatched() -> None:
 
     summary = IncidentWorkbookService(session).import_workbook(_build_workbook(row))
 
-    incident = next(item for item in session.added if isinstance(item, Incident))
     assert summary.processed == 1
-    assert summary.succeeded == 1
-    assert summary.failed == 0
-    assert incident.village_id is None
-    assert incident.condition_id is None
-    assert incident.source_id is None
+    assert summary.succeeded == 0
+    assert summary.failed == 1
+    assert summary.row_errors[0].row == 2
+    assert summary.row_errors[0].error == (
+        "Village not resolved: provide an ACS_Code for an existing village."
+    )
+    assert not any(isinstance(item, (Incident, RawMessage)) for item in session.added)
 
 
 def test_import_workbook_skips_existing_news_on_same_event_date() -> None:

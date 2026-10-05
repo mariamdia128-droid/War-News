@@ -480,6 +480,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             .where(
                 Incident.id == incident_id,
                 Incident.is_deleted.is_(False),
+                Incident.village_id.is_not(None),
                 Incident.condition_id.not_in(AIR_VIOLATION_CONDITION_ID_TUPLE),
                 self._visible_incident_scope_filter(),
             )

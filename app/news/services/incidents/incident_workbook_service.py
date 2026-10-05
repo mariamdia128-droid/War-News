@@ -311,6 +311,11 @@ class IncidentWorkbookService:
                 if duplicate_key in existing_news:
                     skipped += 1
                     continue
+                village_id = self._resolve_village_id(row_data, villages_by_code)
+                if village_id is None:
+                    raise ValueError(
+                        "Village not resolved: provide an ACS_Code for an existing village."
+                    )
                 source_id = self._resolve_source_id(row_data, sources_by_name)
                 extraction_text = self._extraction_text(row_data, khabar)
                 raw_message = RawMessage(
@@ -339,7 +344,7 @@ class IncidentWorkbookService:
 
                 incident = Incident(
                     raw_message_id=raw_message.id,
-                    village_id=self._resolve_village_id(row_data, villages_by_code),
+                    village_id=village_id,
                     condition_id=self._resolve_condition_id(row_data, conditions_by_action),
                     source_id=source_id,
                     event_month=self._optional_string(row_data.get("Month")),
