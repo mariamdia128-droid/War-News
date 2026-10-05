@@ -47,13 +47,28 @@ export type Incident = {
 
 export type IncidentListResponse = {
   items: Incident[];
+  grouped_items?: IncidentBulletinGroup[];
   total: number;
   limit: number;
   next_cursor: string | null;
   latest_incident_at: string | null;
   needs_verification_count: number;
+  needs_verification_bulletin_count?: number;
   casualties_count: number;
   needs_verification_outside_range_count?: number;
+};
+
+export type IncidentBulletinGroup = {
+  raw_message_id: number;
+  khabar: string;
+  source: IncidentSource | null;
+  source_name: string | null;
+  source_reference: string | null;
+  event_date: string;
+  event_time: string | null;
+  verification_reasons: string[];
+  verification_types: Array<"duplicate" | "casualty_missing_number" | "casualty_aggregate_toll">;
+  incidents: Incident[];
 };
 
 export type IncidentStreamEvent = Incident & {
@@ -77,6 +92,7 @@ export type IncidentFilters = {
   duplicateOnly?: boolean;
   hasCasualties?: boolean;
   sortOrder?: "newest" | "oldest";
+  groupBy?: "raw_message";
 };
 
 export type ConditionOption = {

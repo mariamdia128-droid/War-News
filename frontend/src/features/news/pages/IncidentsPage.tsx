@@ -22,7 +22,7 @@ import { DuplicateBadge } from "../components/DuplicateBadge";
 import { useConditionsQuery, useIncidentStream, useIncidentsQuery, useVillagesQuery } from "../hooks";
 import { createIncident, reviewIncident } from "../api";
 import { useContentSourcesQuery } from "../../sources/hooks";
-import type { Incident } from "../types";
+import type { Incident, IncidentBulletinGroup } from "../types";
 import { CasualtyCheckPanel } from "../../casualtyChecks/components/CasualtyCheckPanel";
 import {
   ALL_DATES_RANGE,
@@ -120,6 +120,7 @@ export const IncidentsPage = () => {
   const [createError, setCreateError] = useState("");
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [reviewRow, setReviewRow] = useState<Incident | null>(null);
+  const [reviewGroup, setReviewGroup] = useState<IncidentBulletinGroup | null>(null);
   const [reviewError, setReviewError] = useState("");
   const [isReviewing, setIsReviewing] = useState(false);
   const [casualtyReview, setCasualtyReview] = useState<{ row: Incident; index: number } | null>(null);
@@ -136,6 +137,7 @@ export const IncidentsPage = () => {
   const sortOrder = (params.get("sort_order") as "newest" | "oldest" | null) ?? "newest";
   const duplicateOnly = params.get("duplicate_only") === "true";
   const hasCasualties = params.get("has_casualties") === "true";
+  const groupByBulletin = params.get("group_by") !== "none";
   const pageSize = parsePageSize(params.get("page_size"));
   const hasFilters = hasNonDefaultFilters(
     { village, condition, sourceName, verificationStatus, verificationType, duplicateOnly, hasCasualties },
@@ -159,6 +161,7 @@ export const IncidentsPage = () => {
       duplicateOnly,
       hasCasualties,
       sortOrder,
+      groupBy: verificationView && groupByBulletin ? "raw_message" as const : undefined,
     }),
     [
       condition,
@@ -173,6 +176,8 @@ export const IncidentsPage = () => {
       verificationStatus,
       verificationType,
       village,
+      verificationView,
+      groupByBulletin,
     ],
   );
 
@@ -195,8 +200,10 @@ export const IncidentsPage = () => {
   useLiveQueryTitleAddon(data?.latest_incident_at ?? null, isFetching);
 
   const rows = data?.items ?? [];
+  const groupedRows = data?.grouped_items ?? [];
   const total = data?.total ?? 0;
   const flaggedCount = data?.needs_verification_count ?? 0;
+  const bulletinCount = data?.needs_verification_bulletin_count ?? groupedRows.length;
   const casualtiesCount = data?.casualties_count ?? 0;
   const outsideRangeText = verificationView
     ? outsideRangeNotice(data?.needs_verification_outside_range_count)
@@ -356,6 +363,77 @@ export const IncidentsPage = () => {
     },
   ];
 
+  const saveReviewForRows = async (
+    incidents: Incident[],
+    decision: "verified" | "rejected",
+    reason: string | null,
+  ) => {
+    const actionable = incidents.filter((incident) => incident.id);
+    for (const incident of actionable) {
+      await reviewIncident(incident.id!, decision, reason, incident.version);
+    }
+  };
+
+  const groupColumns: Array<DataTableColumn<IncidentBulletinGroup>> = [
+    {
+      key: "bulletin",
+      header: "Bulletin",
+      headerClassName: "min-w-[24rem]",
+      cellClassName: "min-w-[24rem]",
+      render: (group) => (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-text-primary">Raw #{group.raw_message_id}</span>
+            {group.verification_types.map((type) => (
+              <StatusBadge key={type} label={verificationTypeLabel(type)} variant="neutral" />
+            ))}
+          </div>
+          <p className={`${twoLineClampClass} break-words text-small leading-6 text-text-primary`} dir="auto">
+            {group.khabar}
+          </p>
+          {group.verification_reasons.length ? (
+            <p className="text-caption text-text-muted">{group.verification_reasons.join(" | ")}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: "children",
+      header: "Incidents",
+      headerClassName: "min-w-[22rem]",
+      cellClassName: "min-w-[22rem]",
+      render: (group) => (
+        <div className="space-y-2">
+          {group.incidents.map((incident) => (
+            <div key={incident.id ?? `${group.raw_message_id}-${incident.village}-${incident.condition}`} className="rounded-md border border-border bg-surface px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-text-primary">{incident.village || "Unknown village"}</span>
+                <span className="text-caption text-text-muted">{incident.condition || "No condition"}</span>
+              </div>
+              <p className="text-caption text-text-muted">
+                Deaths {incident.total_deaths ?? 0} | Injuries {incident.total_injuries ?? 0}
+              </p>
+            </div>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "event",
+      header: "Event",
+      headerClassName: "w-[10rem]",
+      cellClassName: "w-[10rem]",
+      render: (group) => (
+        <div className="space-y-1 whitespace-nowrap">
+          <p>{formatDate(group.event_date)}</p>
+          <p className="text-caption text-text-muted">
+            {group.event_time ? group.event_time.slice(0, 5) : "Time not recorded"}
+          </p>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <section className="space-y-4">
@@ -395,6 +473,11 @@ export const IncidentsPage = () => {
             <p className="mt-2 text-h3 font-semibold text-text-primary">
               {flaggedCount}
             </p>
+            {bulletinCount ? (
+              <p className="mt-1 text-caption text-text-muted">
+                {bulletinCount} bulletin{bulletinCount === 1 ? "" : "s"}
+              </p>
+            ) : null}
           </div>
           <div className="rounded-xl border border-border bg-surface-raised p-4 shadow-[0_1px_2px_rgba(11,34,54,0.04)]">
             <p className="text-caption font-semibold uppercase text-text-muted">
@@ -566,6 +649,22 @@ export const IncidentsPage = () => {
                     />
                     <span className="leading-5">Show only incidents with casualties</span>
                   </label>
+                  {verificationView ? (
+                    <label className="flex min-h-[3rem] w-full items-center gap-3 rounded-xl border border-border bg-surface-raised px-3.5 py-2.5 text-small font-semibold text-text-primary shadow-[0_1px_2px_rgba(11,34,54,0.04)] transition-colors hover:border-input-border-hover hover:bg-surface sm:w-auto">
+                      <input
+                        type="checkbox"
+                        checked={groupByBulletin}
+                        onChange={(event) =>
+                          updateParam(
+                            "group_by",
+                            event.target.checked ? "" : "none",
+                          )
+                        }
+                        className="h-4 w-4 rounded border-border text-accent focus:ring-focus-ring"
+                      />
+                      <span className="leading-5">Group by bulletin</span>
+                    </label>
+                  ) : null}
                   {hasFilters ? (
                     <Button
                       type="button"
@@ -625,30 +724,85 @@ export const IncidentsPage = () => {
               </div>
             ) : null}
 
-            <DataTable
-              columns={columns}
-              rows={rows}
-              getRowKey={(row) => row.id!}
-              loading={isLoading}
-              error={isError}
-              clientSort={false}
-              emptyState={
-                <EmptyState
-                  title={hasFilters ? "No matching incidents" : "No incidents yet"}
-                  description={
-                    hasFilters
-                      ? "Adjust or clear the filters to broaden the results."
-                      : "Materialized incidents will appear here."
-                  }
-                />
-              }
-              errorState={
-                <EmptyState
-                  title="Could not load incidents"
-                  description="The incidents list could not be loaded. Please try again."
-                />
-              }
-              actions={(row) => (
+            {verificationView && groupByBulletin ? (
+              <DataTable
+                columns={groupColumns}
+                rows={groupedRows}
+                getRowKey={(group) => String(group.raw_message_id)}
+                loading={isLoading}
+                error={isError}
+                clientSort={false}
+                minWidth="980px"
+                emptyState={<EmptyState title="No review bulletins" description="No grouped verification items match these filters." />}
+                errorState={<EmptyState title="Could not load incidents" description="The incidents list could not be loaded. Please try again." />}
+                actions={(group) => (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      type="button"
+                      className="h-9 whitespace-nowrap"
+                      disabled={isReviewing}
+                      onClick={async () => {
+                        setIsReviewing(true);
+                        setReviewError("");
+                        try {
+                          await saveReviewForRows(group.incidents, "verified", null);
+                          await refetch();
+                        } catch (error) {
+                          setReviewError(isAxiosError(error) && typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Could not verify this bulletin.");
+                        } finally {
+                          setIsReviewing(false);
+                        }
+                      }}
+                    >
+                      Verify all
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-9 whitespace-nowrap"
+                      onClick={() => { setReviewError(""); setReviewGroup(group); }}
+                    >
+                      Reject all
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-9 whitespace-nowrap"
+                      onClick={() => {
+                        const first = group.incidents.find((incident) => incident.id);
+                        if (first?.id) navigate(`${roleBase}/incidents/${first.id}${location.search}`);
+                      }}
+                    >
+                      Open
+                    </Button>
+                  </div>
+                )}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                rows={rows}
+                getRowKey={(row) => row.id!}
+                loading={isLoading}
+                error={isError}
+                clientSort={false}
+                emptyState={
+                  <EmptyState
+                    title={hasFilters ? "No matching incidents" : "No incidents yet"}
+                    description={
+                      hasFilters
+                        ? "Adjust or clear the filters to broaden the results."
+                        : "Materialized incidents will appear here."
+                    }
+                  />
+                }
+                errorState={
+                  <EmptyState
+                    title="Could not load incidents"
+                    description="The incidents list could not be loaded. Please try again."
+                  />
+                }
+                actions={(row) => (
                 <div className="flex flex-nowrap justify-end gap-2">
                 {row.id && row.verification_status === "needs_verification" ? (
                   openVerificationFlags(row).length ? (
@@ -686,8 +840,9 @@ export const IncidentsPage = () => {
                   View details
                 </Button>
                 </div>
-              )}
-            />
+                )}
+              />
+            )}
           </section>
 
           {total > pageSize ? (
@@ -815,6 +970,31 @@ export const IncidentsPage = () => {
                 <div className="space-y-2"><Label htmlFor="review-reason">Review note / rejection reason</Label><textarea id="review-reason" name="reason" className="min-h-24 w-full rounded-md border border-input-border bg-input-bg px-3 py-2" placeholder="Explain the decision (required for rejection)" /></div>
                 {reviewError ? <p className="text-small text-danger">{reviewError}</p> : null}
                 <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={isReviewing} onClick={() => setReviewRow(null)}>Cancel</Button><Button type="submit" isLoading={isReviewing}>Save review</Button></div>
+              </form>
+            </Dialog>
+          ) : null}
+          {reviewGroup ? (
+            <Dialog title="Reject bulletin" eyebrow="Human verification" onClose={() => !isReviewing && setReviewGroup(null)}>
+              <form className="space-y-4" onSubmit={async (event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                const reason = String(form.get("reason") ?? "").trim();
+                if (!reason) { setReviewError("A rejection reason is required."); return; }
+                setIsReviewing(true); setReviewError("");
+                try {
+                  await saveReviewForRows(reviewGroup.incidents, "rejected", reason);
+                  setReviewGroup(null);
+                  await refetch();
+                } catch (error) {
+                  setReviewError(isAxiosError(error) && typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Could not reject this bulletin.");
+                } finally {
+                  setIsReviewing(false);
+                }
+              }}>
+                <p className="text-small text-text-muted" dir="auto">{reviewGroup.khabar}</p>
+                <div className="space-y-2"><Label htmlFor="group-review-reason">Rejection reason</Label><textarea id="group-review-reason" name="reason" required className="min-h-24 w-full rounded-md border border-input-border bg-input-bg px-3 py-2" placeholder="Explain why all rows from this bulletin should be rejected" /></div>
+                {reviewError ? <p className="text-small text-danger">{reviewError}</p> : null}
+                <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={isReviewing} onClick={() => setReviewGroup(null)}>Cancel</Button><Button type="submit" isLoading={isReviewing}>Reject all</Button></div>
               </form>
             </Dialog>
           ) : null}

@@ -85,6 +85,22 @@ class IncidentListParams(BaseModel):
     duplicate_only: bool = False
     has_casualties: bool = False
     sort_order: Literal["newest", "oldest"] = "newest"
+    group_by: Literal["raw_message"] | None = None
+
+
+class IncidentBulletinGroupDTO(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    raw_message_id: int
+    khabar: str
+    source: str | None = None
+    source_name: str | None = None
+    source_reference: str | None = None
+    event_date: date
+    event_time: time | None = None
+    verification_reasons: list[str] = Field(default_factory=list)
+    verification_types: list[str] = Field(default_factory=list)
+    incidents: list[IncidentListItemDTO]
 
 
 class IncidentListResponse(BaseModel):
@@ -98,6 +114,8 @@ class IncidentListResponse(BaseModel):
     needs_verification_count: int = 0
     casualties_count: int = 0
     needs_verification_outside_range_count: int = 0
+    needs_verification_bulletin_count: int = 0
+    grouped_items: list[IncidentBulletinGroupDTO] = Field(default_factory=list)
 
 
 class CasualtyDemographicsDTO(BaseModel):

@@ -34,6 +34,7 @@ from app.news.dtos import (
     IncidentDetailDTO,
     IncidentDuplicateCandidateDTO,
     IncidentDuplicateResolutionResultDTO,
+    IncidentBulletinGroupDTO,
     IncidentCreateDTO,
     IncidentVillageDetailDTO,
     IncidentListItemDTO,
@@ -406,8 +407,7 @@ class IncidentRepository(IncidentRepositoryInterface):
             else 0
         )
 
-        return IncidentListResponse(
-            items=[
+        items = [
                 IncidentListItemDTO.model_validate(
                     {
                         **row._mapping,
@@ -422,7 +422,18 @@ class IncidentRepository(IncidentRepositoryInterface):
                     }
                 )
                 for row in page_rows
-            ],
+            ]
+        bulletin_count = 0
+        if params.verification_status == "needs_verification" or params.verification_type is not None:
+            bulletin_count = int(
+                self.db.scalar(
+                    joined_query(select(func.count(func.distinct(Incident.raw_message_id))))
+                    .where(Incident.raw_message_id.is_not(None))
+                )
+                or 0
+            )
+        return IncidentListResponse(
+            items=items,
             total=int(total or 0),
             limit=params.limit,
             next_cursor=(
@@ -434,7 +445,57 @@ class IncidentRepository(IncidentRepositoryInterface):
             needs_verification_count=int(summary.needs_verification_count or 0),
             casualties_count=int(summary.casualties_count or 0),
             needs_verification_outside_range_count=int(outside_range_count or 0),
+            needs_verification_bulletin_count=bulletin_count,
+            grouped_items=(
+                self._group_list_items_by_raw_message(items)
+                if params.group_by == "raw_message"
+                else []
+            ),
         )
+
+    @staticmethod
+    def _group_list_items_by_raw_message(
+        items: list[IncidentListItemDTO],
+    ) -> list[IncidentBulletinGroupDTO]:
+        grouped: dict[int, list[IncidentListItemDTO]] = {}
+        for item in items:
+            if item.raw_message_id is None:
+                continue
+            grouped.setdefault(item.raw_message_id, []).append(item)
+        result: list[IncidentBulletinGroupDTO] = []
+        for raw_message_id, incidents in grouped.items():
+            first = incidents[0]
+            reasons = [
+                reason
+                for reason in dict.fromkeys(
+                    incident.verification_reason
+                    for incident in incidents
+                    if incident.verification_reason
+                )
+            ]
+            verification_types = [
+                item
+                for item in dict.fromkeys(
+                    verification_type
+                    for incident in incidents
+                    for verification_type in incident.verification_types
+                )
+            ]
+            result.append(
+                IncidentBulletinGroupDTO(
+                    raw_message_id=raw_message_id,
+                    khabar=first.khabar,
+                    source=first.source,
+                    source_name=first.source_name,
+                    source_reference=first.source_reference,
+                    event_date=first.event_date,
+                    event_time=first.event_time,
+                    verification_reasons=reasons,
+                    verification_types=verification_types,
+                    incidents=incidents,
+                )
+            )
+        return result
 
     def get_by_id(self, incident_id: UUID) -> IncidentDetailDTO | None:
         row = self.db.execute(

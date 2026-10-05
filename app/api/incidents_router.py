@@ -82,6 +82,7 @@ def list_incidents(
     duplicate_only: bool = Query(default=False),
     has_casualties: bool = Query(default=False),
     sort_order: Literal["newest", "oldest"] = Query(default="newest"),
+    group_by: Literal["raw_message"] | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ) -> IncidentListResponse:
@@ -100,6 +101,7 @@ def list_incidents(
         duplicate_only=duplicate_only,
         has_casualties=has_casualties,
         sort_order=sort_order,
+        group_by=group_by,
     )
     return IncidentService(IncidentRepository(db)).list_all(params)
 

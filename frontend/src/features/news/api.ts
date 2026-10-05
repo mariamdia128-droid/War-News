@@ -128,6 +128,9 @@ export const getIncidents = async (
   if (filters.sortOrder) {
     params.set("sort_order", filters.sortOrder);
   }
+  if (filters.groupBy) {
+    params.set("group_by", filters.groupBy);
+  }
 
   const response = await apiClient.get<IncidentListResponse>(
     `/incidents?${params.toString()}`,
